@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-h5p-cli-creator is a command-line utility for mass creating H5P content packages from CSV input files. It downloads H5P content type packages from the H5P Hub, populates them with data from CSV files, and outputs `.h5p` files. Currently supports **Flashcards** and **Dialog Cards** content types.
+h5p-cli-creator is a command-line utility for mass creating H5P content packages from CSV input files. It downloads H5P content type packages from the H5P Hub, populates them with data from CSV files, and outputs `.h5p` files. Currently supports **Flashcards**, **Dialog Cards**, and **Interactive Book** content types.
 
 ## Agent OS Integration
 
@@ -24,6 +24,7 @@ npm run build            # Compile TypeScript to ./dist
 node ./dist/index.js --help                    # General help
 node ./dist/index.js flashcards --help         # Flashcards command help
 node ./dist/index.js dialogcards --help        # Dialog cards command help
+node ./dist/index.js interactivebook --help    # Interactive Book command help
 ```
 
 ### Example Usage
@@ -33,6 +34,9 @@ node ./dist/index.js flashcards ./tests/flash1.csv ./output.h5p -l=de -t="My Fla
 
 # Create dialog cards from CSV
 node ./dist/index.js dialogcards ./tests/dialog1.csv ./output.h5p -l=de -n="My Cards" -m="repetition"
+
+# Create interactive book from CSV
+node ./dist/index.js interactivebook ./tests/book1.csv ./output.h5p -l=en -t="My Story Book"
 
 # Batch processing multiple files
 for file in ./input/*.csv; do
@@ -46,7 +50,7 @@ done
 Currently there is no automated test suite. Testing is done manually:
 
 1. **Build**: `npm run build`
-2. **Test with sample CSVs**: Use files in [tests/](tests/) directory (flash1.csv, dialog1.csv)
+2. **Test with sample CSVs**: Use files in [tests/](tests/) directory (flash1.csv, dialog1.csv, book1.csv)
 3. **Validate output**: Upload generated .h5p files to an H5P platform and verify functionality
 
 When adding new content types, create corresponding test CSV files in the tests/ directory.
@@ -57,7 +61,7 @@ When adding new content types, create corresponding test CSV files in the tests/
 
 1. **Entry Point** ([index.ts](src/index.ts))
    - Uses `yargs` for CLI command routing
-   - Registers command modules (FlashcardsModule, DialogCardsModule)
+   - Registers command modules (FlashcardsModule, DialogCardsModule, InteractiveBookModule)
    - Each content type is a separate yargs command
 
 2. **Module Pattern** (e.g., [flashcards-module.ts](src/flashcards-module.ts))
@@ -70,7 +74,7 @@ When adding new content types, create corresponding test CSV files in the tests/
 3. **Creator Pattern** ([content-creator.ts](src/content-creator.ts))
    - Abstract base class `ContentCreator<T extends H5pContent>`
    - Provides infrastructure for all content types
-   - Concrete implementations (e.g., [flashcards-creator.ts](src/flashcards-creator.ts)) extend this
+   - Concrete implementations (e.g., [flashcards-creator.ts](src/flashcards-creator.ts), [interactive-book-creator.ts](src/interactive-book-creator.ts)) extend this
    - Key methods to implement:
      - `contentObjectFactory()`: Instantiate content model
      - `addContent()`: Populate content from CSV data
@@ -87,7 +91,7 @@ When adding new content types, create corresponding test CSV files in the tests/
 5. **Content Models** ([src/models/](src/models/))
    - TypeScript classes representing H5P content structures
    - Base class: `H5pContent`
-   - Specific implementations: `H5pFlashcardsContent`, `H5pDialogCardsContent`
+   - Specific implementations: `H5pFlashcardsContent`, `H5pDialogCardsContent`, `H5pInteractiveBookContent`
    - Supporting models: `H5pImage`, `H5pAudio`, `H5pCopyrightInformation`
 
 ### Data Flow
@@ -152,7 +156,10 @@ For implementing Interactive Book support (detailed analysis in [docs/h5p-cli-cr
 4. Copy media files to `content/images/` and `content/audios/` directories
 5. Build proper H5P sub-content structures for H5P.Image and H5P.Audio
 
-**Estimated time:** 2-3 weeks for full implementation with media support and testing
+**Completed implementation:**
+- [interactive-book-module.ts](src/interactive-book-module.ts): CLI command module
+- [interactive-book-creator.ts](src/interactive-book-creator.ts): Content creation logic following ContentCreator pattern
+- [h5p-interactivebook-content.ts](src/models/h5p-interactivebook-content.ts): Content model
 
 ## Understanding H5P Package Structure
 

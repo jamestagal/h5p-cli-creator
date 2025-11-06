@@ -1,0 +1,16 @@
+bookTitle,pageTitle,pageText,imagePath,imageAlt,audioPath,coverDescription
+"The Amazing Journey","Introduction","Welcome to our amazing journey through the world of stories. This book will take you on an adventure you won't forget.
+
+Each page contains something special for you to discover.",,,,"An interactive book about amazing journeys and adventures"
+"The Amazing Journey","Chapter 1: The Beginning","Once upon a time, in a land far away, there lived a curious explorer. She loved to discover new things every single day.
+
+Her name was Maya, and she was always ready for adventure.",,,
+"The Amazing Journey","Chapter 2: The Discovery","One morning, Maya found a mysterious map hidden in her grandmother's attic. The map showed a path through the enchanted forest.
+
+She decided to follow the map and see where it would lead.",images/test-image.jpg,A mysterious old map,
+"The Amazing Journey","Chapter 3: The Journey Begins","Maya packed her backpack with supplies and set off on her journey. The forest was full of wonderful sights and sounds.
+
+Birds sang in the trees, and butterflies danced in the sunlight.",images/test-image.jpg,A beautiful enchanted forest,audios/test-audio.mp3
+"The Amazing Journey","Conclusion","Maya's journey taught her many valuable lessons about courage and friendship. She returned home with amazing stories to tell.
+
+And she knew that many more adventures awaited her in the future.",,,
