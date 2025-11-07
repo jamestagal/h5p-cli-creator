@@ -4,3 +4,10 @@ dist
 working_dir
 test.h5p
 outputfile.h5p
+
+# Generated .h5p packages (test outputs)
+test-*.h5p
+examples/*.h5p
+
+# Environment files
+.env
