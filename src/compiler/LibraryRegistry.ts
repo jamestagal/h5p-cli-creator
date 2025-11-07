@@ -17,29 +17,152 @@ export class LibraryRegistry {
   private packageCache: Map<string, jszip> = new Map();
 
   /**
-   * Fetches a library from the H5P Hub and extracts its metadata.
-   * Downloads from Hub if not cached, otherwise uses local cache.
+   * Fetches a library using cache-first strategy with version support.
+   * Priority: 1) Local cache, 2) Extract from parent, 3) Download from Hub
+   *
+   * Supports versioned cache filenames (e.g., H5P.MultiChoice-1.16.h5p)
+   * Falls back to non-versioned names for backward compatibility
+   *
    * @param name The machine name of the library (e.g., "H5P.InteractiveBook")
+   * @param preferredVersion Optional version to prefer (format: "1.16" or "1.16.14")
    * @returns Library metadata including semantics
    */
-  public async fetchLibrary(name: string): Promise<LibraryMetadata> {
-    const localPath = path.join(this.cacheDir, `${name}.h5p`);
-    let dataBuffer: Buffer;
+  public async fetchLibrary(name: string, preferredVersion?: string): Promise<LibraryMetadata> {
+    await fsExtra.ensureDir(this.cacheDir);
 
-    if (!(await fsExtra.pathExists(localPath))) {
-      dataBuffer = toBuffer(await this.downloadLibraryFromHub(name));
-      await fsExtra.ensureDir(this.cacheDir);
-      await fsExtra.writeFile(localPath, dataBuffer);
-      console.log(`Downloaded library package ${name} from H5P Hub.`);
-    } else {
-      dataBuffer = await fsExtra.readFile(localPath);
-      console.log(`Using cached library package from ${localPath}`);
+    // Strategy 1: Try cache first (fastest, most reliable)
+    const cachedLibrary = await this.tryLoadFromCache(name, preferredVersion);
+    if (cachedLibrary) {
+      return cachedLibrary;
     }
 
+    // Strategy 2: Try extracting from parent package (if available)
+    // This handles bundled dependencies like FontAwesome, H5P.JoubelUI, etc.
+    try {
+      const extractedLibrary = await this.tryExtractFromParent(name);
+      if (extractedLibrary) {
+        // Cache the extracted library for future use
+        await this.cacheLibrary(extractedLibrary);
+        return extractedLibrary;
+      }
+    } catch (error) {
+      // Parent extraction failed, continue to Hub download
+    }
+
+    // Strategy 3: Download from Hub as last resort
+    try {
+      console.log(`  Downloading ${name} from H5P Hub...`);
+      const dataBuffer = toBuffer(await this.downloadLibraryFromHub(name));
+      const metadata = await this.extractLibraryMetadata(name, dataBuffer);
+
+      // Save to cache with version number for future use
+      const versionedFilename = `${name}-${metadata.majorVersion}.${metadata.minorVersion}.h5p`;
+      const localPath = path.join(this.cacheDir, versionedFilename);
+      await fsExtra.writeFile(localPath, dataBuffer);
+      console.log(`  Cached as ${versionedFilename}`);
+
+      this.registry.set(this.getLibraryKey(metadata), metadata);
+      return metadata;
+    } catch (error) {
+      throw new Error(
+        `Failed to fetch library ${name}: Not in cache, not in parent package, Hub download failed. ` +
+        `Error: ${error.message}`
+      );
+    }
+  }
+
+  /**
+   * Tries to load library from local cache.
+   * Checks for versioned filenames first, then falls back to non-versioned.
+   * @param name Library machine name
+   * @param preferredVersion Optional preferred version
+   * @returns Library metadata if found in cache, null otherwise
+   */
+  private async tryLoadFromCache(name: string, preferredVersion?: string): Promise<LibraryMetadata | null> {
+    // Check for versioned cache files (e.g., H5P.MultiChoice-1.16.h5p)
+    const cacheFiles = await fsExtra.readdir(this.cacheDir);
+    const matchingFiles = cacheFiles.filter(file =>
+      file.startsWith(`${name}-`) && file.endsWith('.h5p')
+    );
+
+    // If preferred version specified, try exact match first
+    if (preferredVersion && matchingFiles.length > 0) {
+      const versionPattern = preferredVersion.replace(/\./g, '\\.');
+      const exactMatch = matchingFiles.find(file =>
+        file.match(new RegExp(`${name}-${versionPattern}(\\.\\d+)?\\.h5p`))
+      );
+      if (exactMatch) {
+        return await this.loadCachedLibrary(path.join(this.cacheDir, exactMatch), name);
+      }
+    }
+
+    // Try latest version if multiple versions exist
+    if (matchingFiles.length > 0) {
+      // Sort by version (descending) and take latest
+      const sortedFiles = matchingFiles.sort((a, b) => {
+        const versionA = a.match(/(\d+)\.(\d+)/);
+        const versionB = b.match(/(\d+)\.(\d+)/);
+        if (!versionA || !versionB) return 0;
+        const majorDiff = parseInt(versionB[1]) - parseInt(versionA[1]);
+        if (majorDiff !== 0) return majorDiff;
+        return parseInt(versionB[2]) - parseInt(versionA[2]);
+      });
+
+      return await this.loadCachedLibrary(path.join(this.cacheDir, sortedFiles[0]), name);
+    }
+
+    // Fall back to non-versioned filename for backward compatibility
+    const legacyPath = path.join(this.cacheDir, `${name}.h5p`);
+    if (await fsExtra.pathExists(legacyPath)) {
+      return await this.loadCachedLibrary(legacyPath, name);
+    }
+
+    return null;
+  }
+
+  /**
+   * Loads and extracts metadata from a cached library file.
+   * @param filePath Path to cached .h5p file
+   * @param name Library machine name
+   * @returns Library metadata
+   */
+  private async loadCachedLibrary(filePath: string, name: string): Promise<LibraryMetadata> {
+    const dataBuffer = await fsExtra.readFile(filePath);
+    console.log(`Using cached library package from ${path.basename(filePath)}`);
     const metadata = await this.extractLibraryMetadata(name, dataBuffer);
     this.registry.set(this.getLibraryKey(metadata), metadata);
-
     return metadata;
+  }
+
+  /**
+   * Tries to extract library from parent package (for bundled dependencies).
+   * @param name Library machine name
+   * @returns Library metadata if extraction succeeds, null otherwise
+   */
+  private async tryExtractFromParent(name: string): Promise<LibraryMetadata | null> {
+    try {
+      console.log(`  ${name} not in cache, trying to extract from parent package...`);
+      return await this.extractDependencyLibraryFromParent(name);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Caches an extracted library to disk for future use.
+   * @param metadata Library metadata to cache
+   */
+  private async cacheLibrary(metadata: LibraryMetadata): Promise<void> {
+    const versionedFilename = `${metadata.machineName}-${metadata.majorVersion}.${metadata.minorVersion}.h5p`;
+    const cachePath = path.join(this.cacheDir, versionedFilename);
+
+    // Get the package ZIP from cache
+    const packageZip = this.packageCache.get(metadata.machineName);
+    if (packageZip) {
+      const buffer = await packageZip.generateAsync({ type: "nodebuffer" });
+      await fsExtra.writeFile(cachePath, buffer);
+      console.log(`  Cached extracted library as ${versionedFilename}`);
+    }
   }
 
   /**
