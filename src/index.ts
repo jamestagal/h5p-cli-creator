@@ -1,10 +1,10 @@
 #!usr/bin/env node
 
 import * as yargs from "yargs";
-import { DialogCardsModule } from "./dialogcards-module";
-import { FlashcardsModule } from "./flashcards-module";
-import { InteractiveBookModule } from "./interactive-book-module";
-import { InteractiveBookAIModule } from "./interactive-book-ai-module";
+import { DialogCardsModule } from "./modules/csv/dialogcards-module";
+import { FlashcardsModule } from "./modules/csv/flashcards-module";
+import { InteractiveBookModule } from "./modules/csv/interactive-book-module";
+import { InteractiveBookAIModule } from "./modules/ai/interactive-book-ai-module";
 
 try {
   yargs

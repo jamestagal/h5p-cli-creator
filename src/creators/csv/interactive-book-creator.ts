@@ -1,10 +1,10 @@
 import * as path from "path";
 
-import { ContentCreator } from "./content-creator";
-import { H5pPackage } from "./h5p-package";
-import { H5pInteractiveBookContent } from "./models/h5p-interactive-book-content";
-import { H5pImage } from "./models/h5p-image";
-import { H5pAudio } from "./models/h5p-audio";
+import { ContentCreator } from "../base/content-creator";
+import { H5pPackage } from "../../utils/h5p-package";
+import { H5pInteractiveBookContent } from "../../models/h5p-interactive-book-content";
+import { H5pImage } from "../../models/h5p-image";
+import { H5pAudio } from "../../models/h5p-audio";
 
 /**
  * Creator class for H5P Interactive Book content type.

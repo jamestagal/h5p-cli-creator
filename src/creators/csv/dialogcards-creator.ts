@@ -1,10 +1,10 @@
 import * as path from "path";
 
-import { ContentCreator } from "./content-creator";
-import { H5pPackage } from "./h5p-package";
-import { H5pAudio } from "./models/h5p-audio";
-import { H5PDialogCardsContent } from "./models/h5p-dialog-cards-content";
-import { H5pImage } from "./models/h5p-image";
+import { ContentCreator } from "../base/content-creator";
+import { H5pPackage } from "../../utils/h5p-package";
+import { H5pAudio } from "../../models/h5p-audio";
+import { H5PDialogCardsContent } from "../../models/h5p-dialog-cards-content";
+import { H5pImage } from "../../models/h5p-image";
 
 export class DialogCardsCreator extends ContentCreator<H5PDialogCardsContent> {
   constructor(

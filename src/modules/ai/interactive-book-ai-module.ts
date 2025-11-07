@@ -2,13 +2,13 @@ import * as dotenv from "dotenv";
 import * as path from "path";
 import * as yargs from "yargs";
 
-import { YamlInputParser, AnyContentItem } from "./compiler/YamlInputParser";
-import { LibraryRegistry } from "./compiler/LibraryRegistry";
-import { SemanticValidator } from "./compiler/SemanticValidator";
-import { ContentBuilder } from "./compiler/ContentBuilder";
-import { ChapterBuilder } from "./compiler/ChapterBuilder";
-import { PackageAssembler } from "./compiler/PackageAssembler";
-import { QuizGenerator } from "./ai/QuizGenerator";
+import { YamlInputParser, AnyContentItem } from "../../compiler/YamlInputParser";
+import { LibraryRegistry } from "../../compiler/LibraryRegistry";
+import { SemanticValidator } from "../../compiler/SemanticValidator";
+import { ContentBuilder } from "../../compiler/ContentBuilder";
+import { ChapterBuilder } from "../../compiler/ChapterBuilder";
+import { PackageAssembler } from "../../compiler/PackageAssembler";
+import { QuizGenerator } from "../../ai/QuizGenerator";
 
 // Load environment variables
 dotenv.config();

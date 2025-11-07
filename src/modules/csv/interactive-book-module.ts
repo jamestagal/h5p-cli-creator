@@ -3,8 +3,8 @@ import * as papa from "papaparse";
 import * as path from "path";
 import * as yargs from "yargs";
 
-import { InteractiveBookCreator } from "./interactive-book-creator";
-import { H5pPackage } from "./h5p-package";
+import { InteractiveBookCreator } from "../../creators/csv/interactive-book-creator";
+import { H5pPackage } from "../../utils/h5p-package";
 
 /**
  * Yargs module for Interactive Book content type.

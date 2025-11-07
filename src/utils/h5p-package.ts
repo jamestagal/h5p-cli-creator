@@ -4,8 +4,8 @@ import * as fsExtra from "fs-extra";
 import * as jszip from "jszip";
 import * as path from "path";
 
-import { toBuffer } from "./helpers";
-import { LanguageStrings } from "./language-strings";
+import { toBuffer } from "../helpers";
+import { LanguageStrings } from "../language-strings";
 
 /**
  * H5P Package

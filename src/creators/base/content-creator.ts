@@ -1,5 +1,5 @@
-import { H5pPackage } from "./h5p-package";
-import { H5pContent } from "./models/h5p-content";
+import { H5pPackage } from "../../utils/h5p-package";
+import { H5pContent } from "../../models/h5p-content";
 
 /**
  * Classes derived from this class can utilize the infrastructure provided here to create content.
