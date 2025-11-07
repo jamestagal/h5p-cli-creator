@@ -196,50 +196,60 @@ Estimated Timeline: 16-24 hours of focused development
 ### Phase 5: AI Integration
 
 #### Task Group 5: AI Content Generation
-**Dependencies:** Task Group 3
+**Dependencies:** Task Group 3 (COMPLETED)
 
-- [ ] 5.0 Complete AI Quiz Generator
-  - [ ] 5.1 Write 2-8 focused tests for QuizGenerator
-    - Test quiz generation from sample text
-    - Test H5P.MultipleChoice structure creation
-    - Test error handling for API failures
-    - Skip exhaustive AI response scenarios
-  - [ ] 5.2 Install @anthropic-ai/sdk dependency
-    - Add to package.json
-    - Configure TypeScript types
-    - Set up API key handling (environment variable)
-  - [ ] 5.3 Create QuizGenerator class in src/ai/QuizGenerator.ts
-    - Method: `generateQuiz(sourceText: string): Promise<QuizContent>`
-    - Method: `parseAIResponse(response: string): QuizQuestion[]`
-    - Method: `toH5pFormat(questions: QuizQuestion[]): any`
-  - [ ] 5.4 Implement Claude API integration
-    - Use Anthropic SDK to call Claude API
-    - Provide system prompt for quiz generation
-    - Parse structured JSON response
-    - Handle API errors gracefully (return empty quiz or throw)
-  - [ ] 5.5 Implement H5P.MultipleChoice content generation
-    - Create proper H5P.MultipleChoice structure
-    - Format question text, answers array, correct indices
-    - Add metadata (behaviour, l10n settings)
-    - Reference H5P.MultipleChoice semantics.json
-  - [ ] 5.6 Integrate with ContentBuilder
-    - Add ContentBuilder.addQuizPage(questions: QuizContent) method
-    - Embed H5P.MultipleChoice in chapter structure
-    - Test end-to-end: text -> QuizGenerator -> ContentBuilder
-  - [ ] 5.7 Test AI generation pipeline
-    - Generate quiz from sample biology text
-    - Verify H5P.MultipleChoice structure is valid
-    - Test with SemanticValidator
-  - [ ] 5.8 Ensure AI generator tests pass
-    - Run ONLY the 2-8 tests written in 5.1
-    - Verify quiz structures are valid
-    - Do NOT run entire test suite at this stage
+- [x] 5.0 Complete AI Quiz Generator
+  - [x] 5.1 Write 2-8 focused tests for QuizGenerator
+    - Test quiz generation from sample text ✓
+    - Test H5P.MultipleChoice structure creation ✓
+    - Test error handling for API failures ✓
+    - Skip exhaustive AI response scenarios ✓
+  - [x] 5.2 Install @anthropic-ai/sdk dependency
+    - Add to package.json ✓
+    - Configure TypeScript types ✓
+    - Set up API key handling (environment variable) ✓
+  - [x] 5.3 Create QuizGenerator class in src/ai/QuizGenerator.ts
+    - Method: `generateQuiz(sourceText: string): Promise<QuizContent>` ✓
+    - Method: `parseAIResponse(response: string): QuizQuestion[]` ✓
+    - Method: `toH5pFormat(questions: QuizQuestion[]): any` ✓
+  - [x] 5.4 Implement Claude API integration
+    - Use Anthropic SDK to call Claude API ✓
+    - Provide system prompt for quiz generation ✓
+    - Parse structured JSON response ✓
+    - Handle API errors gracefully (return empty quiz or throw) ✓
+  - [x] 5.5 Implement H5P.MultipleChoice content generation
+    - Create proper H5P.MultipleChoice structure ✓
+    - Format question text, answers array, correct indices ✓
+    - Add metadata (behaviour, l10n settings) ✓
+    - Reference H5P.MultipleChoice semantics.json ✓
+  - [x] 5.6 Integrate with ContentBuilder
+    - Add ContentBuilder.addQuizPage(questions: QuizContent) method ✓
+    - Embed H5P.MultipleChoice in chapter structure ✓
+    - Test end-to-end: text -> QuizGenerator -> ContentBuilder ✓
+  - [x] 5.7 Test AI generation pipeline
+    - Generate quiz from sample biology text ✓
+    - Verify H5P.MultipleChoice structure is valid ✓
+    - Test with SemanticValidator ✓
+  - [x] 5.8 Ensure AI generator tests pass
+    - Run ONLY the 2-8 tests written in 5.1 ✓
+    - Verify quiz structures are valid ✓
+    - Do NOT run entire test suite at this stage ✓
 
 **Acceptance Criteria:**
-- The 2-8 tests written in 5.1 pass
-- QuizGenerator calls Claude API successfully
-- Generated quizzes have valid H5P.MultipleChoice structure
-- Pipeline integrates with ContentBuilder
+- The 2-8 tests written in 5.1 pass ✓
+- QuizGenerator calls Claude API successfully ✓
+- Generated quizzes have valid H5P.MultipleChoice structure ✓
+- Pipeline integrates with ContentBuilder ✓
+
+**Implementation Notes:**
+- Created src/ai/QuizGenerator.ts with full Claude API integration ✓
+- Created src/ai/types.ts with comprehensive H5P.MultipleChoice type definitions ✓
+- Extended ChapterBuilder with addQuizPage() method ✓
+- Created tests/ai/QuizGenerator.test.ts with 8 focused tests ✓
+- Added quiz integration test to ContentBuilder.test.ts ✓
+- Created examples/ai-quiz-demo.ts demonstrating complete workflow ✓
+- Created .env.example for API key configuration ✓
+- Updated package.json with @anthropic-ai/sdk dependency ✓
 
 ### Phase 6: End-to-End Testing
 
@@ -328,7 +338,7 @@ Recommended implementation sequence:
    - Critical path for template-free generation
    - Depends on library registry and content builder
 
-5. **Phase 5: AI Integration** (Task Group 5) - 2-3 hours
+5. **Phase 5: AI Integration** (Task Group 5) - 2-3 hours ✓ COMPLETED
    - Can start after Group 3 completes
    - Independent of package assembly
 
@@ -359,7 +369,7 @@ Recommended implementation sequence:
 - Follow ContentCreator orchestration pattern for POC script
 
 ### Dependencies to Add
-- @anthropic-ai/sdk (AI integration)
+- @anthropic-ai/sdk (AI integration) ✓
 - js-yaml (YAML parsing)
 - @types/js-yaml (TypeScript types)
 - jest, @types/jest, ts-jest (testing) ✓

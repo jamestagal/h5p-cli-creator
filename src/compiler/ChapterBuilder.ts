@@ -2,10 +2,11 @@ import * as path from "path";
 import { H5pImage } from "../models/h5p-image";
 import { H5pAudio } from "../models/h5p-audio";
 import { MediaFile } from "./ContentBuilder";
+import { H5pMultipleChoiceContent } from "../ai/types";
 
 /**
  * ChapterBuilder provides methods for adding content pages to a chapter.
- * Supports text, image, audio, and custom H5P content.
+ * Supports text, image, audio, quiz, and custom H5P content.
  */
 export class ChapterBuilder {
   private chapterContent: any[] = [];
@@ -176,6 +177,24 @@ export class ChapterBuilder {
       },
       useSeparator: "auto"
     });
+
+    return this;
+  }
+
+  /**
+   * Adds quiz questions to the chapter.
+   * Accepts H5P.MultipleChoice content structures from QuizGenerator.
+   * @param quizContent Array of H5P.MultipleChoice content structures
+   * @returns This builder for method chaining
+   */
+  public addQuizPage(quizContent: H5pMultipleChoiceContent[]): this {
+    // Add each quiz question as a separate content item
+    for (const question of quizContent) {
+      this.chapterContent.push({
+        content: question,
+        useSeparator: "auto"
+      });
+    }
 
     return this;
   }

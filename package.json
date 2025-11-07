@@ -11,6 +11,7 @@
   "author": "Sebastian Rettig",
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
     "axios": "^0.25.0",
     "buffer-image-size": "^0.6.4",
     "chalk": "^5.0.0",

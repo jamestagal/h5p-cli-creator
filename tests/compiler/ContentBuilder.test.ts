@@ -2,6 +2,7 @@ import { ContentBuilder } from "../../src/compiler/ContentBuilder";
 import { ChapterBuilder } from "../../src/compiler/ChapterBuilder";
 import { SemanticValidator } from "../../src/compiler/SemanticValidator";
 import { LibraryRegistry } from "../../src/compiler/LibraryRegistry";
+import { H5pMultipleChoiceContent } from "../../src/ai/types";
 import * as path from "path";
 
 describe("ContentBuilder", () => {
@@ -94,6 +95,63 @@ describe("ContentBuilder", () => {
       const audioContent = content.chapters[0].params.content[0].content;
       expect(audioContent.library).toBe("H5P.Audio 1.5");
       expect(mediaFiles.length).toBeGreaterThan(0);
+    });
+
+    test("should add a chapter with quiz questions", () => {
+      const builder = new ContentBuilder(registry, validator);
+      builder.createBook("My Book", "en");
+
+      // Create mock quiz content
+      const quizContent: H5pMultipleChoiceContent[] = [
+        {
+          library: "H5P.MultipleChoice 1.16",
+          params: {
+            question: "What is photosynthesis?",
+            answers: [
+              {
+                text: "Process plants use to make food",
+                correct: true,
+                tipsAndFeedback: {
+                  tip: "",
+                  chosenFeedback: "Correct! Well done."
+                }
+              },
+              {
+                text: "Animal respiration",
+                correct: false,
+                tipsAndFeedback: {
+                  tip: "",
+                  chosenFeedback: "Incorrect. Try again."
+                }
+              }
+            ],
+            behaviour: {
+              enableRetry: true,
+              enableSolutionsButton: true,
+              type: "auto"
+            }
+          },
+          metadata: {
+            contentType: "Multiple Choice",
+            license: "U",
+            title: "Quiz Question 1"
+          }
+        }
+      ];
+
+      const chapter = builder.addChapter("Quiz Chapter");
+      chapter.addQuizPage(quizContent);
+
+      const content = builder.build();
+
+      expect(content.chapters).toHaveLength(1);
+      expect(content.chapters[0].params.content).toHaveLength(1);
+
+      const quizItem = content.chapters[0].params.content[0].content;
+      expect(quizItem.library).toBe("H5P.MultipleChoice 1.16");
+      expect(quizItem.params.question).toBe("What is photosynthesis?");
+      expect(quizItem.params.answers).toHaveLength(2);
+      expect(quizItem.params.answers[0].correct).toBe(true);
     });
   });
 
