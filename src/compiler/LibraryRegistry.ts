@@ -60,7 +60,11 @@ export class LibraryRegistry {
     try {
       return await this.fetchLibrary(name);
     } catch (error) {
-      if (error.response && error.response.status === 404) {
+      // Try extracting from parent package if:
+      // 1. HTTP 404 (library not available on Hub)
+      // 2. Network error (timeout, connection refused, etc.)
+      if ((error.response && error.response.status === 404) || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.name === 'AggregateError') {
+        console.log(`  ${name} not available on Hub, extracting from parent package...`);
         return await this.extractDependencyLibraryFromParent(name);
       }
       throw error;
@@ -87,15 +91,22 @@ export class LibraryRegistry {
    * @returns Library package as ArrayBuffer
    */
   private async downloadLibraryFromHub(libraryName: string): Promise<ArrayBuffer> {
-    const response = await axios.get(
+    console.log(`  Downloading ${libraryName} from H5P Hub...`);
+    // H5P Hub API requires POST requests, not GET
+    const response = await axios.post(
       this.h5pHubUrl + "content-types/" + libraryName,
-      { responseType: "arraybuffer" }
+      null, // No body needed for download
+      {
+        responseType: "arraybuffer",
+        timeout: 30000 // 30 second timeout
+      }
     );
 
     if (response.status !== 200) {
       throw new Error(`Error: Could not download library ${libraryName} from H5P Hub.`);
     }
 
+    console.log(`  Successfully downloaded ${libraryName}`);
     return response.data;
   }
 

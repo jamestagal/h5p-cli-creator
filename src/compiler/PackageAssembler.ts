@@ -134,11 +134,30 @@ export class PackageAssembler {
 
   /**
    * Saves the assembled package to disk.
+   * Filters out empty directory entries that H5P.com doesn't allow.
    * @param zip JSZip instance containing the package
    * @param outputPath Path where to save the .h5p file
    */
   public async savePackage(zip: jszip, outputPath: string): Promise<void> {
-    const buffer = await zip.generateAsync({
+    // Create a new zip without directory entries by adding files with { createFolders: false }
+    const cleanZip = new jszip();
+
+    // Copy only files (not directories) to the clean zip
+    const files = Object.keys(zip.files);
+    for (const fileName of files) {
+      const file = zip.files[fileName];
+
+      // Skip directory entries (H5P.com doesn't allow empty directories)
+      if (file.dir) {
+        continue;
+      }
+
+      // Copy file content to clean zip WITHOUT creating folder entries
+      const content = await file.async("nodebuffer");
+      cleanZip.file(fileName, content, { createFolders: false });
+    }
+
+    const buffer = await cleanZip.generateAsync({
       type: "nodebuffer",
       compression: "DEFLATE",
       compressionOptions: { level: 9 }

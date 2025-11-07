@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
   QuizContent,
   QuizQuestion,
@@ -6,25 +7,55 @@ import {
   H5pMultipleChoiceParams
 } from "./types";
 
+type AIProvider = "anthropic" | "google";
+
 /**
- * QuizGenerator uses Claude AI to generate multiple-choice quiz questions
+ * QuizGenerator uses AI (Claude or Gemini) to generate multiple-choice quiz questions
  * from source text and format them as H5P.MultipleChoice content.
  */
 export class QuizGenerator {
-  private anthropic: Anthropic;
+  private anthropic?: Anthropic;
+  private gemini?: GoogleGenerativeAI;
+  private provider: AIProvider;
 
   /**
    * Creates a new QuizGenerator instance.
-   * @param apiKey Anthropic API key (defaults to ANTHROPIC_API_KEY environment variable)
+   * Auto-detects provider based on available API keys.
+   * @param provider AI provider to use ("anthropic" or "google"). Auto-detected if not specified.
+   * @param apiKey API key (defaults to ANTHROPIC_API_KEY or GOOGLE_API_KEY environment variable)
    */
-  constructor(apiKey?: string) {
-    this.anthropic = new Anthropic({
-      apiKey: apiKey || process.env.ANTHROPIC_API_KEY
-    });
+  constructor(provider?: AIProvider, apiKey?: string) {
+    // Auto-detect provider based on available API keys if not specified
+    if (!provider) {
+      if (process.env.GOOGLE_API_KEY) {
+        this.provider = "google";
+      } else if (process.env.ANTHROPIC_API_KEY) {
+        this.provider = "anthropic";
+      } else {
+        throw new Error("No API key found. Set ANTHROPIC_API_KEY or GOOGLE_API_KEY environment variable.");
+      }
+    } else {
+      this.provider = provider;
+    }
+
+    // Initialize the appropriate provider
+    if (this.provider === "anthropic") {
+      const key = apiKey || process.env.ANTHROPIC_API_KEY;
+      if (!key) {
+        throw new Error("Anthropic API key required. Set ANTHROPIC_API_KEY environment variable.");
+      }
+      this.anthropic = new Anthropic({ apiKey: key });
+    } else {
+      const key = apiKey || process.env.GOOGLE_API_KEY;
+      if (!key) {
+        throw new Error("Google API key required. Set GOOGLE_API_KEY environment variable.");
+      }
+      this.gemini = new GoogleGenerativeAI(key);
+    }
   }
 
   /**
-   * Generates quiz questions from source text using Claude AI.
+   * Generates quiz questions from source text using AI (Claude or Gemini).
    * @param sourceText Educational text to generate quiz questions from
    * @param questionCount Number of questions to generate (default: 5)
    * @returns QuizContent with generated questions
@@ -35,13 +66,7 @@ export class QuizGenerator {
     questionCount: number = 5
   ): Promise<QuizContent> {
     try {
-      const message = await this.anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 2048,
-        messages: [
-          {
-            role: "user",
-            content: `Generate ${questionCount} multiple-choice quiz questions about this educational text:
+      const prompt = `Generate ${questionCount} multiple-choice quiz questions about this educational text:
 
 ${sourceText}
 
@@ -63,16 +88,34 @@ Return ONLY a JSON array with this exact format (no additional text):
       { "text": "Incorrect answer 3", "correct": false }
     ]
   }
-]`
-          }
-        ]
-      });
+]`;
 
-      // Extract text from Claude's response
-      const responseText = message.content
-        .filter((block) => block.type === "text")
-        .map((block) => (block as any).text)
-        .join("");
+      let responseText: string;
+
+      if (this.provider === "anthropic" && this.anthropic) {
+        const message = await this.anthropic.messages.create({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2048,
+          messages: [
+            {
+              role: "user",
+              content: prompt
+            }
+          ]
+        });
+
+        // Extract text from Claude's response
+        responseText = message.content
+          .filter((block) => block.type === "text")
+          .map((block) => (block as any).text)
+          .join("");
+      } else if (this.provider === "google" && this.gemini) {
+        const model = this.gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const result = await model.generateContent(prompt);
+        responseText = result.response.text();
+      } else {
+        throw new Error("No AI provider initialized");
+      }
 
       // Parse the AI response
       const questions = this.parseAIResponse(responseText);
@@ -208,7 +251,7 @@ Return ONLY a JSON array with this exact format (no additional text):
       };
 
       return {
-        library: "H5P.MultipleChoice 1.16",
+        library: "H5P.MultiChoice 1.16",
         params,
         metadata: {
           contentType: "Multiple Choice",
