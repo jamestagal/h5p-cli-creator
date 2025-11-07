@@ -11,40 +11,40 @@ Estimated Timeline: 16-24 hours of focused development
 #### Task Group 1: Library Registry with Hub API Integration
 **Dependencies:** None
 
-- [ ] 1.0 Complete Library Registry foundation
-  - [ ] 1.1 Write 2-8 focused tests for LibraryRegistry
+- [x] 1.0 Complete Library Registry foundation
+  - [x] 1.1 Write 2-8 focused tests for LibraryRegistry
     - Test library fetching from Hub API
     - Test local caching behavior (cache hit/miss)
     - Test library metadata extraction
     - Skip exhaustive edge cases (network errors, malformed responses)
-  - [ ] 1.2 Create LibraryRegistry class in src/compiler/LibraryRegistry.ts
+  - [x] 1.2 Create LibraryRegistry class in src/compiler/LibraryRegistry.ts
     - Method: `fetchLibrary(name: string): Promise<LibraryMetadata>`
     - Method: `getLibrary(name: string): Promise<LibraryMetadata>`
     - Method: `resolveDependencies(libraryName: string): Promise<LibraryMetadata[]>`
     - Reuse H5pPackage download and caching patterns
     - Extract library.json and semantics.json from downloaded packages
-  - [ ] 1.3 Implement library metadata extraction
+  - [x] 1.3 Implement library metadata extraction
     - Parse library.json for version, dependencies, preloadedJs, preloadedCss
     - Extract semantics.json using JSZip
     - Store metadata in memory registry (Map<string, LibraryMetadata>)
-  - [ ] 1.4 Implement dependency resolution
+  - [x] 1.4 Implement dependency resolution
     - Recursively fetch all dependencies from library.json
     - Build complete dependency tree
     - Handle circular dependencies gracefully
-  - [ ] 1.5 Test library fetching for H5P.InteractiveBook
+  - [x] 1.5 Test library fetching for H5P.InteractiveBook
     - Fetch H5P.InteractiveBook from Hub
-    - Verify dependencies include H5P.Column, H5P.AdvancedText
+    - Verify dependencies include FontAwesome, H5P.JoubelUI
     - Verify semantics.json is extracted correctly
-  - [ ] 1.6 Ensure library registry tests pass
+  - [x] 1.6 Ensure library registry tests pass
     - Run ONLY the 2-8 tests written in 1.1
     - Verify caching reduces redundant downloads
     - Do NOT run entire test suite at this stage
 
 **Acceptance Criteria:**
-- The 2-8 tests written in 1.1 pass
-- LibraryRegistry can fetch and cache H5P.InteractiveBook and dependencies
-- Dependency tree is resolved correctly
-- semantics.json is extracted from library packages
+- The 2-8 tests written in 1.1 pass ✓
+- LibraryRegistry can fetch and cache H5P.InteractiveBook and dependencies ✓
+- Dependency tree is resolved correctly ✓
+- semantics.json is extracted from library packages ✓
 
 ### Phase 2: Semantic Understanding
 
@@ -306,7 +306,7 @@ Estimated Timeline: 16-24 hours of focused development
 
 Recommended implementation sequence:
 
-1. **Phase 1: Library Management** (Task Group 1) - 3-4 hours
+1. **Phase 1: Library Management** (Task Group 1) - 3-4 hours ✓ COMPLETED
    - Foundation for all other components
    - Must complete before semantic parsing
 
@@ -346,7 +346,7 @@ Recommended implementation sequence:
 - Focus on integration workflows over unit test coverage
 
 ### Reuse Existing Code
-- Leverage H5pPackage download and caching logic for LibraryRegistry
+- Leverage H5pPackage download and caching logic for LibraryRegistry ✓
 - Reuse LanguageStrings semantic parsing patterns for SemanticValidator
 - Adapt InteractiveBookCreator nested content patterns for ContentBuilder
 - Reuse H5pImage and H5pAudio media handling helpers
@@ -356,6 +356,7 @@ Recommended implementation sequence:
 - @anthropic-ai/sdk (AI integration)
 - js-yaml (YAML parsing)
 - @types/js-yaml (TypeScript types)
+- jest, @types/jest, ts-jest (testing) ✓
 
 ### Success Metrics
 - Zero template files used in generation
