@@ -6,6 +6,7 @@ import { ContentBuilder } from "./ContentBuilder";
 import { PackageAssembler } from "./PackageAssembler";
 import { HandlerContext } from "../handlers/HandlerContext";
 import { BookDefinition, AnyContentItem } from "./YamlInputParser";
+import * as JSZip from "jszip";
 
 /**
  * Compiler options for H5P package generation
@@ -137,8 +138,29 @@ export class H5pCompiler {
 
     if (verbose) console.log("  - Package assembled successfully");
 
-    // Generate Buffer from ZIP
-    return await packageZip.generateAsync({ type: "nodebuffer" });
+    // Generate Buffer from ZIP - Filter out directory entries (H5P.com doesn't allow them)
+    const cleanZip = new JSZip();
+
+    // Copy only files (not directories) to clean zip
+    const files = Object.keys(packageZip.files);
+    for (const fileName of files) {
+      const file = packageZip.files[fileName];
+
+      // Skip directory entries (H5P.com validation rejects empty directories)
+      if (file.dir) {
+        continue;
+      }
+
+      // Copy file content WITHOUT creating folder entries
+      const content = await file.async("nodebuffer");
+      cleanZip.file(fileName, content, { createFolders: false });
+    }
+
+    return await cleanZip.generateAsync({
+      type: "nodebuffer",
+      compression: "DEFLATE",
+      compressionOptions: { level: 9 }
+    });
   }
 
   /**
