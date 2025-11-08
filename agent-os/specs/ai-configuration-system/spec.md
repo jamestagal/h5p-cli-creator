@@ -142,19 +142,46 @@ POST /api/smart-import/generate
     "customization": "Focus on visual learners"
   },
   "outputTypes": [
-    "flashcards",        // Generate standalone flashcards.h5p
-    "dialog-cards",      // Generate standalone dialog-cards.h5p
-    "summary",           // Generate standalone summary.h5p
-    "interactive-book"   // Generate interactive-book.h5p with selected sub-content
+    "flashcards",          // Generate standalone flashcards.h5p
+    "dialog-cards",        // Generate standalone dialog-cards.h5p
+    "summary",             // Generate standalone summary.h5p
+    "interactive-book",    // Generate interactive-book.h5p with selected sub-content
+    "course-presentation", // Generate course-presentation.h5p with selected sub-content
+    "question-set"         // Generate question-set.h5p with selected sub-content
   ],
-  "interactiveBookOptions": {
-    "includeSubContent": [
-      "flashcards",      // Embed flashcards in book chapters
-      "ai-quiz",         // Embed quizzes in book chapters
-      "summary"          // Embed summaries in book chapters
-      // NOT including "dialog-cards" - user's choice!
-    ],
-    "chaptersFromSections": true  // Auto-create chapters from source sections
+  "compositeOptions": {
+    // Options for Interactive Book (supports 24 sub-content types)
+    "interactive-book": {
+      "includeSubContent": [
+        "flashcards",      // Embed flashcards in book chapters
+        "ai-quiz",         // Embed quizzes in book chapters
+        "summary"          // Embed summaries in book chapters
+        // NOT including "dialog-cards" - user's choice!
+      ],
+      "chaptersFromSections": true,  // Auto-create chapters from source sections
+      "maxChapters": 10
+    },
+    // Options for Course Presentation (supports 11 sub-content types)
+    "course-presentation": {
+      "includeSubContent": [
+        "multiple-choice",
+        "fill-in-blanks",
+        "mark-the-words"
+      ],
+      "slidesFromSections": true,
+      "maxSlides": 20
+    },
+    // Options for Question Set (supports 8 sub-content types)
+    "question-set": {
+      "includeSubContent": [
+        "multiple-choice",
+        "drag-drop",
+        "essay"
+      ],
+      "randomizeQuestions": true,
+      "questionsPerSet": 10
+    }
+    // Phase 6+: interactive-video, branching-scenario, page, virtual-tour-360
   }
 }
 ```
@@ -191,6 +218,26 @@ POST /api/smart-import/generate
         "chapters": 5,
         "includedSubContent": ["flashcards", "ai-quiz", "summary"]
       }
+    },
+    {
+      "type": "course-presentation",
+      "filename": "course-presentation.h5p",
+      "buffer": Buffer,
+      "size": 98765,
+      "metadata": {
+        "slides": 12,
+        "includedSubContent": ["multiple-choice", "fill-in-blanks", "mark-the-words"]
+      }
+    },
+    {
+      "type": "question-set",
+      "filename": "question-set.h5p",
+      "buffer": Buffer,
+      "size": 54321,
+      "metadata": {
+        "questions": 10,
+        "includedSubContent": ["multiple-choice", "drag-drop", "essay"]
+      }
     }
   ],
   "aiConfig": {
@@ -201,18 +248,26 @@ POST /api/smart-import/generate
 ```
 
 **Key Architectural Points:**
-- **Same AIConfiguration** used for ALL content types (standalone AND embedded)
+- **Same AIConfiguration** used for ALL content types (standalone AND embedded in composite types)
+- **Supports 7 H5P Composite Content Types** (each can include sub-content):
+  1. **Interactive Book** (24 sub-content types) - Phase 5 focus
+  2. **Course Presentation** (11 sub-content types) - Phase 6+
+  3. **Interactive Video** (8 sub-content types) - Phase 6+
+  4. **Question Set** (8 sub-content types) - Phase 6+
+  5. **Page/Column** (25 sub-content types) - Phase 6+
+  6. **Branching Scenario** (3 sub-content types) - Phase 6+
+  7. **Virtual Tour (360)** (2 sub-content types) - Phase 6+
 - **Two-level user control:**
-  1. `outputTypes` - Which standalone packages to generate
-  2. `includeSubContent` - Which content types to embed in Interactive Book
-- User can generate Interactive Book WITHOUT any standalone packages (just `["interactive-book"]`)
-- User can generate standalone packages WITHOUT Interactive Book (exclude "interactive-book" from outputTypes)
-- User can generate BOTH (H5P.com default: Interactive Book auto-includes everything)
-- **Our advantage:** Explicit control vs H5P.com's "include everything" approach
-- **Same AIPromptBuilder** service constructs prompts for all generators
+  1. `outputTypes` - Which packages to generate (standalone + composite)
+  2. `compositeOptions[type].includeSubContent` - Which content types to embed in each composite type
+- User can generate composite types WITHOUT standalone packages
+- User can generate standalone packages WITHOUT composite types
+- User can generate BOTH simultaneously with fine-grained control
+- **Our advantage over H5P.com:** Explicit per-composite-type control vs "include everything" approach
+- **Same AIPromptBuilder** service constructs prompts for all generators (standalone AND composite)
 - **Same reading level presets** apply across all content types
-- Each content type generator (FlashcardsGenerator, SummaryGenerator, etc.) uses AIPromptBuilder
-- Configuration is **not tied to BookDefinition** - it's universal
+- Each content type generator uses AIPromptBuilder universally
+- Configuration is **not tied to BookDefinition** - it's universal across all entry points
 
 **Example Usage Scenario:**
 
@@ -246,7 +301,7 @@ export interface SmartImportRequest {
   language: string;
   aiConfig?: AIConfiguration;  // Same universal type!
   outputTypes: ContentTypeOption[];
-  interactiveBookOptions?: InteractiveBookOptions;
+  compositeOptions?: CompositeContentOptions;  // Options for composite types
 }
 
 export type ContentTypeOption =
@@ -255,14 +310,75 @@ export type ContentTypeOption =
   | "summary"
   | "ai-quiz"
   | "interactive-book"
+  | "course-presentation"
+  | "interactive-video"
+  | "question-set"
+  | "page"
+  | "branching-scenario"
+  | "virtual-tour-360"
   | "timeline"
   | "accordion"
-  | "image-hotspots";
+  | "image-hotspots"
+  | "multiple-choice"
+  | "fill-in-blanks"
+  | "mark-the-words"
+  | "drag-drop"
+  | "essay";
 
+export interface CompositeContentOptions {
+  "interactive-book"?: InteractiveBookOptions;
+  "course-presentation"?: CoursePresentationOptions;
+  "interactive-video"?: InteractiveVideoOptions;
+  "question-set"?: QuestionSetOptions;
+  "page"?: PageOptions;
+  "branching-scenario"?: BranchingScenarioOptions;
+  "virtual-tour-360"?: VirtualTourOptions;
+}
+
+// Interactive Book - 24 sub-content types (Phase 5 focus)
 export interface InteractiveBookOptions {
   includeSubContent?: ContentTypeOption[];  // Which types to embed in chapters
   chaptersFromSections?: boolean;           // Auto-create chapters from source sections
   maxChapters?: number;                     // Limit number of chapters
+}
+
+// Course Presentation - 11 sub-content types (Phase 6+)
+export interface CoursePresentationOptions {
+  includeSubContent?: ContentTypeOption[];  // Which types to embed in slides
+  slidesFromSections?: boolean;             // Auto-create slides from source sections
+  maxSlides?: number;                       // Limit number of slides
+}
+
+// Interactive Video - 8 sub-content types (Phase 6+)
+export interface InteractiveVideoOptions {
+  includeSubContent?: ContentTypeOption[];  // Which types to embed as interactions
+  videoSource?: string | File;              // Video file or URL
+  interactionsFromTimestamps?: boolean;     // Auto-place interactions at section timestamps
+}
+
+// Question Set - 8 sub-content types (Phase 6+)
+export interface QuestionSetOptions {
+  includeSubContent?: ContentTypeOption[];  // Which question types to include
+  randomizeQuestions?: boolean;             // Randomize question order
+  questionsPerSet?: number;                 // Number of questions to generate
+}
+
+// Page (Column) - 25 sub-content types (Phase 6+)
+export interface PageOptions {
+  includeSubContent?: ContentTypeOption[];  // Which types to include in single-page layout
+  sectionsFromHeadings?: boolean;           // Create sections from source headings
+}
+
+// Branching Scenario - 3 sub-content types (Phase 6+)
+export interface BranchingScenarioOptions {
+  includeSubContent?: ContentTypeOption[];  // Which types to use in branches (limited to 3)
+  branchesFromChoices?: boolean;            // Auto-create branches from source decision points
+}
+
+// Virtual Tour (360) - 2 sub-content types (Phase 6+)
+export interface VirtualTourOptions {
+  includeSubContent?: ContentTypeOption[];  // Which types to embed in 360 scenes (limited to 2)
+  scenes360Source?: (string | File)[];      // Array of 360 images/videos
 }
 
 export interface SmartImportResponse {
@@ -279,19 +395,40 @@ export interface GeneratedPackage {
   buffer: Buffer;
   size: number;
   metadata?: {
-    chapters?: number;
-    includedSubContent?: ContentTypeOption[];
-    itemCount?: number;
+    // For composite types:
+    chapters?: number;                          // Interactive Book
+    slides?: number;                            // Course Presentation
+    questions?: number;                         // Question Set
+    scenes?: number;                            // Virtual Tour (360)
+    branches?: number;                          // Branching Scenario
+    duration?: number;                          // Interactive Video (seconds)
+    sections?: number;                          // Page
+
+    // Universal:
+    includedSubContent?: ContentTypeOption[];  // Which sub-content types are embedded
+    itemCount?: number;                        // Total items (for standalone types)
   };
 }
 ```
 
 **Phase 5 Deliverables:**
-- Document Smart Import integration pattern with request/response examples
-- Ensure AIPromptBuilder works for ANY content type (not just Interactive Books)
-- Export Smart Import types (SmartImportRequest, InteractiveBookOptions, SmartImportResponse)
-- Document type usage in smart-import-api.md
-- Note: Full Smart Import implementation deferred to Phase 6
+- Document Smart Import integration pattern with request/response examples for all 7 composite types
+- Ensure AIPromptBuilder works for ANY content type (standalone AND composite)
+- Export ALL Smart Import types for Phase 6 implementation:
+  - `SmartImportRequest`
+  - `SmartImportResponse`
+  - `CompositeContentOptions`
+  - `InteractiveBookOptions` (Phase 5 focus)
+  - `CoursePresentationOptions` (Phase 6+)
+  - `InteractiveVideoOptions` (Phase 6+)
+  - `QuestionSetOptions` (Phase 6+)
+  - `PageOptions` (Phase 6+)
+  - `BranchingScenarioOptions` (Phase 6+)
+  - `VirtualTourOptions` (Phase 6+)
+  - `GeneratedPackage`
+  - `ContentTypeOption`
+- Document type usage in smart-import-api.md with examples for each composite type
+- Note: Phase 5 implements Interactive Book, Phase 6+ implements other composite types
 
 ## Visual Design
 
