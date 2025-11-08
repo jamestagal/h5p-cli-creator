@@ -3,11 +3,18 @@ import * as papa from "papaparse";
 import * as path from "path";
 import * as yargs from "yargs";
 
-import { FlashcardsCreator } from "../../creators/csv/flashcards-creator";
-import { H5pPackage } from "../../utils/h5p-package";
+import { CSVToJSONAdapter } from "../../compiler/CSVToJSONAdapter";
+import { HandlerRegistry } from "../../handlers/HandlerRegistry";
+import { FlashcardsHandler } from "../../handlers/embedded/FlashcardsHandler";
+import { LibraryRegistry } from "../../compiler/LibraryRegistry";
+import { ContentBuilder } from "../../compiler/ContentBuilder";
+import { PackageAssembler } from "../../compiler/PackageAssembler";
+import { SemanticValidator } from "../../compiler/SemanticValidator";
+import { HandlerContext } from "../../handlers/HandlerContext";
 
 /**
  * This is the yargs module for flashcards.
+ * Now uses CSVToJSONAdapter and handlers internally for consistency.
  */
 export class FlashcardsModule implements yargs.CommandModule {
   public command = "flashcards <input> <output>";
@@ -36,6 +43,12 @@ export class FlashcardsModule implements yargs.CommandModule {
         describe: "description of the content",
         default: "Write in the answers to the questions.",
         type: "string",
+      })
+      .option("verbose", {
+        describe: "enable verbose logging",
+        default: false,
+        type: "boolean",
+        alias: "v",
       });
 
   public handler = async (argv) => {
@@ -46,7 +59,8 @@ export class FlashcardsModule implements yargs.CommandModule {
       argv.e,
       argv.d,
       argv.l,
-      argv.description
+      argv.description,
+      argv.verbose
     );
   };
 
@@ -57,27 +71,128 @@ export class FlashcardsModule implements yargs.CommandModule {
     encoding: BufferEncoding,
     delimiter: string,
     language: string,
-    description: string
+    description: string,
+    verbose: boolean = false
   ): Promise<void> {
     console.log("Creating flashcards content type.");
     csvfile = csvfile.trim();
     outputfile = outputfile.trim();
 
-    let csv = fs.readFileSync(csvfile, encoding);
-    let csvParsed = papa.parse(csv, {
+    // Parse CSV
+    const csv = fs.readFileSync(csvfile, encoding);
+    const csvParsed = papa.parse(csv, {
       header: true,
       delimiter,
       skipEmptyLines: true,
     });
-    let h5pPackage = await H5pPackage.createFromHub("H5P.Flashcards", language);
-    let flashcardsCreator = new FlashcardsCreator(
-      h5pPackage,
-      csvParsed.data as any,
-      description,
+
+    // Convert CSV to BookDefinition using adapter
+    const bookDef = CSVToJSONAdapter.convertFlashcards(csvParsed.data as any, {
       title,
-      path.dirname(csvfile)
+      language,
+      description,
+    });
+
+    if (verbose) {
+      console.log(`  Book: "${bookDef.title}" (${bookDef.language})`);
+      console.log(`  Chapters: ${bookDef.chapters.length}`);
+    }
+
+    // Initialize handler registry and register flashcards handler
+    const registry = HandlerRegistry.getInstance();
+    if (!registry.getHandler("flashcards")) {
+      registry.register(new FlashcardsHandler());
+    }
+
+    // Initialize library registry
+    const libraryRegistry = new LibraryRegistry();
+
+    // Fetch required libraries
+    if (verbose) {
+      console.log("  Fetching required libraries...");
+    }
+    const requiredLibs = registry.getRequiredLibrariesForBook(bookDef);
+    const dependencies: any[] = [];
+    for (const lib of requiredLibs) {
+      const libraryData = await libraryRegistry.fetchLibrary(lib);
+      if (libraryData) {
+        dependencies.push(libraryData);
+        const deps = await libraryRegistry.resolveDependencies(libraryData);
+        dependencies.push(...deps);
+      }
+    }
+
+    // Build content with handlers
+    const validator = new SemanticValidator();
+    const builder = new ContentBuilder(libraryRegistry, validator);
+    builder.createBook(bookDef.title, bookDef.language);
+
+    if (verbose) {
+      console.log("  Building content with handlers...");
+    }
+
+    for (const chapter of bookDef.chapters) {
+      if (verbose) {
+        console.log(`  - Processing chapter: "${chapter.title}"`);
+      }
+
+      const chapterBuilder = builder.addChapter(chapter.title);
+
+      // Create handler context
+      const context: HandlerContext = {
+        chapterBuilder,
+        libraryRegistry,
+        quizGenerator: null as any, // Not needed for flashcards
+        logger: {
+          log: verbose ? console.log : () => {},
+          warn: console.warn,
+          error: console.error,
+        },
+        mediaFiles: builder.getMediaFiles(),
+        basePath: path.dirname(path.resolve(csvfile)),
+        options: { verbose },
+      };
+
+      // Process each content item with appropriate handler
+      for (const item of chapter.content) {
+        const handler = registry.getHandler(item.type);
+
+        if (!handler) {
+          console.warn(`    - Unknown content type: ${item.type}`);
+          continue;
+        }
+
+        // Validate before processing
+        const validation = handler.validate(item);
+        if (!validation.valid) {
+          console.error(`    - Validation failed: ${validation.error}`);
+          continue;
+        }
+
+        // Process with handler
+        await handler.process(context, item);
+      }
+    }
+
+    // Assemble package
+    if (verbose) {
+      console.log("  Assembling package...");
+    }
+
+    const assembler = new PackageAssembler();
+    const content = builder.build();
+    const mediaFiles = builder.getMediaFiles();
+    const packageZip = await assembler.assemble(
+      content,
+      dependencies,
+      mediaFiles,
+      builder.getTitle(),
+      builder.getLanguage(),
+      libraryRegistry
     );
-    await flashcardsCreator.create();
-    flashcardsCreator.savePackage(outputfile);
+
+    // Save package
+    await assembler.savePackage(packageZip, outputfile);
+    console.log(`Flashcards package created: ${outputfile}`);
   }
 }

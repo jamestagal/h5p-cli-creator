@@ -5,7 +5,7 @@ import * as path from "path";
 /**
  * Content directive types that can be specified in YAML
  */
-export type ContentType = "text" | "image" | "audio" | "ai-text" | "ai-quiz";
+export type ContentType = "text" | "image" | "audio" | "ai-text" | "ai-quiz" | "flashcards" | "dialogcards";
 
 /**
  * Base content item interface
@@ -62,6 +62,36 @@ export interface AIQuizContent extends ContentItem {
 }
 
 /**
+ * Flashcards content
+ */
+export interface FlashcardsContent extends ContentItem {
+  type: "flashcards";
+  title?: string;
+  description?: string;
+  cards: Array<{
+    question: string;
+    answer: string;
+    tip?: string;
+    image?: string;
+  }>;
+}
+
+/**
+ * Dialog cards content
+ */
+export interface DialogCardsContent extends ContentItem {
+  type: "dialogcards";
+  title?: string;
+  mode?: "normal" | "repetition";
+  cards: Array<{
+    front: string;
+    back: string;
+    image?: string;
+    audio?: string;
+  }>;
+}
+
+/**
  * Union type for all content items
  */
 export type AnyContentItem =
@@ -69,7 +99,9 @@ export type AnyContentItem =
   | AITextContent
   | ImageContent
   | AudioContent
-  | AIQuizContent;
+  | AIQuizContent
+  | FlashcardsContent
+  | DialogCardsContent;
 
 /**
  * Chapter definition from YAML
@@ -185,7 +217,7 @@ export class YamlInputParser {
       throw new Error(`${prefix} must have a 'type' field (string)`);
     }
 
-    const validTypes: ContentType[] = ["text", "image", "audio", "ai-text", "ai-quiz"];
+    const validTypes: ContentType[] = ["text", "image", "audio", "ai-text", "ai-quiz", "flashcards", "dialogcards"];
     if (!validTypes.includes(item.type)) {
       throw new Error(
         `${prefix} has invalid type '${item.type}'. Valid types: ${validTypes.join(", ")}`
@@ -226,6 +258,24 @@ export class YamlInputParser {
           throw new Error(`${prefix} (ai-quiz) must have a 'sourceText' field (string)`);
         }
         break;
+
+      case "flashcards":
+        if (!Array.isArray(item.cards)) {
+          throw new Error(`${prefix} (flashcards) must have a 'cards' field (array)`);
+        }
+        if (item.cards.length === 0) {
+          throw new Error(`${prefix} (flashcards) must have at least one card`);
+        }
+        break;
+
+      case "dialogcards":
+        if (!Array.isArray(item.cards)) {
+          throw new Error(`${prefix} (dialogcards) must have a 'cards' field (array)`);
+        }
+        if (item.cards.length === 0) {
+          throw new Error(`${prefix} (dialogcards) must have at least one card`);
+        }
+        break;
     }
   }
 
@@ -237,12 +287,42 @@ export class YamlInputParser {
   private resolveContentPaths(bookDef: any, basePath: string): void {
     for (const chapter of bookDef.chapters) {
       for (const item of chapter.content) {
+        // Resolve paths for image and audio content
         if (item.type === "image" || item.type === "audio") {
-          // Only resolve if path is not a URL and not already absolute
           if (!item.path.startsWith("http://") &&
               !item.path.startsWith("https://") &&
               !path.isAbsolute(item.path)) {
             item.path = path.resolve(basePath, item.path);
+          }
+        }
+
+        // Resolve paths in flashcard images
+        if (item.type === "flashcards" && Array.isArray(item.cards)) {
+          for (const card of item.cards) {
+            if (card.image &&
+                !card.image.startsWith("http://") &&
+                !card.image.startsWith("https://") &&
+                !path.isAbsolute(card.image)) {
+              card.image = path.resolve(basePath, card.image);
+            }
+          }
+        }
+
+        // Resolve paths in dialog card images and audio
+        if (item.type === "dialogcards" && Array.isArray(item.cards)) {
+          for (const card of item.cards) {
+            if (card.image &&
+                !card.image.startsWith("http://") &&
+                !card.image.startsWith("https://") &&
+                !path.isAbsolute(card.image)) {
+              card.image = path.resolve(basePath, card.image);
+            }
+            if (card.audio &&
+                !card.audio.startsWith("http://") &&
+                !card.audio.startsWith("https://") &&
+                !path.isAbsolute(card.audio)) {
+              card.audio = path.resolve(basePath, card.audio);
+            }
           }
         }
       }

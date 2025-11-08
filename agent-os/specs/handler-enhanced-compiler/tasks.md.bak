@@ -1,0 +1,668 @@
+# Task Breakdown: Handler-Enhanced Compiler Architecture
+
+## Overview
+Total Phases: 4 (4-week implementation)
+Estimated Total Tasks: ~60 tasks across infrastructure, integration, handlers, and API
+
+This is a 4-week phased refactoring to transform the hardcoded switch-statement content processing in InteractiveBookAIModule into a flexible handler-based plugin architecture for composable content types and SvelteKit integration.
+
+## Task List
+
+### Phase 1: Core Handler Infrastructure (Week 1)
+
+#### Task Group 1.1: Interface and Registry Foundation
+**Dependencies:** None
+
+- [x] 1.1.0 Complete handler infrastructure foundation
+  - [x] 1.1.1 Write 2-8 focused tests for ContentHandler interface
+    - Test handler registration and retrieval
+    - Test getContentType() return values
+    - Test validate() method behavior
+    - Test getRequiredLibraries() method
+  - [x] 1.1.2 Create ContentHandler interface in `src/handlers/ContentHandler.ts`
+    - Define `getContentType(): string` method
+    - Define `process(context: HandlerContext, item: any): Promise<void>` method
+    - Define `validate(item: any): { valid: boolean; error?: string }` method
+    - Define `getRequiredLibraries(): string[]` method
+    - Reference spec lines 346-371 for complete TypeScript definition
+  - [x] 1.1.3 Create HandlerContext interface in `src/handlers/HandlerContext.ts`
+    - Define ChapterBuilder property
+    - Define LibraryRegistry property
+    - Define QuizGenerator property
+    - Define Logger interface and property
+    - Define MediaFile array property
+    - Define basePath property for file resolution
+    - Define options property (verbose, aiProvider)
+    - Reference spec lines 376-422 for complete TypeScript definition
+  - [x] 1.1.4 Create HandlerRegistry singleton in `src/handlers/HandlerRegistry.ts`
+    - Implement singleton pattern with private constructor
+    - Implement `register(handler: ContentHandler): void` method
+    - Implement `getHandler(contentType: string): ContentHandler | undefined` method
+    - Implement `getAllHandlers(): ContentHandler[]` method
+    - Implement `getRequiredLibrariesForBook(bookDef: BookDefinition): string[]` method
+    - Reference spec lines 427-474 for complete implementation pattern
+  - [x] 1.1.5 Ensure handler infrastructure tests pass
+    - Run ONLY the 2-8 tests written in 1.1.1
+    - Verify singleton pattern works correctly
+    - Verify handler registration prevents duplicates
+    - Do NOT run the entire test suite at this stage
+
+**Acceptance Criteria:**
+- The 2-8 tests written in 1.1.1 pass
+- ContentHandler interface compiles with no TypeScript errors
+- HandlerRegistry singleton prevents duplicate registrations
+- getRequiredLibrariesForBook() correctly scans all content items
+
+#### Task Group 1.2: Core Content Handlers
+**Dependencies:** Task Group 1.1
+
+- [x] 1.2.0 Complete core handler implementations
+  - [x] 1.2.1 Write 2-8 focused tests for TextHandler
+    - Test processing valid text content
+    - Test validation with missing text field
+    - Test ChapterBuilder.addTextPage() is called correctly
+    - Test required libraries return H5P.AdvancedText
+  - [x] 1.2.2 Create TextHandler in `src/handlers/core/TextHandler.ts`
+    - Implement ContentHandler interface
+    - Return "text" from getContentType()
+    - Call `chapterBuilder.addTextPage(title, text)` in process()
+    - Validate required `text` field exists
+    - Return ["H5P.AdvancedText"] from getRequiredLibraries()
+    - Reference spec lines 479-505 for complete implementation
+  - [x] 1.2.3 Write 2-8 focused tests for ImageHandler
+    - Test processing local file paths
+    - Test processing URLs
+    - Test validation with missing path or alt fields
+    - Test H5pImage helper usage
+  - [x] 1.2.4 Create ImageHandler in `src/handlers/core/ImageHandler.ts`
+    - Implement ContentHandler interface
+    - Return "image" from getContentType()
+    - Use H5pImage.fromLocalFile() or H5pImage.fromDownload() helpers
+    - Call `chapterBuilder.addImagePage(title, path, alt)` in process()
+    - Validate required `path` and `alt` fields
+    - Return ["H5P.Image"] from getRequiredLibraries()
+  - [x] 1.2.5 Write 2-8 focused tests for AudioHandler
+    - Test processing local audio files
+    - Test processing audio URLs
+    - Test validation with missing path field
+    - Test H5pAudio helper usage
+  - [x] 1.2.6 Create AudioHandler in `src/handlers/core/AudioHandler.ts`
+    - Implement ContentHandler interface
+    - Return "audio" from getContentType()
+    - Use H5pAudio.fromLocalFile() or H5pAudio.fromDownload() helpers
+    - Call `chapterBuilder.addAudioPage(title, path)` in process()
+    - Validate required `path` field
+    - Return ["H5P.Audio"] from getRequiredLibraries()
+  - [x] 1.2.7 Ensure core handler tests pass
+    - Run ONLY the tests written in 1.2.1, 1.2.3, 1.2.5
+    - Verify each handler processes content correctly
+    - Verify validation logic works
+    - Do NOT run the entire test suite at this stage
+
+**Acceptance Criteria:**
+- All handler tests pass (approximately 6-24 tests total)
+- TextHandler, ImageHandler, AudioHandler implement ContentHandler correctly
+- Each handler validates input and returns correct libraries
+- Handlers use ChapterBuilder API methods correctly
+
+#### Task Group 1.3: Documentation and Examples
+**Dependencies:** Task Groups 1.1, 1.2
+
+- [x] 1.3.0 Complete handler development documentation
+  - [x] 1.3.1 Create handler development guide in `docs/Handler_Development_Guide.md`
+    - Step-by-step tutorial for creating a new handler
+    - Explanation of ContentHandler interface methods
+    - Examples using TextHandler as reference
+    - Best practices for error handling and validation
+    - Guidelines for working with ChapterBuilder API
+  - [x] 1.3.2 Document handler registration patterns
+    - How to register handlers at startup
+    - Handler discovery and retrieval
+    - Priority and ordering considerations
+  - [x] 1.3.3 Create handler API reference documentation
+    - Complete TypeScript interface documentation
+    - HandlerContext properties and usage
+    - HandlerRegistry methods and patterns
+    - Code examples for each method
+
+**Acceptance Criteria:**
+- Handler development guide is complete with working examples
+- Documentation clearly explains how to create new handlers
+- API reference covers all interfaces and methods
+
+---
+
+### Phase 2: Integration with InteractiveBookAIModule (Week 2)
+
+#### Task Group 2.1: Switch Statement Replacement
+**Dependencies:** Phase 1 (All Task Groups 1.1-1.3) - COMPLETED
+
+- [x] 2.1.0 Complete switch statement refactoring
+  - [x] 2.1.1 Write 2-8 focused tests for handler-based content processing
+    - Test handler lookup by content type
+    - Test processing multiple content types in sequence
+    - Test unknown content type handling
+    - Test validation failure handling
+  - [x] 2.1.2 Backup existing InteractiveBookAIModule implementation
+    - Copy `src/modules/ai/interactive-book-ai-module.ts` to backup file
+    - Preserve existing switch statement for reference (lines 255-352)
+  - [x] 2.1.3 Refactor processContentItem() switch statement
+    - Remove switch statement from handler() method (lines 255-352)
+    - Create HandlerContext instance with all required properties
+    - Replace switch cases with handler registry lookup
+    - Call `handler.validate(item)` before processing
+    - Call `handler.process(context, item)` for each content item
+    - Reference spec lines 562-598 for refactoring pattern
+  - [x] 2.1.4 Implement handler registration at module startup
+    - Import TextHandler, ImageHandler, AudioHandler
+    - Register handlers with HandlerRegistry.getInstance()
+    - Ensure registration happens before command processing
+  - [x] 2.1.5 Preserve verbose logging output format
+    - Maintain existing log messages for user clarity
+    - Add handler-specific logging where appropriate
+    - Keep step-by-step progress messages identical
+  - [x] 2.1.6 Ensure integration tests pass
+    - Run ONLY the 2-8 tests written in 2.1.1
+    - Verify handlers process content correctly
+    - Do NOT run the entire test suite at this stage
+
+**Acceptance Criteria:**
+- The 2-8 tests written in 2.1.1 pass
+- Switch statement completely removed from InteractiveBookAIModule
+- Handler registry lookup replaces all switch cases
+- Verbose logging output matches original format
+- Backward compatibility maintained with existing YAML files
+
+#### Task Group 2.2: Dynamic Library Resolution
+**Dependencies:** Task Group 2.1
+
+- [x] 2.2.0 Complete dynamic library resolution
+  - [x] 2.2.1 Write 2-8 focused tests for library resolution
+    - Test getRequiredLibrariesForBook() scans all content types
+    - Test library deduplication
+    - Test dependency resolution for complex handlers
+  - [x] 2.2.2 Implement dynamic library fetching
+    - Call `handlerRegistry.getRequiredLibrariesForBook(bookDef)` before building content
+    - Fetch all required libraries via LibraryRegistry
+    - Resolve dependencies for all libraries (including quiz, flashcards)
+    - Merge dependencies and remove duplicates by machineName-version key
+    - Pass complete dependency list to PackageAssembler
+  - [x] 2.2.3 Remove hardcoded library lists
+    - Delete any hardcoded library arrays in InteractiveBookAIModule
+    - Ensure all libraries come from handler declarations
+  - [x] 2.2.4 Ensure library resolution tests pass
+    - Run ONLY the 2-8 tests written in 2.2.1
+    - Verify all required libraries are fetched
+    - Verify dependencies are resolved correctly
+    - Do NOT run the entire test suite at this stage
+
+**Acceptance Criteria:**
+- The 2-8 tests written in 2.2.1 pass
+- Library resolution is fully dynamic based on content types
+- No hardcoded library lists remain
+- Dependencies are resolved and deduplicated correctly
+
+#### Task Group 2.3: AI-Powered Handlers
+**Dependencies:** Task Group 2.2
+
+- [x] 2.3.0 Complete AI-powered handler implementations
+  - [x] 2.3.1 Write 2-8 focused tests for AITextHandler
+    - Test AI text generation with mock AI provider
+    - Test validation with missing prompt field
+    - Test error handling with fallback content
+    - Test provider selection (Gemini, Claude, auto)
+  - [x] 2.3.2 Create AITextHandler in `src/handlers/core/AITextHandler.ts`
+    - Implement ContentHandler interface
+    - Return "ai-text" from getContentType()
+    - Access AI provider (Gemini/Claude) via context or direct API
+    - Generate educational content from prompts using AI
+    - Call `chapterBuilder.addTextPage(title, generatedText)` with AI output
+    - Validate required `prompt` field exists
+    - Return ["H5P.AdvancedText"] from getRequiredLibraries()
+    - Provide error handling with descriptive fallback content
+  - [x] 2.3.3 Write 2-8 focused tests for QuizHandler
+    - Test AI quiz generation with mock QuizGenerator
+    - Test validation with missing sourceText field
+    - Test error handling with fallback text page
+    - Test configurable question counts
+  - [x] 2.3.4 Create QuizHandler in `src/handlers/ai/QuizHandler.ts`
+    - Implement ContentHandler interface
+    - Return "ai-quiz" from getContentType()
+    - Access QuizGenerator via HandlerContext
+    - Call `quizGenerator.generateH5pQuiz(sourceText, questionCount)` for AI generation
+    - Call `chapterBuilder.addQuizPage(quizContent)` to add generated quiz
+    - Validate required `sourceText` field exists
+    - Return ["H5P.MultiChoice"] from getRequiredLibraries()
+    - Provide fallback text page if AI generation fails
+    - Reference spec lines 511-555 for complete implementation
+  - [x] 2.3.5 Register AI handlers in InteractiveBookAIModule
+    - Import AITextHandler and QuizHandler
+    - Register with HandlerRegistry.getInstance()
+    - Ensure registration order: core handlers first, then AI handlers
+  - [x] 2.3.6 Ensure AI handler tests pass
+    - Run ONLY the tests written in 2.3.1 and 2.3.3
+    - Verify AI handlers generate content correctly
+    - Verify error handling and fallback behavior
+    - Do NOT run the entire test suite at this stage
+
+**Acceptance Criteria:**
+- All AI handler tests pass (approximately 4-16 tests)
+- AITextHandler and QuizHandler implement ContentHandler correctly
+- AI providers are accessed correctly via HandlerContext or direct API
+- Error handling provides descriptive fallback content
+
+#### Task Group 2.4: Backward Compatibility Validation
+**Dependencies:** Task Groups 2.1, 2.2, 2.3
+
+- [x] 2.4.0 Validate backward compatibility
+  - [x] 2.4.1 Create backward compatibility test suite
+    - Identify all existing YAML example files in project
+    - Generate .h5p files with NEW handler-based approach
+    - Generate .h5p files with OLD switch-statement approach (from backup)
+    - Extract and normalize content.json from both outputs
+  - [x] 2.4.2 Compare content.json structures
+    - Parse content.json from both .h5p packages
+    - Normalize dynamic fields (UUIDs, timestamps)
+    - Compare chapter structures, content types, and metadata
+    - Verify identical output (excluding dynamic IDs)
+  - [x] 2.4.3 Validate CLI interface unchanged
+    - Verify all CLI commands work with same arguments
+    - Verify environment variables (GOOGLE_API_KEY, ANTHROPIC_API_KEY) work
+    - Verify verbose mode output format preserved
+  - [x] 2.4.4 Run backward compatibility tests
+    - Execute all backward compatibility tests
+    - Verify YAML files produce identical output
+    - Document any intentional differences
+
+**Acceptance Criteria:**
+- All existing YAML files produce identical .h5p output
+- CLI commands and arguments unchanged
+- Environment variables work as before
+- Verbose logging format preserved
+
+---
+
+### Phase 3: Extended Handler Implementations (Week 3)
+
+#### Task Group 3.1: Embedded Content Handlers
+**Dependencies:** Phase 2 (All Task Groups 2.1-2.4)
+
+- [x] 3.1.0 Complete embedded content handlers
+  - [x] 3.1.1 Write 2-8 focused tests for FlashcardsHandler
+    - Test flashcard content structure generation
+    - Test card array with question/answer pairs
+    - Test media file handling (images, audio, tips)
+    - Test validation with missing cards array
+  - [x] 3.1.2 Create FlashcardsHandler in `src/handlers/embedded/FlashcardsHandler.ts`
+    - Implement ContentHandler interface
+    - Return "flashcards" from getContentType()
+    - Generate H5P.Flashcards sub-content structure
+    - Support image, tip, and audio fields per card
+    - Call `chapterBuilder.addCustomContent(flashcardsContent)` to embed
+    - Reuse logic from existing FlashcardsCreator (src/creators/csv/flashcards-creator.ts)
+    - Validate required `cards` array with question/answer pairs
+    - Return ["H5P.Flashcards"] from getRequiredLibraries()
+  - [x] 3.1.3 Write 2-8 focused tests for DialogCardsHandler
+    - Test dialog cards content structure generation
+    - Test card array with front/back text
+    - Test media file handling for both sides
+    - Test validation with missing cards array
+  - [x] 3.1.4 Create DialogCardsHandler in `src/handlers/embedded/DialogCardsHandler.ts`
+    - Implement ContentHandler interface
+    - Return "dialogcards" from getContentType()
+    - Generate H5P.DialogCards sub-content structure
+    - Support images and audio for both sides of dialog
+    - Call `chapterBuilder.addCustomContent(dialogCardsContent)` to embed
+    - Reuse logic from existing DialogCardsCreator (src/creators/csv/dialogcards-creator.ts)
+    - Validate required `cards` array with front/back text
+    - Return ["H5P.DialogCards"] from getRequiredLibraries()
+  - [ ] 3.1.5 Register embedded handlers
+    - Import FlashcardsHandler and DialogCardsHandler
+    - Register with HandlerRegistry.getInstance()
+  - [ ] 3.1.6 Ensure embedded handler tests pass
+    - Run ONLY the tests written in 3.1.1 and 3.1.3
+    - Verify flashcard and dialog card structures are correct
+    - Verify media handling works correctly
+    - Do NOT run the entire test suite at this stage
+
+**Acceptance Criteria:**
+- All embedded handler tests pass (approximately 4-16 tests)
+- FlashcardsHandler and DialogCardsHandler generate correct H5P structures
+- Logic reused from existing CSV creators
+- Media files handled correctly
+
+#### Task Group 3.2: CSV to JSON Adapter
+**Dependencies:** Task Group 3.1
+
+- [ ] 3.2.0 Complete CSV to JSON adapter
+  - [ ] 3.2.1 Write 2-8 focused tests for CSVToJSONAdapter
+    - Test flashcards CSV conversion to BookDefinition
+    - Test dialog cards CSV conversion to BookDefinition
+    - Test single-chapter book CSV conversion
+    - Test column header inference (question/answer = flashcard, text = text page)
+  - [ ] 3.2.2 Create CSVToJSONAdapter in `src/compiler/CSVToJSONAdapter.ts`
+    - Parse CSV rows using papaparse
+    - Infer content types from column headers (question/answer, text, image, audio)
+    - Convert each CSV row to a content item in BookDefinition structure
+    - Create single chapter with all content items
+    - Map CSV columns to BookDefinition fields with sensible defaults
+    - Support legacy CSV formats (flashcards, dialog cards, simple books)
+  - [ ] 3.2.3 Update CSV-based modules to use CSVToJSONAdapter
+    - Modify FlashcardsModule to convert CSV → BookDefinition → handlers
+    - Modify DialogCardsModule to convert CSV → BookDefinition → handlers
+    - Maintain backward compatibility with existing CSV workflows
+  - [ ] 3.2.4 Ensure CSV adapter tests pass
+    - Run ONLY the 2-8 tests written in 3.2.1
+    - Verify CSV files convert to correct BookDefinition structure
+    - Verify existing CSV workflows still work
+    - Do NOT run the entire test suite at this stage
+
+**Acceptance Criteria:**
+- All CSV adapter tests pass (approximately 2-8 tests)
+- CSVToJSONAdapter converts legacy CSV formats correctly
+- CSV-based modules use adapter + handlers internally
+- Backward compatibility with existing CSV workflows maintained
+
+#### Task Group 3.3: Handler Validation and Error Reporting
+**Dependencies:** Task Groups 3.1, 3.2
+
+- [ ] 3.3.0 Complete validation improvements
+  - [ ] 3.3.1 Enhance validation error messages
+    - Provide detailed field-level validation errors
+    - Include helpful suggestions for fixing validation issues
+    - Add content item location information (chapter, index)
+  - [ ] 3.3.2 Create comprehensive validation test coverage
+    - Test each handler's validation logic thoroughly
+    - Test missing required fields
+    - Test invalid field types
+    - Test edge cases (empty strings, null values)
+  - [ ] 3.3.3 Implement graceful error handling
+    - Continue processing other content items when one fails
+    - Collect and report all validation errors at end
+    - Provide clear error messages to users
+  - [ ] 3.3.4 Run validation enhancement tests
+    - Execute all validation tests
+    - Verify error messages are clear and actionable
+    - Verify graceful degradation works
+
+**Acceptance Criteria:**
+- All validation tests pass
+- Error messages are clear and actionable
+- Validation failures don't stop entire compilation
+- Users receive helpful guidance for fixing errors
+
+---
+
+### Phase 4: SvelteKit Integration Preparation (Week 4)
+
+#### Task Group 4.1: H5pCompiler Extraction
+**Dependencies:** Phase 3 (All Task Groups 3.1-3.3)
+
+- [ ] 4.1.0 Complete H5pCompiler extraction
+  - [ ] 4.1.1 Write 2-8 focused tests for H5pCompiler class
+    - Test compile() method with BookDefinition input
+    - Test library fetching and dependency resolution
+    - Test content building with handlers
+    - Test package assembly and Buffer output
+  - [ ] 4.1.2 Create H5pCompiler in `src/compiler/H5pCompiler.ts`
+    - Create class with constructor accepting HandlerRegistry, LibraryRegistry, QuizGenerator
+    - Implement `async compile(bookDef: BookDefinition, options: CompilerOptions): Promise<Buffer>` method
+    - Step 1: Fetch required libraries via handlerRegistry.getRequiredLibrariesForBook()
+    - Step 2: Build content with handlers using ContentBuilder and ChapterBuilder
+    - Step 3: Assemble package with PackageAssembler
+    - Return Buffer from packageZip.generateAsync()
+    - Reference spec lines 604-662 for complete implementation
+  - [ ] 4.1.3 Define CompilerOptions TypeScript interface
+    - Include verbose?: boolean
+    - Include aiProvider?: "gemini" | "claude" | "auto"
+    - Include basePath?: string for file resolution
+  - [ ] 4.1.4 Refactor InteractiveBookAIModule to use H5pCompiler
+    - Replace inline compilation logic with H5pCompiler.compile() call
+    - Pass BookDefinition from YamlInputParser to compiler
+    - Remove duplicate code from module handler
+  - [ ] 4.1.5 Ensure H5pCompiler tests pass
+    - Run ONLY the 2-8 tests written in 4.1.1
+    - Verify compile() method works correctly
+    - Verify InteractiveBookAIModule still works
+    - Do NOT run the entire test suite at this stage
+
+**Acceptance Criteria:**
+- All H5pCompiler tests pass (approximately 2-8 tests)
+- H5pCompiler class works identically for CLI and future API usage
+- InteractiveBookAIModule refactored to use H5pCompiler
+- No code duplication between CLI and compiler logic
+
+#### Task Group 4.2: SvelteKit API Endpoint
+**Dependencies:** Task Group 4.1
+
+- [ ] 4.2.0 Complete SvelteKit API endpoint
+  - [ ] 4.2.1 Write 2-8 focused tests for API endpoint
+    - Test POST request with valid BookDefinition JSON
+    - Test response with .h5p file download
+    - Test error handling with invalid JSON
+    - Test proper Content-Type and Content-Disposition headers
+  - [ ] 4.2.2 Create API endpoint structure (preparation only - no SvelteKit app setup)
+    - Document API endpoint design in `docs/API_Integration_Guide.md`
+    - Provide example implementation code for SvelteKit POST handler
+    - Reference spec lines 668-705 for API endpoint pattern
+  - [ ] 4.2.3 Define request/response TypeScript types
+    - Request: `{ bookDefinition: BookDefinition, options?: CompilerOptions }`
+    - Response Success: Binary .h5p file with headers
+    - Response Error: `{ error: string, details?: string[] }` with HTTP status
+  - [ ] 4.2.4 Create example API integration code
+    - Show how to initialize H5pCompiler in API route
+    - Show how to validate BookDefinition JSON
+    - Show how to return .h5p Buffer as download
+    - Show error handling patterns
+  - [ ] 4.2.5 Document API usage patterns
+    - Request format with examples
+    - Response format with examples
+    - Error codes and troubleshooting
+    - Authentication considerations (out of scope for implementation)
+
+**Acceptance Criteria:**
+- API endpoint design documented completely
+- Example code provided for SvelteKit integration
+- Request/response types defined
+- API usage patterns clearly documented
+
+#### Task Group 4.3: Shared TypeScript Types
+**Dependencies:** Task Groups 4.1, 4.2
+
+- [ ] 4.3.0 Complete shared type system
+  - [ ] 4.3.1 Consolidate BookDefinition types in `src/compiler/types.ts`
+    - Export BookDefinition interface
+    - Export ChapterDefinition interface
+    - Export AnyContentItem union type
+    - Export all specific content item types (TextContent, ImageContent, AIQuizContent, etc.)
+  - [ ] 4.3.2 Document type system for frontend integration
+    - Create TypeScript type reference guide
+    - Show examples of each content type structure
+    - Explain how to build BookDefinition in frontend
+  - [ ] 4.3.3 Create JSON schema for BookDefinition (optional but recommended)
+    - Generate JSON schema from TypeScript types
+    - Enable runtime validation in API endpoint
+    - Provide schema for frontend form validation
+
+**Acceptance Criteria:**
+- All types consolidated in src/compiler/types.ts
+- Types are exported and reusable
+- Type documentation complete with examples
+- JSON schema available for validation (optional)
+
+#### Task Group 4.4: Community Contribution Preparation
+**Dependencies:** Task Groups 4.1, 4.2, 4.3
+
+- [ ] 4.4.0 Prepare for community handler contributions
+  - [ ] 4.4.1 Update project README with handler architecture overview
+    - Explain handler-based system
+    - Link to handler development guide
+    - Show examples of creating custom handlers
+  - [ ] 4.4.2 Create CONTRIBUTING.md with handler contribution guidelines
+    - Step-by-step guide for contributing new handlers
+    - Code style and testing requirements
+    - Pull request process
+  - [ ] 4.4.3 Create handler template file
+    - Provide boilerplate handler implementation
+    - Include TODO comments for key sections
+    - Reference best practices from existing handlers
+  - [ ] 4.4.4 Document handler registry patterns
+    - How to register custom handlers
+    - Handler discovery mechanisms (current and future)
+    - Priority and ordering considerations
+
+**Acceptance Criteria:**
+- README updated with handler architecture overview
+- CONTRIBUTING.md provides clear handler contribution guidelines
+- Handler template file available for community use
+- Documentation supports community contributions
+
+---
+
+### Testing & Validation
+
+#### Task Group 5.0: Comprehensive Test Review & Gap Analysis
+**Dependencies:** All Phase 1-4 Task Groups
+
+- [ ] 5.0.0 Review existing tests and fill critical gaps only
+  - [ ] 5.0.1 Review all tests written during Phases 1-4
+    - Review tests from Task Groups 1.1, 1.2, 2.1, 2.2, 2.3, 3.1, 3.2, 4.1, 4.2
+    - Count total tests written (approximately 16-64 tests)
+    - Identify which content types and workflows are covered
+  - [ ] 5.0.2 Analyze test coverage gaps for handler architecture only
+    - Identify critical handler workflows lacking coverage
+    - Focus ONLY on gaps related to handler-enhanced compiler feature
+    - Do NOT assess entire application test coverage
+    - Prioritize end-to-end handler workflows over unit test gaps
+  - [ ] 5.0.3 Write up to 10 additional strategic tests maximum
+    - Add maximum of 10 new tests to fill identified critical gaps
+    - Focus on integration points between handlers and compiler
+    - Test end-to-end workflows (YAML → handlers → .h5p)
+    - Test handler registry interactions with compiler
+    - Do NOT write comprehensive coverage for all scenarios
+    - Skip edge cases unless business-critical
+  - [ ] 5.0.4 Run handler-specific tests only
+    - Run ONLY tests related to handler architecture (tests from all phases + new tests)
+    - Expected total: approximately 26-74 tests maximum
+    - Do NOT run the entire application test suite
+    - Verify critical handler workflows pass
+  - [ ] 5.0.5 Document test coverage report
+    - List all test files and test counts
+    - Identify areas with good coverage
+    - Document known gaps (acceptable for initial release)
+
+**Acceptance Criteria:**
+- All handler-specific tests pass (approximately 26-74 tests total)
+- Critical handler workflows for this feature are covered
+- No more than 10 additional tests added when filling in testing gaps
+- Testing focused exclusively on handler architecture feature
+- Test coverage report documents current state
+
+---
+
+## Execution Order
+
+Recommended implementation sequence:
+
+1. **Week 1: Core Handler Infrastructure (Phase 1)** - COMPLETED
+   - Task Group 1.1: Interface and Registry Foundation
+   - Task Group 1.2: Core Content Handlers
+   - Task Group 1.3: Documentation and Examples
+
+2. **Week 2: Integration with InteractiveBookAIModule (Phase 2)** - COMPLETED
+   - Task Group 2.1: Switch Statement Replacement
+   - Task Group 2.2: Dynamic Library Resolution
+   - Task Group 2.3: AI-Powered Handlers
+   - Task Group 2.4: Backward Compatibility Validation
+
+3. **Week 3: Extended Handler Implementations (Phase 3)**
+   - Task Group 3.1: Embedded Content Handlers
+   - Task Group 3.2: CSV to JSON Adapter
+   - Task Group 3.3: Handler Validation and Error Reporting
+
+4. **Week 4: SvelteKit Integration Preparation (Phase 4)**
+   - Task Group 4.1: H5pCompiler Extraction
+   - Task Group 4.2: SvelteKit API Endpoint
+   - Task Group 4.3: Shared TypeScript Types
+   - Task Group 4.4: Community Contribution Preparation
+
+5. **Post-Implementation: Testing & Validation**
+   - Task Group 5.0: Comprehensive Test Review & Gap Analysis
+
+---
+
+## Key Implementation Notes
+
+### Existing Code to Leverage
+
+- **ContentBuilder & ChapterBuilder**: Use existing fluent API for building Interactive Book content (no changes needed)
+- **YamlInputParser**: Already parses YAML to BookDefinition JSON structure (reuse without modification)
+- **LibraryRegistry**: Cache-first library fetching from H5P Hub (access via HandlerContext)
+- **QuizGenerator**: AI-powered quiz generation (access via HandlerContext in QuizHandler)
+- **PackageAssembler**: Assembles .h5p packages from content and libraries (no changes needed)
+- **H5pImage & H5pAudio helpers**: Handle local files and URLs (use in ImageHandler and AudioHandler)
+
+### Critical Files to Modify
+
+- **src/modules/ai/interactive-book-ai-module.ts**: Refactor switch statement (lines 255-352) to use handlers - COMPLETED
+- **src/creators/csv/flashcards-creator.ts**: Extract logic for FlashcardsHandler
+- **src/creators/csv/dialogcards-creator.ts**: Extract logic for DialogCardsHandler
+- **src/modules/csv/flashcards-module.ts**: Update to use CSVToJSONAdapter + handlers
+- **src/modules/csv/dialogcards-module.ts**: Update to use CSVToJSONAdapter + handlers
+
+### New Files Created
+
+- `src/handlers/ContentHandler.ts` (interface) - CREATED
+- `src/handlers/HandlerContext.ts` (interface and implementation) - CREATED
+- `src/handlers/HandlerRegistry.ts` (singleton) - CREATED
+- `src/handlers/core/TextHandler.ts` - CREATED
+- `src/handlers/core/ImageHandler.ts` - CREATED
+- `src/handlers/core/AudioHandler.ts` - CREATED
+- `src/handlers/core/AITextHandler.ts` - CREATED
+- `src/handlers/ai/QuizHandler.ts` - CREATED
+- `src/handlers/embedded/FlashcardsHandler.ts`
+- `src/handlers/embedded/DialogCardsHandler.ts`
+- `src/compiler/H5pCompiler.ts`
+- `src/compiler/CSVToJSONAdapter.ts`
+- `docs/Handler_Development_Guide.md` - CREATED
+- `docs/API_Integration_Guide.md`
+- `tests/integration/handler-content-processing.test.ts` - CREATED
+- `tests/integration/library-resolution.test.ts` - CREATED
+- `tests/integration/backward-compatibility.test.ts` - CREATED
+- `tests/unit/AITextHandler.test.ts` - CREATED
+- `tests/unit/QuizHandler.test.ts` - CREATED
+
+### Testing Strategy
+
+- **Unit Tests**: 2-8 focused tests per handler, testing core functionality only
+- **Integration Tests**: Test handler workflows with ChapterBuilder and ContentBuilder
+- **Backward Compatibility Tests**: Compare .h5p output from old vs new implementation
+- **API Tests**: Test H5pCompiler with BookDefinition JSON input
+- **Validation Tests**: Test each handler's validation logic
+- **Total Expected Tests**: Approximately 26-74 tests across all phases
+
+### Documentation Deliverables
+
+- Handler Development Guide (for developers creating new handlers) - CREATED
+- API Integration Guide (for SvelteKit frontend developers)
+- Handler API Reference (TypeScript interface documentation) - CREATED
+- CSV Format Documentation (updated with CSVToJSONAdapter)
+- CONTRIBUTING.md (community handler contribution guidelines)
+- Updated README (handler architecture overview)
+
+---
+
+## Success Criteria Summary
+
+- ✅ All existing YAML examples produce identical .h5p output
+- ✅ Switch statement in InteractiveBookAIModule replaced with handler registry
+- ✅ Core handlers (Text, Image, Audio) implemented and tested
+- ✅ AI handlers (AIText, Quiz) integrated with QuizGenerator
+- [ ] Embedded handlers (Flashcards, DialogCards) reuse existing logic
+- [ ] CSVToJSONAdapter maintains backward compatibility with CSV workflows
+- [ ] H5pCompiler extracted as reusable library for CLI and API
+- [ ] SvelteKit API endpoint designed and documented (implementation-ready)
+- [ ] Shared TypeScript types support frontend integration
+- ✅ Comprehensive documentation for developers and community contributors
+- ✅ Test coverage for critical handler workflows (22+ tests created)
+- ✅ No template-based generation anywhere in the system
