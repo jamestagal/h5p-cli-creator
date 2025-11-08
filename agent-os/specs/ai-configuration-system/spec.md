@@ -136,26 +136,161 @@ POST /api/smart-import/generate
     "content": string | File | URL
   },
   "language": "en",
-  "aiConfig": {  // Same AIConfiguration type!
+  "aiConfig": {  // Same AIConfiguration type - applied universally!
     "targetAudience": "grade-6",
     "tone": "educational",
     "customization": "Focus on visual learners"
   },
-  "outputTypes": ["flashcards", "dialog-cards", "summary", "interactive-book"]
+  "outputTypes": [
+    "flashcards",        // Generate standalone flashcards.h5p
+    "dialog-cards",      // Generate standalone dialog-cards.h5p
+    "summary",           // Generate standalone summary.h5p
+    "interactive-book"   // Generate interactive-book.h5p with selected sub-content
+  ],
+  "interactiveBookOptions": {
+    "includeSubContent": [
+      "flashcards",      // Embed flashcards in book chapters
+      "ai-quiz",         // Embed quizzes in book chapters
+      "summary"          // Embed summaries in book chapters
+      // NOT including "dialog-cards" - user's choice!
+    ],
+    "chaptersFromSections": true  // Auto-create chapters from source sections
+  }
+}
+```
+
+**Response Structure:**
+```typescript
+{
+  "status": "success",
+  "packages": [
+    {
+      "type": "flashcards",
+      "filename": "flashcards.h5p",
+      "buffer": Buffer,
+      "size": 45312
+    },
+    {
+      "type": "dialog-cards",
+      "filename": "dialog-cards.h5p",
+      "buffer": Buffer,
+      "size": 38192
+    },
+    {
+      "type": "summary",
+      "filename": "summary.h5p",
+      "buffer": Buffer,
+      "size": 12483
+    },
+    {
+      "type": "interactive-book",
+      "filename": "interactive-book.h5p",
+      "buffer": Buffer,
+      "size": 123456,
+      "metadata": {
+        "chapters": 5,
+        "includedSubContent": ["flashcards", "ai-quiz", "summary"]
+      }
+    }
+  ],
+  "aiConfig": {
+    "targetAudience": "grade-6",
+    "tone": "educational"
+  }
 }
 ```
 
 **Key Architectural Points:**
-- **Same AIConfiguration** used for all content types
-- **Same AIPromptBuilder** service constructs prompts
-- **Same reading level presets** apply across content types
+- **Same AIConfiguration** used for ALL content types (standalone AND embedded)
+- **Two-level user control:**
+  1. `outputTypes` - Which standalone packages to generate
+  2. `includeSubContent` - Which content types to embed in Interactive Book
+- User can generate Interactive Book WITHOUT any standalone packages (just `["interactive-book"]`)
+- User can generate standalone packages WITHOUT Interactive Book (exclude "interactive-book" from outputTypes)
+- User can generate BOTH (H5P.com default: Interactive Book auto-includes everything)
+- **Our advantage:** Explicit control vs H5P.com's "include everything" approach
+- **Same AIPromptBuilder** service constructs prompts for all generators
+- **Same reading level presets** apply across all content types
 - Each content type generator (FlashcardsGenerator, SummaryGenerator, etc.) uses AIPromptBuilder
 - Configuration is **not tied to BookDefinition** - it's universal
 
+**Example Usage Scenario:**
+
+A teacher uploads a 10-page PDF about "The Solar System" with aiConfig set to "grade-6". They select:
+- `outputTypes: ["flashcards", "dialog-cards", "interactive-book"]`
+- `includeSubContent: ["flashcards", "ai-quiz"]`
+
+**Smart Import generates from ONE source:**
+
+1. **flashcards.h5p** (standalone) - 8 planet flashcards for review
+2. **dialog-cards.h5p** (standalone) - 6 space terminology cards
+3. **interactive-book.h5p** (5 chapters):
+   - Chapter 1: "Introduction" - AI-generated text
+   - Chapter 2: "Inner Planets" - AI-generated text + embedded flashcards + embedded quiz
+   - Chapter 3: "Outer Planets" - AI-generated text + embedded flashcards + embedded quiz
+   - Chapter 4: "Moons and Asteroids" - AI-generated text + embedded quiz
+   - Chapter 5: "Summary" - AI-generated text
+
+**ALL content uses grade-6 reading level** - teacher configured once, applied everywhere!
+
+**TypeScript Interfaces for Smart Import (Phase 5 - Export for Phase 6):**
+
+```typescript
+// Export from src/compiler/types.ts
+
+export interface SmartImportRequest {
+  source: {
+    type: "text" | "file" | "url";
+    content: string | File | URL;
+  };
+  language: string;
+  aiConfig?: AIConfiguration;  // Same universal type!
+  outputTypes: ContentTypeOption[];
+  interactiveBookOptions?: InteractiveBookOptions;
+}
+
+export type ContentTypeOption =
+  | "flashcards"
+  | "dialog-cards"
+  | "summary"
+  | "ai-quiz"
+  | "interactive-book"
+  | "timeline"
+  | "accordion"
+  | "image-hotspots";
+
+export interface InteractiveBookOptions {
+  includeSubContent?: ContentTypeOption[];  // Which types to embed in chapters
+  chaptersFromSections?: boolean;           // Auto-create chapters from source sections
+  maxChapters?: number;                     // Limit number of chapters
+}
+
+export interface SmartImportResponse {
+  status: "success" | "error";
+  packages?: GeneratedPackage[];
+  aiConfig?: AIConfiguration;
+  error?: string;
+  details?: string[];
+}
+
+export interface GeneratedPackage {
+  type: ContentTypeOption;
+  filename: string;
+  buffer: Buffer;
+  size: number;
+  metadata?: {
+    chapters?: number;
+    includedSubContent?: ContentTypeOption[];
+    itemCount?: number;
+  };
+}
+```
+
 **Phase 5 Deliverables:**
-- Document Smart Import integration pattern
+- Document Smart Import integration pattern with request/response examples
 - Ensure AIPromptBuilder works for ANY content type (not just Interactive Books)
-- Export types for frontend Smart Import UI
+- Export Smart Import types (SmartImportRequest, InteractiveBookOptions, SmartImportResponse)
+- Document type usage in smart-import-api.md
 - Note: Full Smart Import implementation deferred to Phase 6
 
 ## Visual Design
