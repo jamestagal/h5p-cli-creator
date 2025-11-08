@@ -117,7 +117,7 @@ export class FlashcardsModule implements yargs.CommandModule {
       const libraryData = await libraryRegistry.fetchLibrary(lib);
       if (libraryData) {
         dependencies.push(libraryData);
-        const deps = await libraryRegistry.resolveDependencies(libraryData);
+        const deps = await libraryRegistry.resolveDependencies(lib);
         dependencies.push(...deps);
       }
     }

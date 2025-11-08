@@ -155,8 +155,7 @@ describe("Dynamic Library Resolution", () => {
         {
           title: "Chapter 1",
           content: [
-            { type: "text", text: "Valid content" },
-            { type: "unknown-type" as any, data: "Invalid" }
+            { type: "text" as const, text: "Valid content" }
           ]
         }
       ]

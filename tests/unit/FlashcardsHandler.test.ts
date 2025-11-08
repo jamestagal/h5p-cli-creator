@@ -36,7 +36,7 @@ describe("FlashcardsHandler", () => {
 
   it("should validate content with cards array", () => {
     const validItem = {
-      type: "flashcards",
+      type: "flashcards" as const,
       cards: [
         { question: "What is 2+2?", answer: "4" },
         { question: "What is 3+3?", answer: "6" },
@@ -49,7 +49,7 @@ describe("FlashcardsHandler", () => {
 
   it("should fail validation when cards array is missing", () => {
     const invalidItem = {
-      type: "flashcards",
+      type: "flashcards" as const,
     };
 
     const result = handler.validate(invalidItem);
@@ -59,7 +59,7 @@ describe("FlashcardsHandler", () => {
 
   it("should fail validation when cards is not an array", () => {
     const invalidItem = {
-      type: "flashcards",
+      type: "flashcards" as const,
       cards: "not an array",
     };
 
@@ -70,7 +70,7 @@ describe("FlashcardsHandler", () => {
 
   it("should fail validation when cards array is empty", () => {
     const invalidItem = {
-      type: "flashcards",
+      type: "flashcards" as const,
       cards: [],
     };
 
@@ -81,7 +81,7 @@ describe("FlashcardsHandler", () => {
 
   it("should process flashcard content and generate H5P structure", async () => {
     const item = {
-      type: "flashcards",
+      type: "flashcards" as const,
       title: "Math Quiz",
       description: "Practice basic math",
       cards: [
@@ -105,7 +105,7 @@ describe("FlashcardsHandler", () => {
 
   it("should handle flashcards with media files", async () => {
     const item = {
-      type: "flashcards",
+      type: "flashcards" as const,
       cards: [
         {
           question: "What is this animal?",

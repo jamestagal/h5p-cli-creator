@@ -39,7 +39,7 @@ describe("AudioHandler", () => {
   describe("process", () => {
     it("should process local audio file", async () => {
       const item = {
-        type: "audio",
+        type: "audio" as const,
         path: "/path/to/audio.mp3",
         title: "Audio Title",
       };
@@ -54,7 +54,7 @@ describe("AudioHandler", () => {
 
     it("should process audio URL", async () => {
       const item = {
-        type: "audio",
+        type: "audio" as const,
         path: "https://example.com/audio.mp3",
         title: "Remote Audio",
       };
@@ -69,7 +69,7 @@ describe("AudioHandler", () => {
 
     it("should handle audio without title", async () => {
       const item = {
-        type: "audio",
+        type: "audio" as const,
         path: "/test.mp3",
       };
 
@@ -83,7 +83,7 @@ describe("AudioHandler", () => {
 
     it("should log progress in verbose mode", async () => {
       const item = {
-        type: "audio",
+        type: "audio" as const,
         path: "/test.mp3",
         title: "Verbose Audio",
       };
@@ -99,7 +99,7 @@ describe("AudioHandler", () => {
       mockContext.options.verbose = false;
 
       const item = {
-        type: "audio",
+        type: "audio" as const,
         path: "/test.mp3",
         title: "Silent Audio",
       };
@@ -113,7 +113,7 @@ describe("AudioHandler", () => {
   describe("validate", () => {
     it("should validate valid audio content", () => {
       const item = {
-        type: "audio",
+        type: "audio" as const,
         path: "/test.mp3",
       };
 
@@ -125,7 +125,7 @@ describe("AudioHandler", () => {
 
     it("should reject content without path field", () => {
       const item = {
-        type: "audio",
+        type: "audio" as const,
       };
 
       const result = handler.validate(item);
@@ -136,7 +136,7 @@ describe("AudioHandler", () => {
 
     it("should reject content with non-string path", () => {
       const item = {
-        type: "audio",
+        type: "audio" as const,
         path: 123,
       };
 

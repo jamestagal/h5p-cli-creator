@@ -39,7 +39,7 @@ describe("ImageHandler", () => {
   describe("process", () => {
     it("should process local file path", async () => {
       const item = {
-        type: "image",
+        type: "image" as const,
         path: "/path/to/image.jpg",
         alt: "Test Image",
         title: "Image Title",
@@ -56,7 +56,7 @@ describe("ImageHandler", () => {
 
     it("should process URL", async () => {
       const item = {
-        type: "image",
+        type: "image" as const,
         path: "https://example.com/image.jpg",
         alt: "Remote Image",
         title: "Remote",
@@ -73,7 +73,7 @@ describe("ImageHandler", () => {
 
     it("should handle image without title", async () => {
       const item = {
-        type: "image",
+        type: "image" as const,
         path: "/test.jpg",
         alt: "No title image",
       };
@@ -89,7 +89,7 @@ describe("ImageHandler", () => {
 
     it("should log progress in verbose mode", async () => {
       const item = {
-        type: "image",
+        type: "image" as const,
         path: "/test.jpg",
         alt: "Test",
         title: "Verbose Image",
@@ -106,7 +106,7 @@ describe("ImageHandler", () => {
   describe("validate", () => {
     it("should validate valid image content", () => {
       const item = {
-        type: "image",
+        type: "image" as const,
         path: "/test.jpg",
         alt: "Test alt text",
       };
@@ -119,7 +119,7 @@ describe("ImageHandler", () => {
 
     it("should reject content without path field", () => {
       const item = {
-        type: "image",
+        type: "image" as const,
         alt: "Missing path",
       };
 
@@ -131,7 +131,7 @@ describe("ImageHandler", () => {
 
     it("should reject content without alt field", () => {
       const item = {
-        type: "image",
+        type: "image" as const,
         path: "/test.jpg",
       };
 
@@ -143,7 +143,7 @@ describe("ImageHandler", () => {
 
     it("should reject content with non-string fields", () => {
       const item = {
-        type: "image",
+        type: "image" as const,
         path: 123,
         alt: "Test",
       };

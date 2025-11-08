@@ -36,7 +36,7 @@ describe("DialogCardsHandler", () => {
 
   it("should validate content with cards array", () => {
     const validItem = {
-      type: "dialogcards",
+      type: "dialogcards" as const,
       cards: [
         { front: "Hello", back: "Hola" },
         { front: "Goodbye", back: "Adiós" },
@@ -49,7 +49,7 @@ describe("DialogCardsHandler", () => {
 
   it("should fail validation when cards array is missing", () => {
     const invalidItem = {
-      type: "dialogcards",
+      type: "dialogcards" as const,
     };
 
     const result = handler.validate(invalidItem);
@@ -59,7 +59,7 @@ describe("DialogCardsHandler", () => {
 
   it("should fail validation when cards is not an array", () => {
     const invalidItem = {
-      type: "dialogcards",
+      type: "dialogcards" as const,
       cards: "not an array",
     };
 
@@ -70,7 +70,7 @@ describe("DialogCardsHandler", () => {
 
   it("should fail validation when cards array is empty", () => {
     const invalidItem = {
-      type: "dialogcards",
+      type: "dialogcards" as const,
       cards: [],
     };
 
@@ -81,7 +81,7 @@ describe("DialogCardsHandler", () => {
 
   it("should fail validation when card is missing front text", () => {
     const invalidItem = {
-      type: "dialogcards",
+      type: "dialogcards" as const,
       cards: [{ back: "Hola" }],
     };
 
@@ -92,7 +92,7 @@ describe("DialogCardsHandler", () => {
 
   it("should fail validation when card is missing back text", () => {
     const invalidItem = {
-      type: "dialogcards",
+      type: "dialogcards" as const,
       cards: [{ front: "Hello" }],
     };
 
@@ -103,7 +103,7 @@ describe("DialogCardsHandler", () => {
 
   it("should process dialog cards content and generate H5P structure", async () => {
     const item = {
-      type: "dialogcards",
+      type: "dialogcards" as const,
       title: "Spanish Vocabulary",
       mode: "repetition" as const,
       cards: [
@@ -127,7 +127,7 @@ describe("DialogCardsHandler", () => {
 
   it("should handle dialog cards with media files", async () => {
     const item = {
-      type: "dialogcards",
+      type: "dialogcards" as const,
       cards: [
         {
           front: "Listen",
@@ -147,7 +147,7 @@ describe("DialogCardsHandler", () => {
 
   it("should default to repetition mode when not specified", async () => {
     const item = {
-      type: "dialogcards",
+      type: "dialogcards" as const,
       cards: [{ front: "Hello", back: "Hola" }],
     };
 

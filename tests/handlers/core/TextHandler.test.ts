@@ -38,7 +38,7 @@ describe("TextHandler", () => {
   describe("process", () => {
     it("should process valid text content", async () => {
       const item = {
-        type: "text",
+        type: "text" as const,
         title: "Test Page",
         text: "This is test content",
       };
@@ -53,7 +53,7 @@ describe("TextHandler", () => {
 
     it("should handle content without title", async () => {
       const item = {
-        type: "text",
+        type: "text" as const,
         text: "Content without title",
       };
 
@@ -67,7 +67,7 @@ describe("TextHandler", () => {
 
     it("should log progress in verbose mode", async () => {
       const item = {
-        type: "text",
+        type: "text" as const,
         title: "Verbose Test",
         text: "Testing logging",
       };
@@ -83,7 +83,7 @@ describe("TextHandler", () => {
       mockContext.options.verbose = false;
 
       const item = {
-        type: "text",
+        type: "text" as const,
         title: "Silent Test",
         text: "No logging",
       };
@@ -97,7 +97,7 @@ describe("TextHandler", () => {
   describe("validate", () => {
     it("should validate valid text content", () => {
       const item = {
-        type: "text",
+        type: "text" as const,
         text: "Valid content",
       };
 
@@ -109,7 +109,7 @@ describe("TextHandler", () => {
 
     it("should reject content without text field", () => {
       const item = {
-        type: "text",
+        type: "text" as const,
       };
 
       const result = handler.validate(item);
@@ -120,7 +120,7 @@ describe("TextHandler", () => {
 
     it("should reject content with non-string text", () => {
       const item = {
-        type: "text",
+        type: "text" as const,
         text: 123,
       };
 
