@@ -106,3 +106,29 @@ export interface ValidationResult {
   valid: boolean;
   errors: ValidationError[];
 }
+
+/**
+ * Compiler options for H5P package generation
+ *
+ * Re-exported from H5pCompiler for convenience
+ */
+export { CompilerOptions } from "./H5pCompiler";
+
+/**
+ * Book definition types
+ *
+ * Re-exported from YamlInputParser for convenience and frontend integration
+ */
+export {
+  BookDefinition,
+  ChapterDefinition,
+  AnyContentItem,
+  ContentType,
+  TextContent,
+  AITextContent,
+  ImageContent,
+  AudioContent,
+  AIQuizContent,
+  FlashcardsContent,
+  DialogCardsContent
+} from "./YamlInputParser";

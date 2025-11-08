@@ -2,6 +2,94 @@
 
 This is a command line utility that allows you to mass create H5P content from input files using the command line. It is written in TypeScript and runs on NodeJS, meaning it's platform independent. Currently, it supports the **Flashcards**, **Dialog Cards**, and **Interactive Book** content types, but you can use the infrastructure provided here to add functionality for other content types. Pull requests are welcomed!
 
+## Handler-Based Architecture
+
+This project uses a **handler-based plugin architecture** that makes it easy to add new content types without modifying core compiler code. Each content type is implemented as a self-contained handler that:
+
+- **Validates** content items (ensures required fields are present)
+- **Processes** content using the ChapterBuilder API
+- **Declares** required H5P libraries for dependency resolution
+
+### Available Handlers
+
+**Core Content Types:**
+- `text` - Static text content with HTML formatting
+- `image` - Image content with alt text for accessibility
+- `audio` - Audio narration files
+
+**AI-Powered Types:**
+- `ai-text` - AI-generated educational text from prompts
+- `ai-quiz` - AI-generated multiple choice quizzes
+
+**Embedded Types:**
+- `flashcards` - Flashcard decks for memorization
+- `dialogcards` - Dialog cards for language learning
+
+### Creating Custom Handlers
+
+Want to add a new content type? It's easy! Each handler is a TypeScript class implementing the `ContentHandler` interface:
+
+```typescript
+import { ContentHandler, HandlerContext } from "./ContentHandler";
+
+export class MyCustomHandler implements ContentHandler {
+  // Unique identifier for this content type
+  getContentType(): string {
+    return "my-custom-type";
+  }
+
+  // Validate content item structure
+  validate(item: any): { valid: boolean; error?: string } {
+    if (!item.requiredField) {
+      return { valid: false, error: "Missing required field" };
+    }
+    return { valid: true };
+  }
+
+  // Process content and add to chapter
+  async process(context: HandlerContext, item: any): Promise<void> {
+    context.chapterBuilder.addTextPage(item.title, item.content);
+  }
+
+  // Declare required H5P libraries
+  getRequiredLibraries(): string[] {
+    return ["H5P.CustomLibrary"];
+  }
+}
+```
+
+**Benefits of the Handler Architecture:**
+- Add new content types in ~30-60 minutes (vs 4-8 hours with old approach)
+- No need to modify core compiler code
+- Automatic library dependency resolution
+- Clean separation of concerns
+- Easy to test and maintain
+
+For detailed instructions, see the [Handler Development Guide](docs/Handler_Development_Guide.md).
+
+### API Integration
+
+The H5P Compiler can be used as a library in SvelteKit (or other web frameworks) to generate H5P packages from JSON input:
+
+```typescript
+// API endpoint example
+import { H5pCompiler } from "$lib/compiler/H5pCompiler";
+import type { BookDefinition } from "$lib/compiler/types";
+
+const compiler = new H5pCompiler(handlerRegistry, libraryRegistry, quizGenerator);
+const h5pBuffer = await compiler.compile(bookDefinition);
+
+// Return as downloadable file
+return new Response(h5pBuffer, {
+  headers: {
+    "Content-Type": "application/zip",
+    "Content-Disposition": `attachment; filename="${bookDef.title}.h5p"`
+  }
+});
+```
+
+For complete API integration instructions, see the [API Integration Guide](docs/API_Integration_Guide.md).
+
 ## Run
 * Install [NodeJS](https://nodejs.org/)
 * [clone this repository](https://help.github.com/articles/cloning-a-repository/) into a directory on your computer
@@ -175,6 +263,8 @@ chapters:
 | `image` | Image content | `path` | `title`, `alt` |
 | `audio` | Audio narration | `path` | `title` |
 | `ai-quiz` | AI-generated multiple choice quiz | `sourceText`, `questionCount` | `title` |
+| `flashcards` | Flashcard deck | `cards` (array) | `title`, `description` |
+| `dialogcards` | Dialog cards | `cards` (array) | `title`, `mode` |
 
 **CLI Options:**
 - `--ai-provider <gemini|claude|auto>` - Choose AI provider (default: auto-detect)
@@ -246,6 +336,18 @@ paragraphs separated by blank lines."
 
 **See Example:**
 Check out [examples/biology-lesson.yaml](examples/biology-lesson.yaml) for a complete working example with AI text generation, images, audio, and quizzes.
+
+## Contributing
+
+We welcome contributions! To add a new content type or fix bugs:
+
+1. **Fork the repository** and create a feature branch
+2. **Follow the handler pattern** - See [Handler Development Guide](docs/Handler_Development_Guide.md)
+3. **Write tests** - Ensure your handler has unit tests
+4. **Update documentation** - Add examples and update this README
+5. **Submit a pull request** - We'll review and provide feedback
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ## Coding conventions
 All classes that exist in the actual H5P libraries or content types start with `H5p`, e.g. `H5pImage`. All classes that are part of the creator and don't exist in external libraries or content types don't start with this prefix.

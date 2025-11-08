@@ -1,16 +1,12 @@
 import * as dotenv from "dotenv";
 import * as path from "path";
 import * as yargs from "yargs";
+import * as fsExtra from "fs-extra";
 
-import { YamlInputParser, AnyContentItem } from "../../compiler/YamlInputParser";
+import { YamlInputParser } from "../../compiler/YamlInputParser";
 import { LibraryRegistry } from "../../compiler/LibraryRegistry";
-import { SemanticValidator } from "../../compiler/SemanticValidator";
-import { ContentBuilder } from "../../compiler/ContentBuilder";
-import { ChapterBuilder } from "../../compiler/ChapterBuilder";
-import { PackageAssembler } from "../../compiler/PackageAssembler";
 import { QuizGenerator } from "../../ai/QuizGenerator";
 import { HandlerRegistry } from "../../handlers/HandlerRegistry";
-import { HandlerContext } from "../../handlers/HandlerContext";
 import { TextHandler } from "../../handlers/core/TextHandler";
 import { ImageHandler } from "../../handlers/core/ImageHandler";
 import { AudioHandler } from "../../handlers/core/AudioHandler";
@@ -18,6 +14,7 @@ import { AITextHandler } from "../../handlers/core/AITextHandler";
 import { QuizHandler } from "../../handlers/ai/QuizHandler";
 import { FlashcardsHandler } from "../../handlers/embedded/FlashcardsHandler";
 import { DialogCardsHandler } from "../../handlers/embedded/DialogCardsHandler";
+import { H5pCompiler } from "../../compiler/H5pCompiler";
 
 // Load environment variables
 dotenv.config();
@@ -29,9 +26,7 @@ dotenv.config();
  * This module uses the handler-based H5P compiler infrastructure:
  * - YamlInputParser: Parse YAML book definitions
  * - HandlerRegistry: Dynamic handler lookup and library resolution
- * - LibraryRegistry: Fetch and cache H5P libraries
- * - ContentBuilder: Build content programmatically
- * - PackageAssembler: Generate .h5p packages without templates
+ * - H5pCompiler: Reusable compiler for CLI and API usage
  * - QuizGenerator: AI-powered quiz generation (Gemini or Claude)
  */
 export class InteractiveBookAIModule implements yargs.CommandModule {
@@ -137,41 +132,11 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
         console.log();
       }
 
-      // Step 2: Fetch H5P libraries dynamically based on content types
-      if (verbose) console.log("Step 2: Fetching H5P libraries...");
-      const registry = new LibraryRegistry();
-
-      // Get required libraries from handlers
-      const requiredLibraries = handlerRegistry.getRequiredLibrariesForBook(bookDef);
-
-      if (verbose) {
-        console.log(`  - Required libraries: ${requiredLibraries.join(", ")}`);
-      }
-
-      // Fetch all required libraries
-      for (const lib of requiredLibraries) {
-        await registry.fetchLibrary(lib);
-      }
-
-      // Resolve all dependencies
-      const allDeps = new Map<string, any>();
-      for (const lib of requiredLibraries) {
-        const deps = await registry.resolveDependencies(lib);
-        deps.forEach(dep => {
-          const key = `${dep.machineName}-${dep.majorVersion}.${dep.minorVersion}`;
-          allDeps.set(key, dep);
-        });
-      }
-      const dependencies = Array.from(allDeps.values());
-
-      if (verbose) {
-        console.log(`  - Total libraries with dependencies: ${dependencies.length}`);
-        console.log();
-      }
-
-      // Step 3: Initialize AI components
-      if (verbose) console.log("Step 3: Initializing AI components...");
+      // Step 2: Initialize compiler components
+      if (verbose) console.log("Step 2: Initializing compiler...");
+      const libraryRegistry = new LibraryRegistry();
       const quizGenerator = new QuizGenerator();
+      const compiler = new H5pCompiler(handlerRegistry, libraryRegistry, quizGenerator);
 
       if (verbose) {
         const provider = process.env.GOOGLE_API_KEY ? "Google Gemini 2.5 Flash" : "Anthropic Claude Sonnet 4";
@@ -179,93 +144,26 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
         console.log();
       }
 
-      // Step 4: Build content using handlers
-      if (verbose) console.log("Step 4: Building Interactive Book content...");
-      const validator = new SemanticValidator();
-      const builder = new ContentBuilder(registry, validator);
-
-      builder.createBook(bookDef.title, bookDef.language);
-      if (verbose) console.log(`  - Created book: "${bookDef.title}"`);
-
-      // Process each chapter
-      for (let i = 0; i < bookDef.chapters.length; i++) {
-        const chapter = bookDef.chapters[i];
-        if (verbose) console.log(`  - Processing chapter ${i + 1}: "${chapter.title}"`);
-
-        const chapterBuilder = builder.addChapter(chapter.title);
-
-        // Create handler context
-        const context: HandlerContext = {
-          chapterBuilder,
-          libraryRegistry: registry,
-          quizGenerator,
-          logger: {
-            log: console.log,
-            warn: console.warn,
-            error: console.error
-          },
-          mediaFiles: builder.getMediaFiles(),
-          basePath: path.dirname(path.resolve(yamlFile)),
-          options: { verbose, aiProvider }
-        };
-
-        // Process each content item with appropriate handler
-        for (const item of chapter.content) {
-          const handler = handlerRegistry.getHandler(item.type);
-
-          if (!handler) {
-            console.warn(`    - Unknown content type: ${item.type}`);
-            continue;
-          }
-
-          // Validate before processing
-          const validation = handler.validate(item);
-          if (!validation.valid) {
-            console.error(`    - Validation failed: ${validation.error}`);
-            continue;
-          }
-
-          // Process with handler
-          await handler.process(context, item);
-        }
-      }
+      // Step 3: Compile book to .h5p buffer
+      if (verbose) console.log("Step 3: Compiling book to .h5p package...");
+      const h5pBuffer = await compiler.compile(bookDef, {
+        verbose,
+        aiProvider,
+        basePath: path.dirname(path.resolve(yamlFile))
+      });
 
       if (verbose) console.log();
 
-      // Step 5: Assemble package
-      if (verbose) console.log("Step 5: Assembling .h5p package...");
-      const assembler = new PackageAssembler();
-      const content = builder.build();
-      const mediaFiles = builder.getMediaFiles();
-
-      if (verbose) {
-        console.log(`  - Content sections: ${content.chapters.length}`);
-        console.log(`  - Media files: ${mediaFiles.length}`);
-      }
-
-      const packageZip = await assembler.assemble(
-        content,
-        dependencies,
-        mediaFiles,
-        builder.getTitle(),
-        builder.getLanguage(),
-        registry
-      );
-
-      if (verbose) console.log("  - Package assembled successfully");
-
-      // Step 6: Save package
-      if (verbose) console.log("Step 6: Saving package to disk...");
+      // Step 4: Save package to disk
+      if (verbose) console.log("Step 4: Saving package to disk...");
       const outputPath = path.resolve(outputFile);
-      await assembler.savePackage(packageZip, outputPath);
+      await fsExtra.writeFile(outputPath, h5pBuffer);
 
       console.log();
       console.log("✅ Success!");
       console.log(`📦 Generated: ${outputPath}`);
       console.log(`   - Title: ${bookDef.title}`);
       console.log(`   - Chapters: ${bookDef.chapters.length}`);
-      console.log(`   - Libraries: ${dependencies.length}`);
-      console.log(`   - Media files: ${mediaFiles.length}`);
       console.log();
 
     } catch (error) {
