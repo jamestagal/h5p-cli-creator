@@ -127,7 +127,7 @@ export class CSVToJSONAdapter {
     return {
       title: options.title,
       language: options.language,
-      description: options.description,
+      // description: options.description,  // TODO: Add description field to BookDefinition type
       chapters: [chapter]
     };
   }
@@ -184,7 +184,7 @@ export class CSVToJSONAdapter {
     return {
       title: options.title,
       language: options.language,
-      description: options.description,
+      // description: options.description,  // TODO: Add description field to BookDefinition type
       chapters: [chapter]
     };
   }
@@ -224,7 +224,7 @@ export class CSVToJSONAdapter {
     return {
       title: options.title,
       language: options.language,
-      description: options.description,
+      // description: options.description,  // TODO: Add description field to BookDefinition type
       chapters: [chapter]
     };
   }

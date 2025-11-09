@@ -109,8 +109,8 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
       handlerRegistry.register(new DialogCardsHandler());
       handlerRegistry.register(new AccordionHandler());
       handlerRegistry.register(new AIAccordionHandler());
-      handlerRegistry.register(new SingleChoiceSetHandler());
-      handlerRegistry.register(new AISingleChoiceSetHandler());
+      handlerRegistry.register(new SingleChoiceSetHandler(), ["single-choice-set"]);
+      handlerRegistry.register(new AISingleChoiceSetHandler(), ["ai-single-choice-set"]);
 
       // Override API key if provided
       if (apiKey) {

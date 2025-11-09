@@ -28,16 +28,26 @@ export class HandlerRegistry {
 
   /**
    * Register a content handler with the registry.
-   * Throws error if handler type is already registered.
+   * Supports optional type aliases for handlers that accept multiple type identifiers.
    * @param handler ContentHandler implementation to register
-   * @throws Error if handler type already registered
+   * @param aliases Optional array of alternative type identifiers (e.g., ["single-choice-set"] for "singlechoiceset")
+   * @throws Error if any type (primary or alias) is already registered
    */
-  public register(handler: ContentHandler): void {
-    const type = handler.getContentType();
-    if (this.handlers.has(type)) {
-      throw new Error(`Handler for type '${type}' already registered`);
+  public register(handler: ContentHandler, aliases?: string[]): void {
+    const primaryType = handler.getContentType();
+    const allTypes = [primaryType, ...(aliases || [])];
+
+    // Check if any type is already registered
+    for (const type of allTypes) {
+      if (this.handlers.has(type)) {
+        throw new Error(`Handler for type '${type}' already registered`);
+      }
     }
-    this.handlers.set(type, handler);
+
+    // Register handler for all types
+    for (const type of allTypes) {
+      this.handlers.set(type, handler);
+    }
   }
 
   /**
