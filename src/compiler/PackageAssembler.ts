@@ -32,16 +32,19 @@ export class PackageAssembler {
   ): Promise<jszip> {
     const zip = new jszip();
 
-    // Generate and add h5p.json
-    const h5pJson = this.generateH5pJson(content, dependencies, title, language);
+    // Bundle all library directories (this also extracts layout libraries from InteractiveBook)
+    const layoutLibraries = await this.bundleLibraries(zip, dependencies, registry);
+
+    // Add layout libraries to dependencies for h5p.json
+    const allDependencies = [...dependencies, ...layoutLibraries];
+
+    // Generate and add h5p.json with ALL dependencies including layout libraries
+    const h5pJson = this.generateH5pJson(content, allDependencies, title, language);
     zip.file("h5p.json", JSON.stringify(h5pJson, null, 2));
 
     // Add content.json
     const contentJson = this.serializeContentJson(content);
     zip.file("content/content.json", contentJson);
-
-    // Bundle all library directories
-    await this.bundleLibraries(zip, dependencies, registry);
 
     // Add media files
     this.addMediaFiles(zip, mediaFiles);
@@ -92,33 +95,53 @@ export class PackageAssembler {
   /**
    * Bundles all required library directories into the package.
    * Copies library files from cached .h5p packages without using templates.
+   * Also extracts layout libraries (Column, Row, RowColumn) from InteractiveBook.
    * @param zip JSZip instance to add libraries to
    * @param dependencies All library dependencies
    * @param registry Library registry for accessing cached packages
+   * @returns Layout libraries that were extracted (to be added to h5p.json)
    */
   public async bundleLibraries(
     zip: jszip,
     dependencies: LibraryMetadata[],
     registry: LibraryRegistry
-  ): Promise<void> {
+  ): Promise<LibraryMetadata[]> {
     // Get unique parent libraries (those that were downloaded as .h5p files)
-    const parentLibraries = this.getParentLibraries(dependencies);
+    const parentLibraries = await this.getParentLibraries(dependencies);
+    const extractedLayoutLibraries: LibraryMetadata[] = [];
 
     for (const parentLib of parentLibraries) {
-      const cachePath = path.join(this.cacheDir, `${parentLib}.h5p`);
+      // Try to find versioned cache file first (e.g., H5P.Flashcards-1.5.h5p)
+      // Use case-insensitive matching since H5P library names can vary in casing
+      const cacheFiles = await fsExtra.readdir(this.cacheDir);
+      const parentLibLower = parentLib.toLowerCase();
+      const matchingFiles = cacheFiles.filter(file => {
+        const fileLower = file.toLowerCase();
+        return (
+          (fileLower.startsWith(`${parentLibLower}-`) || fileLower === `${parentLibLower}.h5p`) &&
+          file.endsWith('.h5p')
+        );
+      });
 
-      if (!(await fsExtra.pathExists(cachePath))) {
+      if (matchingFiles.length === 0) {
         console.warn(`Warning: Cached package not found for ${parentLib}`);
         continue;
       }
+
+      // Use the first matching file (versioned or non-versioned)
+      const cacheFilename = matchingFiles[0];
+      const cachePath = path.join(this.cacheDir, cacheFilename);
 
       // Load the cached package
       const packageBuffer = await fsExtra.readFile(cachePath);
       const packageZip = await jszip.loadAsync(packageBuffer);
 
       // Copy all library directories from this package
-      await this.copyLibraryDirectories(zip, packageZip, dependencies);
+      const layoutLibs = await this.copyLibraryDirectories(zip, packageZip, dependencies);
+      extractedLayoutLibraries.push(...layoutLibs);
     }
+
+    return extractedLayoutLibraries;
   }
 
   /**
@@ -170,23 +193,34 @@ export class PackageAssembler {
   /**
    * Identifies parent libraries that were downloaded as .h5p packages.
    * These are the top-level content types from the Hub.
+   * Checks which dependencies have cached .h5p files (versioned or non-versioned).
    * @param dependencies All library dependencies
    * @returns Array of parent library names
    */
-  private getParentLibraries(dependencies: LibraryMetadata[]): string[] {
+  private async getParentLibraries(dependencies: LibraryMetadata[]): Promise<string[]> {
     const parentLibs = new Set<string>();
 
-    // The main library and any that were downloaded directly
-    // For now, we'll check which libraries have cached .h5p files
+    // Check cache directory for existing .h5p files
+    const cacheFiles = await fsExtra.readdir(this.cacheDir);
+
     for (const dep of dependencies) {
-      // Main content types are typically downloaded directly
-      // Dependencies might be bundled within parent packages
-      if (dep.runnable === 1 || dep.machineName === "H5P.InteractiveBook") {
+      // Check if this library has a cached .h5p file (versioned or non-versioned)
+      // Use case-insensitive matching since H5P library names can vary in casing
+      const hasCache = cacheFiles.some(file => {
+        const fileLower = file.toLowerCase();
+        const depNameLower = dep.machineName.toLowerCase();
+        return (
+          (fileLower.startsWith(`${depNameLower}-`) || fileLower === `${depNameLower}.h5p`) &&
+          file.endsWith('.h5p')
+        );
+      });
+
+      if (hasCache) {
         parentLibs.add(dep.machineName);
       }
     }
 
-    // Add common parent libraries that bundle dependencies
+    // Always include InteractiveBook as it's the main library
     parentLibs.add("H5P.InteractiveBook");
 
     return Array.from(parentLibs);
@@ -194,27 +228,63 @@ export class PackageAssembler {
 
   /**
    * Copies library directories from a source package to the destination package.
+   *
+   * IMPORTANT: Extracts libraries from dependencies list AND adds H5P.Column, Row, RowColumn
+   * which are used by Interactive Book but not declared as dependencies.
+   *
    * @param destZip Destination JSZip instance
    * @param sourceZip Source JSZip instance (cached package)
-   * @param dependencies Libraries to include
+   * @param dependencies Libraries to include from the dependency tree
+   * @returns Layout libraries that were found and extracted
    */
   private async copyLibraryDirectories(
     destZip: jszip,
     sourceZip: jszip,
     dependencies: LibraryMetadata[]
-  ): Promise<void> {
-    // Build set of library directory names we need
+  ): Promise<LibraryMetadata[]> {
+    // Build set of library directory names we need from dependencies
     const neededLibraries = new Set(
       dependencies.map(dep => `${dep.machineName}-${dep.majorVersion}.${dep.minorVersion}`)
     );
 
-    // Iterate through all files in source package
+    // Add Interactive Book layout libraries explicitly
+    // These are used by Interactive Book but not declared in dependency tree:
+    // - H5P.Column: Used for chapter structure
+    // - H5P.Row: Used for content rows within chapters
+    // - H5P.RowColumn: Used for columns within rows
     const files = Object.keys(sourceZip.files);
+    const layoutLibraries = ['H5P.Column', 'H5P.Row', 'H5P.RowColumn'];
+    const extractedLayoutLibs: LibraryMetadata[] = [];
 
+    for (const libName of layoutLibraries) {
+      for (const fileName of files) {
+        const match = fileName.match(new RegExp(`^(${libName}-(\\d+)\\.(\\d+))\\/`));
+        if (match) {
+          const fullLibName = match[1];  // e.g., "H5P.Column-1.18"
+          const majorVersion = parseInt(match[2]);
+          const minorVersion = parseInt(match[3]);
+
+          neededLibraries.add(fullLibName);
+
+          // Add to extracted list for h5p.json
+          extractedLayoutLibs.push({
+            machineName: libName,
+            majorVersion,
+            minorVersion,
+            patchVersion: 0,  // Not critical for h5p.json
+            title: libName.replace('H5P.', ''),
+            runnable: 0
+          });
+          break;
+        }
+      }
+    }
+
+    // Copy all files from needed library directories
     for (const fileName of files) {
-      // Check if this file belongs to a needed library directory
+      // Check if this file belongs to a needed library directory (case-insensitive)
       const matchesLibrary = Array.from(neededLibraries).some(libDir => {
-        return fileName.startsWith(`${libDir}/`);
+        return fileName.toLowerCase().startsWith(`${libDir.toLowerCase()}/`);
       });
 
       if (matchesLibrary) {
@@ -230,5 +300,7 @@ export class PackageAssembler {
         destZip.file(fileName, content);
       }
     }
+
+    return extractedLayoutLibs;
   }
 }

@@ -1,0 +1,232 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/sr258/h5p-cli-creator/schemas/BookDefinition.json",
+  "title": "BookDefinition",
+  "description": "Complete book definition for Interactive Book generation",
+  "type": "object",
+  "required": ["title", "language", "chapters"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Title of the Interactive Book",
+      "minLength": 1,
+      "examples": ["Biology Fundamentals", "Introduction to Physics"]
+    },
+    "language": {
+      "type": "string",
+      "description": "Language code (ISO 639-1)",
+      "pattern": "^[a-z]{2}(-[A-Z]{2})?$",
+      "examples": ["en", "de", "fr", "es", "en-US"]
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional book description or subtitle",
+      "examples": ["A comprehensive introduction to cellular biology"]
+    },
+    "aiConfig": {
+      "$ref": "AIConfiguration.json",
+      "description": "Book-level AI configuration applied to all AI-generated content"
+    },
+    "chapters": {
+      "type": "array",
+      "description": "Array of chapter definitions",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/ChapterDefinition"
+      }
+    }
+  },
+  "definitions": {
+    "ChapterDefinition": {
+      "type": "object",
+      "required": ["title", "content"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Chapter title",
+          "minLength": 1,
+          "examples": ["Introduction", "Cell Structure"]
+        },
+        "aiConfig": {
+          "$ref": "AIConfiguration.json",
+          "description": "Chapter-level AI configuration (overrides book-level)"
+        },
+        "content": {
+          "type": "array",
+          "description": "Array of content items",
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              { "$ref": "#/definitions/TextContent" },
+              { "$ref": "#/definitions/AITextContent" },
+              { "$ref": "#/definitions/ImageContent" },
+              { "$ref": "#/definitions/AudioContent" },
+              { "$ref": "#/definitions/AIQuizContent" },
+              { "$ref": "#/definitions/FlashcardsContent" },
+              { "$ref": "#/definitions/DialogCardsContent" }
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "TextContent": {
+      "type": "object",
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "const": "text" },
+        "title": { "type": "string" },
+        "text": {
+          "type": "string",
+          "description": "Content text (supports HTML: <p>, <h2>, <strong>, <em>, <ul>, <li>)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "AITextContent": {
+      "type": "object",
+      "required": ["type", "prompt"],
+      "properties": {
+        "type": { "const": "ai-text" },
+        "title": { "type": "string" },
+        "prompt": {
+          "type": "string",
+          "description": "Content prompt for AI generation"
+        },
+        "aiConfig": {
+          "$ref": "AIConfiguration.json",
+          "description": "Item-level AI configuration (overrides chapter and book)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ImageContent": {
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "type": { "const": "image" },
+        "title": { "type": "string" },
+        "path": {
+          "type": "string",
+          "description": "Local file path or URL (http://, https://)"
+        },
+        "alt": {
+          "type": "string",
+          "description": "Alt text for accessibility"
+        }
+      },
+      "additionalProperties": false
+    },
+    "AudioContent": {
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "type": { "const": "audio" },
+        "title": { "type": "string" },
+        "path": {
+          "type": "string",
+          "description": "Local file path or URL"
+        }
+      },
+      "additionalProperties": false
+    },
+    "AIQuizContent": {
+      "type": "object",
+      "required": ["type", "sourceText"],
+      "properties": {
+        "type": { "const": "ai-quiz" },
+        "title": { "type": "string" },
+        "sourceText": {
+          "type": "string",
+          "description": "Content to generate questions about"
+        },
+        "questionCount": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Number of questions to generate"
+        },
+        "aiConfig": {
+          "$ref": "AIConfiguration.json",
+          "description": "Item-level AI configuration (controls question complexity)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "FlashcardsContent": {
+      "type": "object",
+      "required": ["type", "cards"],
+      "properties": {
+        "type": { "const": "flashcards" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "cards": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["question", "answer"],
+            "properties": {
+              "question": { "type": "string" },
+              "answer": { "type": "string" },
+              "tip": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "DialogCardsContent": {
+      "type": "object",
+      "required": ["type", "cards"],
+      "properties": {
+        "type": { "const": "dialogcards" },
+        "title": { "type": "string" },
+        "mode": {
+          "type": "string",
+          "enum": ["normal", "repetition"],
+          "default": "normal"
+        },
+        "cards": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["front", "back"],
+            "properties": {
+              "front": { "type": "string" },
+              "back": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "title": "Biology Fundamentals",
+      "language": "en",
+      "aiConfig": {
+        "targetAudience": "grade-9",
+        "tone": "educational"
+      },
+      "chapters": [
+        {
+          "title": "Introduction",
+          "content": [
+            {
+              "type": "ai-text",
+              "prompt": "Explain what biology is and why it matters",
+              "title": "Welcome to Biology"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -52,7 +52,16 @@ describe("ContentBuilder", () => {
       expect(content.chapters[0].metadata.title).toBe("Chapter 1");
       expect(content.chapters[0].params.content).toHaveLength(1);
 
-      const textContent = content.chapters[0].params.content[0].content;
+      // Content is now wrapped in Row -> RowColumn structure
+      const rowContent = content.chapters[0].params.content[0].content;
+      expect(rowContent.library).toBe("H5P.Row 1.0");
+
+      // Navigate to RowColumn -> content
+      const rowColumnContent = rowContent.params.columns[0].content;
+      expect(rowColumnContent.library).toBe("H5P.RowColumn 1.0");
+
+      // Finally get the actual AdvancedText content
+      const textContent = rowColumnContent.params.content[0];
       expect(textContent.library).toBe("H5P.AdvancedText 1.1");
       expect(textContent.params.text).toContain("Introduction");
       expect(textContent.params.text).toContain("Welcome to chapter 1");
@@ -72,7 +81,14 @@ describe("ContentBuilder", () => {
       expect(content.chapters).toHaveLength(1);
       expect(content.chapters[0].params.content).toHaveLength(1);
 
-      const imageContent = content.chapters[0].params.content[0].content;
+      // Content is now wrapped in Row -> RowColumn structure
+      const rowContent = content.chapters[0].params.content[0].content;
+      expect(rowContent.library).toBe("H5P.Row 1.0");
+
+      const rowColumnContent = rowContent.params.columns[0].content;
+      expect(rowColumnContent.library).toBe("H5P.RowColumn 1.0");
+
+      const imageContent = rowColumnContent.params.content[0];
       expect(imageContent.library).toBe("H5P.Image 1.1");
       expect(imageContent.params.alt).toBe("A test image");
       expect(mediaFiles.length).toBeGreaterThan(0);
@@ -92,7 +108,14 @@ describe("ContentBuilder", () => {
       expect(content.chapters).toHaveLength(1);
       expect(content.chapters[0].params.content).toHaveLength(1);
 
-      const audioContent = content.chapters[0].params.content[0].content;
+      // Content is now wrapped in Row -> RowColumn structure
+      const rowContent = content.chapters[0].params.content[0].content;
+      expect(rowContent.library).toBe("H5P.Row 1.0");
+
+      const rowColumnContent = rowContent.params.columns[0].content;
+      expect(rowColumnContent.library).toBe("H5P.RowColumn 1.0");
+
+      const audioContent = rowColumnContent.params.content[0];
       expect(audioContent.library).toBe("H5P.Audio 1.5");
       expect(mediaFiles.length).toBeGreaterThan(0);
     });
@@ -147,7 +170,14 @@ describe("ContentBuilder", () => {
       expect(content.chapters).toHaveLength(1);
       expect(content.chapters[0].params.content).toHaveLength(1);
 
-      const quizItem = content.chapters[0].params.content[0].content;
+      // Content is now wrapped in Row -> RowColumn structure
+      const rowContent = content.chapters[0].params.content[0].content;
+      expect(rowContent.library).toBe("H5P.Row 1.0");
+
+      const rowColumnContent = rowContent.params.columns[0].content;
+      expect(rowColumnContent.library).toBe("H5P.RowColumn 1.0");
+
+      const quizItem = rowColumnContent.params.content[0];
       expect(quizItem.library).toBe("H5P.MultipleChoice 1.16");
       expect(quizItem.params.question).toBe("What is photosynthesis?");
       expect(quizItem.params.answers).toHaveLength(2);
@@ -220,7 +250,12 @@ describe("ContentBuilder", () => {
       chapter.addTextPage("My Title", "Paragraph 1\n\nParagraph 2");
 
       const content = builder.build();
-      const textParams = content.chapters[0].params.content[0].content.params;
+
+      // Navigate through Row -> RowColumn -> AdvancedText structure
+      const rowContent = content.chapters[0].params.content[0].content;
+      const rowColumnContent = rowContent.params.columns[0].content;
+      const textContent = rowColumnContent.params.content[0];
+      const textParams = textContent.params;
 
       expect(textParams.text).toContain("<h2>My Title</h2>");
       expect(textParams.text).toContain("<p>Paragraph 1</p>");

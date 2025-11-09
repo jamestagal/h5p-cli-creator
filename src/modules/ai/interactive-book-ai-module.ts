@@ -1,14 +1,20 @@
 import * as dotenv from "dotenv";
 import * as path from "path";
 import * as yargs from "yargs";
+import * as fsExtra from "fs-extra";
 
-import { YamlInputParser, AnyContentItem } from "../../compiler/YamlInputParser";
+import { YamlInputParser } from "../../compiler/YamlInputParser";
 import { LibraryRegistry } from "../../compiler/LibraryRegistry";
-import { SemanticValidator } from "../../compiler/SemanticValidator";
-import { ContentBuilder } from "../../compiler/ContentBuilder";
-import { ChapterBuilder } from "../../compiler/ChapterBuilder";
-import { PackageAssembler } from "../../compiler/PackageAssembler";
 import { QuizGenerator } from "../../ai/QuizGenerator";
+import { HandlerRegistry } from "../../handlers/HandlerRegistry";
+import { TextHandler } from "../../handlers/core/TextHandler";
+import { ImageHandler } from "../../handlers/core/ImageHandler";
+import { AudioHandler } from "../../handlers/core/AudioHandler";
+import { AITextHandler } from "../../handlers/core/AITextHandler";
+import { QuizHandler } from "../../handlers/ai/QuizHandler";
+import { FlashcardsHandler } from "../../handlers/embedded/FlashcardsHandler";
+import { DialogCardsHandler } from "../../handlers/embedded/DialogCardsHandler";
+import { H5pCompiler } from "../../compiler/H5pCompiler";
 
 // Load environment variables
 dotenv.config();
@@ -17,11 +23,10 @@ dotenv.config();
  * Yargs module for AI-powered Interactive Book content type.
  * Handles YAML input with AI-generated content (text and quizzes).
  *
- * This module uses the template-free H5P compiler infrastructure:
+ * This module uses the handler-based H5P compiler infrastructure:
  * - YamlInputParser: Parse YAML book definitions
- * - LibraryRegistry: Fetch and cache H5P libraries
- * - ContentBuilder: Build content programmatically
- * - PackageAssembler: Generate .h5p packages without templates
+ * - HandlerRegistry: Dynamic handler lookup and library resolution
+ * - H5pCompiler: Reusable compiler for CLI and API usage
  * - QuizGenerator: AI-powered quiz generation (Gemini or Claude)
  */
 export class InteractiveBookAIModule implements yargs.CommandModule {
@@ -89,6 +94,16 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
     console.log("=== AI-Powered Interactive Book Generator ===\n");
 
     try {
+      // Register handlers at startup
+      const handlerRegistry = HandlerRegistry.getInstance();
+      handlerRegistry.register(new TextHandler());
+      handlerRegistry.register(new ImageHandler());
+      handlerRegistry.register(new AudioHandler());
+      handlerRegistry.register(new AITextHandler());
+      handlerRegistry.register(new QuizHandler());
+      handlerRegistry.register(new FlashcardsHandler());
+      handlerRegistry.register(new DialogCardsHandler());
+
       // Override API key if provided
       if (apiKey) {
         if (aiProvider === "gemini" || aiProvider === "auto") {
@@ -117,50 +132,11 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
         console.log();
       }
 
-      // Step 2: Fetch H5P libraries
-      if (verbose) console.log("Step 2: Fetching H5P libraries...");
-      const registry = new LibraryRegistry();
-
-      await registry.fetchLibrary("H5P.InteractiveBook");
-      let dependencies = await registry.resolveDependencies("H5P.InteractiveBook");
-
-      if (verbose) {
-        console.log(`  - Base libraries: ${dependencies.length}`);
-      }
-
-      // Step 3: Check for quiz content and fetch H5P.MultiChoice if needed
-      const hasQuiz = bookDef.chapters.some(chapter =>
-        chapter.content.some(item => item.type === "ai-quiz")
-      );
-
-      if (hasQuiz) {
-        if (verbose) {
-          console.log("Step 3: Detected AI quiz content, fetching H5P.MultiChoice...");
-        }
-
-        await registry.fetchLibrary("H5P.MultiChoice");
-        const quizDeps = await registry.resolveDependencies("H5P.MultiChoice");
-
-        // Merge dependencies (avoid duplicates)
-        const allDeps = new Map<string, any>();
-        [...dependencies, ...quizDeps].forEach(dep => {
-          const key = `${dep.machineName}-${dep.majorVersion}.${dep.minorVersion}`;
-          allDeps.set(key, dep);
-        });
-        dependencies = Array.from(allDeps.values());
-
-        if (verbose) {
-          console.log(`  - Total libraries with quiz support: ${dependencies.length}`);
-          console.log();
-        }
-      } else if (verbose) {
-        console.log("Step 3: No quiz content detected, skipping H5P.MultiChoice");
-        console.log();
-      }
-
-      // Step 4: Initialize AI components
-      if (verbose) console.log("Step 4: Initializing AI components...");
+      // Step 2: Initialize compiler components
+      if (verbose) console.log("Step 2: Initializing compiler...");
+      const libraryRegistry = new LibraryRegistry();
       const quizGenerator = new QuizGenerator();
+      const compiler = new H5pCompiler(handlerRegistry, libraryRegistry, quizGenerator);
 
       if (verbose) {
         const provider = process.env.GOOGLE_API_KEY ? "Google Gemini 2.5 Flash" : "Anthropic Claude Sonnet 4";
@@ -168,63 +144,26 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
         console.log();
       }
 
-      // Step 5: Build content
-      if (verbose) console.log("Step 5: Building Interactive Book content...");
-      const validator = new SemanticValidator();
-      const builder = new ContentBuilder(registry, validator);
-
-      builder.createBook(bookDef.title, bookDef.language);
-      if (verbose) console.log(`  - Created book: "${bookDef.title}"`);
-
-      // Process each chapter
-      for (let i = 0; i < bookDef.chapters.length; i++) {
-        const chapter = bookDef.chapters[i];
-        if (verbose) console.log(`  - Processing chapter ${i + 1}: "${chapter.title}"`);
-
-        const chapterBuilder = builder.addChapter(chapter.title);
-
-        // Process each content item in the chapter
-        for (const item of chapter.content) {
-          await this.processContentItem(item, chapterBuilder, quizGenerator, verbose);
-        }
-      }
+      // Step 3: Compile book to .h5p buffer
+      if (verbose) console.log("Step 3: Compiling book to .h5p package...");
+      const h5pBuffer = await compiler.compile(bookDef, {
+        verbose,
+        aiProvider,
+        basePath: path.dirname(path.resolve(yamlFile))
+      });
 
       if (verbose) console.log();
 
-      // Step 6: Assemble package
-      if (verbose) console.log("Step 6: Assembling .h5p package...");
-      const assembler = new PackageAssembler();
-      const content = builder.build();
-      const mediaFiles = builder.getMediaFiles();
-
-      if (verbose) {
-        console.log(`  - Content sections: ${content.chapters.length}`);
-        console.log(`  - Media files: ${mediaFiles.length}`);
-      }
-
-      const packageZip = await assembler.assemble(
-        content,
-        dependencies,
-        mediaFiles,
-        builder.getTitle(),
-        builder.getLanguage(),
-        registry
-      );
-
-      if (verbose) console.log("  - Package assembled successfully");
-
-      // Step 7: Save package
-      if (verbose) console.log("Step 7: Saving package to disk...");
+      // Step 4: Save package to disk
+      if (verbose) console.log("Step 4: Saving package to disk...");
       const outputPath = path.resolve(outputFile);
-      await assembler.savePackage(packageZip, outputPath);
+      await fsExtra.writeFile(outputPath, h5pBuffer);
 
       console.log();
       console.log("✅ Success!");
       console.log(`📦 Generated: ${outputPath}`);
       console.log(`   - Title: ${bookDef.title}`);
       console.log(`   - Chapters: ${bookDef.chapters.length}`);
-      console.log(`   - Libraries: ${dependencies.length}`);
-      console.log(`   - Media files: ${mediaFiles.length}`);
       console.log();
 
     } catch (error) {
@@ -239,115 +178,6 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
         console.error(`   ${error}`);
       }
       process.exit(1);
-    }
-  }
-
-  /**
-   * Process a single content item and add it to the chapter builder.
-   * Handles: text, ai-text, image, audio, ai-quiz
-   */
-  private async processContentItem(
-    item: AnyContentItem,
-    chapterBuilder: ChapterBuilder,
-    quizGenerator: QuizGenerator,
-    verbose: boolean
-  ): Promise<void> {
-    switch (item.type) {
-      case "text":
-        if (verbose) console.log(`    - Adding text page: "${item.title || 'Untitled'}"`);
-        chapterBuilder.addTextPage(item.title || "", item.text);
-        break;
-
-      case "ai-text":
-        if (verbose) {
-          console.log(`    - Generating AI text: "${item.title || 'Untitled'}"`);
-          console.log(`      Prompt: "${item.prompt.substring(0, 60)}..."`);
-        }
-
-        try {
-          let generatedText = "";
-
-          // Use Gemini if available, otherwise Claude
-          if (process.env.GOOGLE_API_KEY) {
-            if (verbose) console.log(`      Using Gemini 2.5 Flash`);
-            const { GoogleGenerativeAI } = await import("@google/generative-ai");
-            const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-            const result = await model.generateContent(item.prompt);
-            generatedText = result.response.text();
-          } else if (process.env.ANTHROPIC_API_KEY) {
-            if (verbose) console.log(`      Using Claude Sonnet 4`);
-            const Anthropic = (await import("@anthropic-ai/sdk")).default;
-            const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-            const response = await anthropic.messages.create({
-              model: "claude-sonnet-4-20250514",
-              max_tokens: 1024,
-              messages: [{
-                role: "user",
-                content: item.prompt
-              }]
-            });
-            generatedText = response.content
-              .filter((block: any) => block.type === "text")
-              .map((block: any) => block.text)
-              .join("");
-          } else {
-            throw new Error("No API key found. Set GOOGLE_API_KEY or ANTHROPIC_API_KEY");
-          }
-
-          chapterBuilder.addTextPage(item.title || "AI-Generated Content", generatedText);
-          if (verbose) console.log(`      Generated ${generatedText.length} characters`);
-        } catch (error) {
-          console.warn(`      AI generation failed: ${error}`);
-          chapterBuilder.addTextPage(
-            item.title || "Content",
-            `AI text generation failed. Please check your API key configuration.\n\nPrompt was: ${item.prompt}`
-          );
-        }
-        break;
-
-      case "image":
-        if (verbose) {
-          console.log(`    - Adding image: "${item.title || item.alt}"`);
-          console.log(`      Path: ${item.path}`);
-        }
-        await chapterBuilder.addImagePage(item.title || item.alt, item.path, item.alt);
-        break;
-
-      case "audio":
-        if (verbose) {
-          console.log(`    - Adding audio: "${item.title || 'Audio'}"`);
-          console.log(`      Path: ${item.path}`);
-        }
-        await chapterBuilder.addAudioPage(item.title || "Audio", item.path);
-        break;
-
-      case "ai-quiz":
-        if (verbose) {
-          console.log(`    - Generating AI quiz: "${item.title || 'Quiz'}"`);
-          console.log(`      Source text length: ${item.sourceText.length} characters`);
-          console.log(`      Questions: ${item.questionCount || 5}`);
-        }
-
-        try {
-          const quizContent = await quizGenerator.generateH5pQuiz(
-            item.sourceText,
-            item.questionCount || 5
-          );
-          chapterBuilder.addQuizPage(quizContent);
-          if (verbose) console.log(`      Generated ${quizContent.length} questions`);
-        } catch (error) {
-          console.warn(`      AI quiz generation failed: ${error}`);
-          // Add a text page explaining the failure instead
-          chapterBuilder.addTextPage(
-            item.title || "Quiz",
-            `Quiz generation failed. Please ensure your AI API key is valid.\n\nError: ${error}`
-          );
-        }
-        break;
-
-      default:
-        console.warn(`    - Unknown content type: ${(item as any).type}`);
     }
   }
 }

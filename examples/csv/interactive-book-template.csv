@@ -1,0 +1,46 @@
+bookTitle,pageTitle,pageText,imagePath,imageAlt,audioPath,coverDescription
+"My Interactive Book","Introduction","Welcome to this interactive book template. This template demonstrates how to create engaging digital storybooks with text, images, and audio.
+
+Each row in this CSV file represents one page or chapter in your book. You can include multiple paragraphs by separating them with double newlines (blank lines) in the pageText column.","images/intro.jpg","Welcome page illustration","audios/intro-narration.mp3","An interactive book template demonstrating text, images, and audio"
+"My Interactive Book","Chapter 1: Text Only","This page demonstrates a text-only chapter. You don't need to include images or audio for every page.
+
+Sometimes simple text is the most effective way to convey information. Notice how this text is split into two paragraphs because of the blank line between them.",,,
+"My Interactive Book","Chapter 2: Text with Image","This page includes both text and an image. Images help make your content more engaging and can illustrate concepts visually.
+
+The image below shows an example illustration that enhances the story.","images/chapter2.jpg","An example illustration for chapter 2",,
+"My Interactive Book","Chapter 3: Text with Audio","This page includes audio narration. Audio is great for language learning, storytelling, or accessibility.
+
+Readers can listen to the narration while reading along, making the content more accessible and engaging.","","","audios/chapter3-narration.mp3",
+"My Interactive Book","Chapter 4: Complete Page","This final page demonstrates a complete chapter with text, image, and audio. This combination creates the richest multimedia experience.
+
+You can mix and match these elements throughout your book based on what works best for each page.","images/chapter4.jpg","Final chapter with all media types","audios/chapter4-narration.mp3",
+
+# CSV Format Notes:
+# - Required columns: bookTitle, pageTitle, pageText
+# - Optional columns: imagePath, imageAlt, audioPath, coverDescription
+#
+# Column Descriptions:
+# - bookTitle: The title of your entire book (typically the same for all rows, taken from first row)
+# - pageTitle: The title of each individual page/chapter (will be displayed as H2 heading)
+# - pageText: Main text content (use double newlines to create separate paragraphs)
+# - imagePath: Relative path to image file OR full URL starting with http:// or https://
+# - imageAlt: Alternative text for the image (important for accessibility)
+# - audioPath: Relative path to audio file OR full URL starting with http:// or https://
+# - coverDescription: Description for the book cover (only used from first row)
+#
+# File Path Examples:
+# - Local file: images/photo.jpg (relative to CSV file location)
+# - URL: https://example.com/image.jpg
+#
+# Supported Formats:
+# - Images: JPG, PNG, GIF, SVG
+# - Audio: MP3, WAV, OGG
+#
+# Usage Example:
+# node ./dist/index.js interactivebook ./examples/interactive-book-template.csv ./my-book.h5p -l=en -t="Custom Title"
+#
+# CLI Options:
+# -l, --language    Language code (default: "en")
+# -t, --title       Override book title from CSV
+# -d, --delimiter   CSV delimiter (default: ",")
+# -e, --encoding    File encoding (default: "UTF-8")

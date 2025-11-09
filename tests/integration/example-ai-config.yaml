@@ -1,0 +1,71 @@
+title: "Biology Course with AI Configuration Demo"
+language: "en"
+description: "Example demonstrating AI configuration at book, chapter, and item levels"
+
+# Book-level AI configuration applies to all AI content by default
+aiConfig:
+  targetAudience: "grade-6"
+  tone: "educational"
+  customization: |
+    Focus on visual learners.
+    Use analogies to explain complex concepts.
+    Include real-world examples students can observe.
+
+chapters:
+  - title: "Introduction to Biology"
+    content:
+      - type: ai-text
+        title: "What is Biology?"
+        prompt: "Explain what biology is and why it's important to study"
+        # This uses book-level config: grade-6, educational
+
+      - type: ai-quiz
+        title: "Check Your Understanding"
+        sourceText: "Biology is the scientific study of life and living organisms. It helps us understand how plants, animals, and humans work."
+        questionCount: 3
+        # This also uses book-level config: grade-6, educational
+
+  - title: "Advanced Cellular Biology"
+    # Chapter-level override: make this chapter more advanced
+    aiConfig:
+      targetAudience: "high-school"
+      tone: "academic"
+    content:
+      - type: ai-text
+        title: "Cellular Respiration"
+        prompt: "Explain the process of cellular respiration in detail"
+        # This uses chapter-level config: high-school, academic
+
+      - type: ai-text
+        title: "Simplified Introduction"
+        prompt: "Introduce cellular respiration in simple terms"
+        # Item-level override: make this specific item simpler
+        aiConfig:
+          targetAudience: "elementary"
+          tone: "casual"
+          customization: "Use everyday language. Avoid scientific terminology."
+        # This uses item-level config: elementary, casual
+
+      - type: ai-quiz
+        title: "Advanced Quiz"
+        sourceText: "Cellular respiration is a metabolic pathway that breaks down glucose and produces ATP..."
+        questionCount: 5
+        # This uses chapter-level config: high-school, academic
+
+  - title: "Photosynthesis for ESL Students"
+    # Chapter-level override for ESL learners
+    aiConfig:
+      targetAudience: "esl-beginner"
+      tone: "educational"
+      customization: "Use only present tense. Avoid idioms. Use simple sentence structures."
+    content:
+      - type: ai-text
+        title: "What is Photosynthesis?"
+        prompt: "Explain photosynthesis"
+        # This uses chapter-level config: esl-beginner, educational
+
+      - type: ai-quiz
+        title: "Simple Quiz"
+        sourceText: "Plants make food. They use sun light. They use water. They make sugar."
+        questionCount: 3
+        # This uses chapter-level config: esl-beginner, educational

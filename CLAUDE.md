@@ -12,7 +12,7 @@ This project integrates with Agent OS for product planning and feature developme
 
 - **Product Documentation**: [agent-os/product/](agent-os/product/) contains mission.md, roadmap.md, and tech-stack.md
 - **Specs**: Feature specifications are tracked in `agent-os/specs/` when using Agent OS workflows
-- **Analysis**: [docs/h5p-cli-creator_Analysis_for_Interactive_Books.md](docs/h5p-cli-creator_Analysis_for_Interactive_Books.md) provides detailed analysis for extending to Interactive Book content type with implementation examples and timeline estimates
+- **Analysis**: [docs/deprecated/h5p-cli-creator_Analysis_for_Interactive_Books.md](docs/deprecated/h5p-cli-creator_Analysis_for_Interactive_Books.md) provides detailed analysis for extending to Interactive Book content type with implementation examples and timeline estimates
 - **Use `/shape-spec` or `/write-spec`** to create feature specifications following Agent OS patterns
 
 ## Development Commands
@@ -141,7 +141,7 @@ Reference [flashcards-module.ts](src/flashcards-module.ts) and [flashcards-creat
 
 ### Interactive Book Implementation Guide
 
-For implementing Interactive Book support (detailed analysis in [docs/h5p-cli-creator_Analysis_for_Interactive_Books.md](docs/h5p-cli-creator_Analysis_for_Interactive_Books.md)):
+For implementing Interactive Book support (detailed analysis in [docs/deprecated/h5p-cli-creator_Analysis_for_Interactive_Books.md](docs/deprecated/h5p-cli-creator_Analysis_for_Interactive_Books.md)):
 
 **Key considerations:**
 - Interactive Book uses a `chapters` array in content.json
@@ -182,6 +182,139 @@ package.h5p (ZIP file)
 3. Unzip and examine content/content.json
 4. Use this as your template and reference for implementation
 
+## ⚠️ CRITICAL: H5P Library Versioning Requirements
+
+**H5P platforms enforce STRICT version matching.** Version mismatches are the #1 cause of "content not rendering" issues.
+
+### The Version Matching Rule
+
+H5P platforms (h5p.com, Moodle, WordPress) validate that:
+1. **h5p.json** declares the exact library versions
+2. **content.json** references match those declared versions
+3. **Library directories** bundled in the .h5p match declared versions
+4. Platform's H5P core is compatible with the library versions
+
+**If ANY version doesn't match exactly, content will fail to render.**
+
+### Real-World Example: DialogCards 1.8 vs 1.9
+
+**Symptom:** DialogCards appear in editor as "Empty column", don't render in player.
+
+**Root Cause Analysis:**
+- Package declared `H5P.Dialogcards 1.8` in h5p.json
+- Package bundled `H5P.Dialogcards-1.8/` library files
+- Platform expected/required `H5P.Dialogcards 1.9`
+- **Result:** Complete rendering failure despite correct content structure
+
+**Key Differences Between Versions:**
+- DialogCards 1.8: Core API 1.15, patch 1.8.2, 29 language files
+- DialogCards 1.9: Core API 1.26, patch 1.9.18, 45 language files
+- Different JavaScript/CSS implementations (non-compatible)
+- Different semantics.json schemas
+
+**The Fix:**
+1. Add `H5P.Dialogcards-1.9.h5p` to `content-type-cache/` (from working package)
+2. Update handler: `library: "H5P.Dialogcards 1.9"` in DialogCardsHandler.ts
+3. Rebuild package - LibraryRegistry auto-selects version 1.9 from cache
+4. Verify h5p.json shows `"minorVersion": 9`
+
+### Debugging Workflow for Version Issues
+
+**When content doesn't render after upload:**
+
+1. **Create reference package from platform:**
+   ```bash
+   # Create sample content manually on target platform
+   # Download as working-reference.h5p
+   ```
+
+2. **Compare versions in h5p.json:**
+   ```bash
+   # Check working package
+   unzip -q -c working-reference.h5p "h5p.json" | python3 -m json.tool | grep -A 2 "machineName"
+
+   # Check your generated package
+   unzip -q -c your-package.h5p "h5p.json" | python3 -m json.tool | grep -A 2 "machineName"
+   ```
+
+3. **Compare library directories:**
+   ```bash
+   # Check what libraries are bundled
+   unzip -l working-reference.h5p | grep "^.*H5P\." | grep "/$" | sort
+   unzip -l your-package.h5p | grep "^.*H5P\." | grep "/$" | sort
+   ```
+
+4. **Extract and compare specific library versions:**
+   ```bash
+   # Check DialogCards version in library.json
+   unzip -q -c package.h5p "H5P.Dialogcards-1.9/library.json" | python3 -m json.tool | grep -E "majorVersion|minorVersion|patchVersion"
+   ```
+
+5. **Verify content.json references:**
+   ```bash
+   # Find all library references in content
+   unzip -q -c package.h5p "content/content.json" | python3 -c "
+   import json, sys, re
+   data = json.load(sys.stdin)
+   libs = re.findall(r'\"library\":\\s*\"([^\"]+)\"', json.dumps(data))
+   for lib in sorted(set(libs)):
+       print(lib)
+   "
+   ```
+
+### Version Management Best Practices
+
+**Cache Management:**
+```
+content-type-cache/
+├── H5P.InteractiveBook-1.11.h5p    ✅ Versioned filename (preferred)
+├── H5P.Dialogcards-1.9.h5p         ✅ Versioned filename (preferred)
+├── H5P.MultiChoice-1.16.h5p        ✅ Versioned filename (preferred)
+└── H5P.Image.h5p                   ⚠️  Non-versioned (legacy, avoid)
+```
+
+**Handler Code Versioning:**
+- Always specify full version in handlers: `"H5P.Dialogcards 1.9"` not `"H5P.Dialogcards"`
+- Update handler code when changing cached library versions
+- Test on target platform before distributing packages
+
+**LibraryRegistry Behavior:**
+- Auto-selects LATEST version from cache when multiple exist
+- Prefers versioned filenames: `H5P.Dialogcards-1.9.h5p`
+- Falls back to non-versioned: `H5P.Dialogcards.h5p`
+- Sorting: Descending by major.minor (1.9 > 1.8)
+
+**Platform Compatibility Strategy:**
+1. **Identify target platform version** - Create/download reference package
+2. **Extract library versions** - Document in `content-type-cache/README.md`
+3. **Keep reference packages** - Store working .h5p files for comparison
+4. **Test before distributing** - Always upload to target platform first
+5. **Document version requirements** - Track which platform versions work
+
+### Common Version Pitfall Scenarios
+
+❌ **Scenario 1: Mixing library sources**
+- Downloaded `H5P.Dialogcards-1.8.h5p` from Hub
+- Extracted `H5P.Column-1.18` from InteractiveBook-1.11
+- Result: Incompatible dependency versions, rendering failure
+
+❌ **Scenario 2: Assuming backward compatibility**
+- Generated package with DialogCards 1.8
+- Platform upgraded to require 1.9
+- Result: Old packages stop working on updated platform
+
+❌ **Scenario 3: Non-versioned cache files**
+- Multiple `H5P.Dialogcards.h5p` files from different dates
+- No way to know which version without extracting
+- Result: Unpredictable builds, inconsistent output
+
+✅ **Correct Approach:**
+- Use versioned filenames always
+- Match handler version declarations to cached libraries
+- Keep working reference packages from each target platform
+- Test on actual deployment platform before distribution
+- Document version requirements in project docs
+
 ## Naming Convention
 
 **Classes from H5P libraries or content types start with `H5p`** (e.g., `H5pImage`, `H5pFlashcard`). Classes that are part of the creator infrastructure do NOT use this prefix (e.g., `ContentCreator`, `FlashcardsModule`).
@@ -209,7 +342,7 @@ The [docs/](docs/) directory contains design documentation for planned improveme
 
 ### Handler/Plugin Architecture
 
-[H5P_Handler_Architecture_Complete_Design.md](docs/H5P_Handler_Architecture_Complete_Design.md) proposes a handler-based plugin system that would:
+[H5P_Handler_Architecture_Complete_Design.md](docs/deprecated/H5P_Handler_Architecture_Complete_Design.md) proposes a handler-based plugin system that would:
 - **Eliminate code duplication**: Each content type implements a standard `ContentHandler` interface
 - **Enable rapid content type additions**: New handlers can be added in ~30-60 minutes vs 4-8 hours currently
 - **Improve maintainability**: Each handler is isolated and independently testable
@@ -232,11 +365,11 @@ src/handlers/
 └── InteractiveBookHandler.ts # Example new content type
 ```
 
-See [H5P_Handler_Implementation_File_Structure.md](docs/H5P_Handler_Implementation_File_Structure.md) for detailed implementation guide.
+See [H5P_Handler_Implementation_File_Structure.md](docs/deprecated/H5P_Handler_Implementation_File_Structure.md) for detailed implementation guide.
 
 ### Git Workflow
 
-[Git_Forking_vs_Cloning_Complete_Guide.md](docs/Git_Forking_vs_Cloning_Complete_Guide.md) explains the fork-based contribution workflow:
+[Git_Forking_vs_Cloning_Complete_Guide.md](docs/deprecated/Git_Forking_vs_Cloning_Complete_Guide.md) explains the fork-based contribution workflow:
 - Fork the repository on GitHub first
 - Clone your fork locally
 - Add upstream remote: `git remote add upstream https://github.com/sr258/h5p-cli-creator.git`

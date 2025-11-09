@@ -1,0 +1,26 @@
+title: "Démonstration en Français"
+language: "fr"
+description: "Test de génération de contenu en français"
+
+aiConfig:
+  targetAudience: "grade-6"
+  tone: "educational"
+  customization: |
+    Répondez TOUJOURS en français.
+    Utilisez un langage clair et éducatif pour des élèves de sixième.
+
+chapters:
+  - title: "Les Sciences"
+    content:
+      - type: ai-text
+        prompt: "Expliquez ce qu'est la science en 100 mots."
+        title: "Qu'est-ce que la science?"
+
+      - type: flashcards
+        title: "Vocabulaire Scientifique"
+        cards:
+          - question: "Quelle est l'étude des êtres vivants?"
+            answer: "La biologie est l'étude scientifique des êtres vivants, de leur structure, de leur fonctionnement et de leurs interactions."
+          
+          - question: "Qu'est-ce que la chimie?"
+            answer: "La chimie est la science qui étudie la composition, la structure et les propriétés de la matière."

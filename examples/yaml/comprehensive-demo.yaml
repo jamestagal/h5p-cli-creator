@@ -1,0 +1,113 @@
+title: "Complete Handler Demo - Solar System"
+language: "en"
+description: "Comprehensive demonstration of all content handlers in the system"
+
+chapters:
+  - title: "Introduction to Our Solar System"
+    content:
+      - type: text
+        title: "Welcome"
+        text: |
+          Welcome to this interactive lesson about our Solar System!
+          In this book, you'll learn about the planets, their characteristics,
+          and fascinating facts about our cosmic neighborhood.
+
+      - type: ai-text
+        prompt: "Write an engaging introduction to the solar system for middle school students. Explain what the solar system is, how it formed about 4.6 billion years ago from a cloud of gas and dust, and list the 8 planets in order from the Sun. Keep it around 200 words and use clear, simple language. IMPORTANT: Use plain text only - no markdown formatting."
+        title: "What is the Solar System?"
+
+  - title: "The Sun - Our Star"
+    content:
+      - type: text
+        title: "The Center of Everything"
+        text: |
+          The Sun is the star at the center of our solar system. It's a massive ball
+          of hot plasma that provides light and heat to all the planets. The Sun contains
+          99.86% of the total mass of the solar system!
+
+      - type: image
+        path: "../tests/images/test-image.jpg"
+        alt: "The Sun showing solar flares and surface activity"
+        title: "Our Sun"
+
+      - type: audio
+        path: "../tests/audios/test-audio.mp3"
+        title: "Listen: Facts About the Sun"
+
+  - title: "The Inner Planets"
+    content:
+      - type: ai-text
+        prompt: "Describe the four inner planets (Mercury, Venus, Earth, Mars) in about 150 words. Explain why they're called 'rocky planets' or 'terrestrial planets'. Mention one unique fact about each planet. Use plain text only - no markdown."
+        title: "Rocky Worlds Close to the Sun"
+
+      # NOTE: Flashcards are NOT supported by Interactive Book
+      # Supported sub-content types include: Dialog Cards, Multiple Choice, True/False, etc.
+      # See: https://h5p.org/interactive-book
+
+  - title: "The Outer Planets"
+    content:
+      - type: text
+        title: "Gas Giants and Ice Giants"
+        text: |
+          The outer planets are much larger than the inner planets and are made mostly
+          of gases and liquids. Jupiter and Saturn are called gas giants, while Uranus
+          and Neptune are ice giants.
+
+      - type: dialogcards
+        title: "Outer Planets Dialog Cards"
+        cards:
+          - front: "Jupiter"
+            back: "The largest planet in our solar system. It has a Great Red Spot - a massive storm that has been raging for centuries. Jupiter has at least 95 known moons!"
+
+          - front: "Saturn"
+            back: "Famous for its beautiful rings made of ice and rock particles. Saturn is the second-largest planet and could float in water because it's less dense!"
+
+          - front: "Uranus"
+            back: "An ice giant that rotates on its side. It appears blue-green due to methane in its atmosphere. It has 27 known moons."
+
+          - front: "Neptune"
+            back: "The farthest planet from the Sun. It has the strongest winds in the solar system, reaching speeds up to 2,100 km/h. Its blue color comes from methane."
+
+  - title: "Test Your Knowledge"
+    content:
+      - type: text
+        title: "Quiz Time!"
+        text: |
+          Now that you've learned about the solar system and all the planets,
+          let's test your knowledge with this quiz!
+
+      - type: ai-quiz
+        title: "Solar System Quiz"
+        sourceText: |
+          The Solar System formed about 4.6 billion years ago from a cloud of gas and dust.
+          At its center is the Sun, a star that contains 99.86% of the system's total mass.
+
+          There are 8 planets in order from the Sun: Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune.
+
+          The inner planets (Mercury, Venus, Earth, Mars) are rocky terrestrial planets. Mercury is closest to the Sun.
+          Venus is Earth's twin in size but has extreme temperatures. Earth is unique with liquid water and life.
+          Mars is the Red Planet due to iron oxide on its surface.
+
+          The outer planets are much larger gas and ice giants. Jupiter is the largest with a Great Red Spot storm.
+          Saturn has beautiful rings of ice and rock. Uranus rotates on its side and appears blue-green.
+          Neptune is the farthest planet with the strongest winds in the solar system.
+        questionCount: 6
+
+  - title: "Summary and Conclusion"
+    content:
+      - type: ai-text
+        prompt: "Write a brief, inspiring conclusion about the solar system for students. Encourage their curiosity about space exploration and remind them of the key facts they learned. Keep it to about 100 words. Use plain text only - no markdown."
+        title: "Continue Your Space Journey"
+
+      - type: text
+        title: "What's Next?"
+        text: |
+          Congratulations on completing this lesson! You've learned about:
+
+          ✓ The formation and structure of our solar system
+          ✓ The Sun and its importance
+          ✓ The four inner rocky planets
+          ✓ The four outer gas and ice giants
+          ✓ Unique characteristics of each planet
+
+          Keep exploring and learning about the amazing universe around us!
