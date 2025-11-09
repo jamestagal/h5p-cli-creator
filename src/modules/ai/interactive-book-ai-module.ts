@@ -16,6 +16,8 @@ import { FlashcardsHandler } from "../../handlers/embedded/FlashcardsHandler";
 import { DialogCardsHandler } from "../../handlers/embedded/DialogCardsHandler";
 import { AccordionHandler } from "../../handlers/embedded/AccordionHandler";
 import { AIAccordionHandler } from "../../handlers/ai/AIAccordionHandler";
+import { SingleChoiceSetHandler } from "../../handlers/embedded/SingleChoiceSetHandler";
+import { AISingleChoiceSetHandler } from "../../handlers/ai/AISingleChoiceSetHandler";
 import { H5pCompiler } from "../../compiler/H5pCompiler";
 
 // Load environment variables
@@ -107,6 +109,8 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
       handlerRegistry.register(new DialogCardsHandler());
       handlerRegistry.register(new AccordionHandler());
       handlerRegistry.register(new AIAccordionHandler());
+      handlerRegistry.register(new SingleChoiceSetHandler());
+      handlerRegistry.register(new AISingleChoiceSetHandler());
 
       // Override API key if provided
       if (apiKey) {
@@ -127,8 +131,7 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
 
       // Step 1: Parse YAML input
       if (verbose) console.log("Step 1: Parsing YAML input...");
-      const parser = new YamlInputParser();
-      const bookDef = await parser.parse(path.resolve(yamlFile));
+      const bookDef = YamlInputParser.parseYamlFile(path.resolve(yamlFile));
 
       if (verbose) {
         console.log(`  - Parsed book: "${bookDef.title}" (${bookDef.language})`);

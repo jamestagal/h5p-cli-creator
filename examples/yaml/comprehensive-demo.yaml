@@ -125,6 +125,49 @@ chapters:
           Neptune is the farthest planet with the strongest winds in the solar system.
         questionCount: 6
 
+  - title: "Single Choice Questions"
+    content:
+      - type: text
+        title: "Multiple Choice Assessment"
+        text: |
+          Test your understanding with these single-choice questions!
+          Each question has only one correct answer.
+
+      - type: singlechoiceset
+        title: "Manual: Planet Basics"
+        questions:
+          - question: "Which planet is known as the Red Planet?"
+            correctAnswer: "Mars"
+            distractors:
+              - "Venus"
+              - "Jupiter"
+              - "Mercury"
+
+          - question: "Which planet has the most spectacular ring system?"
+            correctAnswer: "Saturn"
+            distractors:
+              - "Jupiter"
+              - "Uranus"
+
+          - question: "Which planet is closest to the Sun?"
+            correctAnswer: "Mercury"
+            distractors:
+              - "Venus"
+              - "Earth"
+              - "Mars"
+
+          - question: "Which planet is the largest in our solar system?"
+            correctAnswer: "Jupiter"
+            distractors:
+              - "Saturn"
+              - "Neptune"
+
+      - type: ai-singlechoiceset
+        title: "AI-Generated: Solar System Knowledge"
+        prompt: "Create single-choice quiz questions about unique features of each planet, their moons, and interesting astronomical phenomena in our solar system"
+        questionCount: 5
+        distractorsPerQuestion: 2
+
   - title: "Summary and Conclusion"
     content:
       - type: ai-text

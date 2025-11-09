@@ -25,8 +25,8 @@ Implement handlers for H5P.SingleChoiceSet content type following the establishe
 
 #### Task Group 1.1: Handler Implementation
 
-- [ ] 1.0 Implement SingleChoiceSetHandler foundation
-  - [ ] 1.1 Write 2-8 focused tests for SingleChoiceSetHandler
+- [x] 1.0 Implement SingleChoiceSetHandler foundation
+  - [x] 1.1 Write 2-8 focused tests for SingleChoiceSetHandler
     - Test getContentType() returns "singlechoiceset"
     - Test validate() accepts valid content structure
     - Test validate() rejects missing/empty questions array
@@ -36,17 +36,17 @@ Implement handlers for H5P.SingleChoiceSet content type following the establishe
     - Test getRequiredLibraries() returns ["H5P.SingleChoiceSet"]
     - **LIMIT: Maximum 8 tests for core functionality only**
 
-  - [ ] 1.2 Create SingleChoiceSetHandler file
-    - Location: `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/embedded/SingleChoiceSetHandler.ts`
+  - [x] 1.2 Create SingleChoiceSetHandler file
+    - Location: `/home/user/h5p-cli-creator/src/handlers/embedded/SingleChoiceSetHandler.ts`
     - Export SingleChoiceSetContent interface with questions array structure
     - Export SingleChoiceSetHandler class implementing ContentHandler
-    - Reference pattern: `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/embedded/AccordionHandler.ts`
+    - Reference pattern: `/home/user/h5p-cli-creator/src/handlers/embedded/AccordionHandler.ts`
 
-  - [ ] 1.3 Implement getContentType() method
+  - [x] 1.3 Implement getContentType() method
     - Return "singlechoiceset" as primary type identifier
     - Follow exact pattern from AccordionHandler
 
-  - [ ] 1.4 Implement validate() method
+  - [x] 1.4 Implement validate() method
     - Validate questions array exists, is array, has length > 0
     - Validate each question has: question (string), correctAnswer (string), distractors (array)
     - Validate distractors array has minimum 1 element
@@ -55,7 +55,7 @@ Implement handlers for H5P.SingleChoiceSet content type following the establishe
     - Return {valid: true} or {valid: false, error: "message"}
     - Follow AccordionHandler validation pattern for array iteration
 
-  - [ ] 1.5 Implement process() method
+  - [x] 1.5 Implement process() method
     - Build H5P choices array with correct answer ALWAYS at index 0
     - Map simplified format {question, correctAnswer, distractors} to H5P format
     - Generate unique subContentId for each question using generateSubContentId()
@@ -65,15 +65,15 @@ Implement handlers for H5P.SingleChoiceSet content type following the establishe
     - Call chapterBuilder.addCustomContent() with H5P structure
     - Follow AccordionHandler pattern for escapeHtml() usage
 
-  - [ ] 1.6 Implement getRequiredLibraries() method
+  - [x] 1.6 Implement getRequiredLibraries() method
     - Return ["H5P.SingleChoiceSet"]
     - LibraryRegistry will auto-resolve dependencies (H5P.Question, H5P.JoubelUI, etc.)
 
-  - [ ] 1.7 Add helper method: generateSubContentId()
+  - [x] 1.7 Add helper method: generateSubContentId()
     - Generate unique UUID for each question's subContentId
     - Reuse pattern from AccordionHandler if available
 
-  - [ ] 1.8 Ensure SingleChoiceSetHandler tests pass
+  - [x] 1.8 Ensure SingleChoiceSetHandler tests pass
     - Run ONLY the 2-8 tests written in task 1.1
     - Verify correct answer placement at index 0
     - Verify default behaviour and labels applied
@@ -96,8 +96,8 @@ Implement handlers for H5P.SingleChoiceSet content type following the establishe
 
 #### Task Group 2.1: AI Handler Implementation
 
-- [ ] 2.0 Implement AISingleChoiceSetHandler with AI integration
-  - [ ] 2.1 Write 2-8 focused tests for AISingleChoiceSetHandler
+- [x] 2.0 Implement AISingleChoiceSetHandler with AI integration
+  - [x] 2.1 Write 2-8 focused tests for AISingleChoiceSetHandler
     - Test getContentType() returns "ai-singlechoiceset"
     - Test validate() accepts valid AI content with prompt
     - Test validate() rejects missing prompt field
@@ -107,24 +107,24 @@ Implement handlers for H5P.SingleChoiceSet content type following the establishe
     - Test process() provides fallback on AI failure
     - **LIMIT: Maximum 8 tests for core AI functionality only**
 
-  - [ ] 2.2 Create AISingleChoiceSetHandler file
-    - Location: `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AISingleChoiceSetHandler.ts`
+  - [x] 2.2 Create AISingleChoiceSetHandler file
+    - Location: `/home/user/h5p-cli-creator/src/handlers/ai/AISingleChoiceSetHandler.ts`
     - Export AISingleChoiceSetContent interface with prompt and AI config
     - Export AISingleChoiceSetHandler class implementing ContentHandler
     - Import AIPromptBuilder and QuizGenerator
-    - Reference pattern: `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AIAccordionHandler.ts`
+    - Reference pattern: `/home/user/h5p-cli-creator/src/handlers/ai/AIAccordionHandler.ts`
 
-  - [ ] 2.3 Implement getContentType() method
+  - [x] 2.3 Implement getContentType() method
     - Return "ai-singlechoiceset" as primary type identifier
 
-  - [ ] 2.4 Implement validate() method
+  - [x] 2.4 Implement validate() method
     - Validate prompt field exists and is string
     - Validate questionCount is positive integer if provided
     - Validate distractorsPerQuestion is 1+ if provided
     - Validate difficulty enum ("easy" | "medium" | "hard") if provided
     - Follow AIAccordionHandler validation pattern
 
-  - [ ] 2.5 Implement process() method with AI generation
+  - [x] 2.5 Implement process() method with AI generation
     - Use AIPromptBuilder.resolveConfig() for hierarchical config merging
     - Use AIPromptBuilder.buildSystemPrompt() for reading level instructions
     - Build user prompt specifying questionCount, distractorsPerQuestion, topic
@@ -135,21 +135,21 @@ Implement handlers for H5P.SingleChoiceSet content type following the establishe
     - Wrap in try-catch with fallback to text page on AI failure
     - Follow AIAccordionHandler pattern for error handling
 
-  - [ ] 2.6 Implement difficulty level mapping
+  - [x] 2.6 Implement difficulty level mapping
     - Map difficulty to distractor count hints in user prompt:
       - "easy": Request 2 distractors (3 total options)
       - "medium": Request 3 distractors (4 total options)
       - "hard": Request 4+ distractors (5+ total options)
     - Override distractorsPerQuestion parameter if difficulty provided
 
-  - [ ] 2.7 Implement getRequiredLibraries() method
+  - [x] 2.7 Implement getRequiredLibraries() method
     - Return ["H5P.SingleChoiceSet"]
 
-  - [ ] 2.8 Add helper method: stripHtml()
+  - [x] 2.8 Add helper method: stripHtml()
     - Strip HTML tags from AI-generated text before wrapping in H5P structure
     - Reuse pattern from AIAccordionHandler
 
-  - [ ] 2.9 Ensure AISingleChoiceSetHandler tests pass
+  - [x] 2.9 Ensure AISingleChoiceSetHandler tests pass
     - Run ONLY the 2-8 tests written in task 2.1
     - Verify AI integration calls QuizGenerator correctly
     - Verify HTML stripping safety net works
@@ -174,21 +174,21 @@ Implement handlers for H5P.SingleChoiceSet content type following the establishe
 
 #### Task Group 3.1: YamlInputParser Type Updates
 
-- [ ] 3.0 Update type system for SingleChoiceSet support
-  - [ ] 3.1 Update ContentType union in YamlInputParser
-    - File: `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/compiler/YamlInputParser.ts`
+- [x] 3.0 Update type system for SingleChoiceSet support
+  - [x] 3.1 Update ContentType union in YamlInputParser
+    - File: `/home/user/h5p-cli-creator/src/compiler/YamlInputParser.ts`
     - Add to ContentType union: `"singlechoiceset" | "single-choice-set" | "ai-singlechoiceset" | "ai-single-choice-set"`
     - Follow exact pattern from existing content types
 
-  - [ ] 3.2 Export SingleChoiceSet interfaces
+  - [x] 3.2 Export SingleChoiceSet interfaces
     - Add: `export { SingleChoiceSetContent } from "../handlers/embedded/SingleChoiceSetHandler";`
     - Add: `export { AISingleChoiceSetContent } from "../handlers/ai/AISingleChoiceSetHandler";`
 
-  - [ ] 3.3 Update AnyContentItem union
+  - [x] 3.3 Update AnyContentItem union
     - Add: `| import("../handlers/embedded/SingleChoiceSetHandler").SingleChoiceSetContent`
     - Add: `| import("../handlers/ai/AISingleChoiceSetHandler").AISingleChoiceSetContent`
 
-  - [ ] 3.4 Add validation cases in validateContentItem()
+  - [x] 3.4 Add validation cases in validateContentItem()
     - Add case for "singlechoiceset" and "single-choice-set":
       - Validate questions array exists and non-empty
       - Validate each question has required fields
@@ -196,13 +196,13 @@ Implement handlers for H5P.SingleChoiceSet content type following the establishe
       - Validate prompt field exists and is string
     - Follow validation pattern from accordion cases
 
-  - [ ] 3.5 Add to validTypes array
+  - [x] 3.5 Add to validTypes array
     - Add "singlechoiceset", "single-choice-set", "ai-singlechoiceset", "ai-single-choice-set" to validTypes
 
 #### Task Group 3.2: Handler Registration
 
-- [ ] 3.6 Register handlers in InteractiveBookAIModule
-  - File: `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/modules/ai/interactive-book-ai-module.ts`
+- [x] 3.6 Register handlers in InteractiveBookAIModule
+  - File: `/home/user/h5p-cli-creator/src/modules/ai/interactive-book-ai-module.ts`
   - Import SingleChoiceSetHandler from handlers/embedded
   - Import AISingleChoiceSetHandler from handlers/ai
   - Register SingleChoiceSetHandler after DialogCardsHandler
@@ -226,13 +226,13 @@ Implement handlers for H5P.SingleChoiceSet content type following the establishe
 
 #### Task Group 4.1: Test Coverage Review & Gap Analysis
 
-- [ ] 4.0 Review test coverage and fill critical gaps
-  - [ ] 4.1 Review existing tests from previous phases
+- [x] 4.0 Review test coverage and fill critical gaps
+  - [x] 4.1 Review existing tests from previous phases
     - Review 2-8 tests from SingleChoiceSetHandler (Task 1.1)
     - Review 2-8 tests from AISingleChoiceSetHandler (Task 2.1)
     - Total existing: approximately 4-16 tests
 
-  - [ ] 4.2 Analyze test coverage gaps for SingleChoiceSet feature ONLY
+  - [x] 4.2 Analyze test coverage gaps for SingleChoiceSet feature ONLY
     - Identify critical gaps in handler integration
     - Identify critical gaps in type alias handling
     - Identify critical gaps in YAML validation
@@ -250,7 +250,7 @@ Implement handlers for H5P.SingleChoiceSet content type following the establishe
     - **LIMIT: Maximum 10 additional tests to fill critical gaps only**
     - **DO NOT write comprehensive coverage for all scenarios**
 
-  - [ ] 4.4 Run feature-specific tests only
+  - [x] 4.4 Run feature-specific tests only
     - Run ONLY tests related to SingleChoiceSet handlers
     - Expected total: approximately 14-26 tests maximum
     - Do NOT run entire application test suite
@@ -258,16 +258,16 @@ Implement handlers for H5P.SingleChoiceSet content type following the establishe
 
 #### Task Group 4.2: Integration Examples
 
-- [ ] 4.5 Add SingleChoiceSet to comprehensive-demo.yaml
-  - File: `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/examples/yaml/comprehensive-demo.yaml`
+- [x] 4.5 Add SingleChoiceSet to comprehensive-demo.yaml
+  - File: `/home/user/h5p-cli-creator/examples/yaml/comprehensive-demo.yaml`
   - Add new chapter: "Single Choice Questions"
   - Add manual SingleChoiceSet example with 3-4 questions
   - Add AI-generated SingleChoiceSet example with prompt and parameters
   - Include both behaviour customization and default usage
   - Follow existing chapter patterns in comprehensive-demo.yaml
 
-  - [ ] 4.6 Create standalone singlechoiceset-example.yaml
-    - File: `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/examples/yaml/singlechoiceset-example.yaml`
+  - [x] 4.6 Create standalone singlechoiceset-example.yaml
+    - File: `/home/user/h5p-cli-creator/examples/yaml/singlechoiceset-example.yaml`
     - Include comprehensive manual SingleChoiceSet example
     - Include comprehensive AI-generated SingleChoiceSet example
     - Show all optional parameters (behaviour, labels, feedback)
@@ -283,8 +283,8 @@ Implement handlers for H5P.SingleChoiceSet content type following the establishe
 
 #### Task Group 4.3: Documentation Updates
 
-- [ ] 4.8 Update README.md
-  - File: `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/README.md`
+- [x] 4.8 Update README.md
+  - File: `/home/user/h5p-cli-creator/README.md`
   - Add SingleChoiceSet to "Supported Content Types" table
   - Description: "Single-choice quiz questions with multiple answers (only one correct)"
   - Add manual YAML example in appropriate section
@@ -292,7 +292,7 @@ Implement handlers for H5P.SingleChoiceSet content type following the establishe
   - Explain correct answer placement requirement
   - Mention support for both type aliases
 
-  - [ ] 4.9 Create inline code documentation
+  - [x] 4.9 Create inline code documentation
     - Add comprehensive JSDoc comments to SingleChoiceSetHandler class
     - Add comprehensive JSDoc comments to AISingleChoiceSetHandler class
     - Document SingleChoiceSetContent interface fields
@@ -434,9 +434,9 @@ const choices = item.questions.map((q) => ({
 
 ## Success Metrics
 
-- [ ] SingleChoiceSetHandler validates and processes manual questions correctly
-- [ ] AISingleChoiceSetHandler generates questions using AI with appropriate difficulty
-- [ ] Correct answer consistently placed at index 0 in answers array (verified in tests)
+- [x] SingleChoiceSetHandler validates and processes manual questions correctly
+- [x] AISingleChoiceSetHandler generates questions using AI with appropriate difficulty
+- [x] Correct answer consistently placed at index 0 in answers array (verified in tests)
 - [ ] All feature-specific tests pass (14-26 tests total)
 - [ ] comprehensive-demo.yaml includes working examples of both handlers
 - [ ] singlechoiceset-example.yaml created with comprehensive examples

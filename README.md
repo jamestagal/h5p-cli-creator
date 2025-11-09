@@ -352,6 +352,8 @@ chapters:
 | `ai-quiz` | AI-generated multiple choice quiz | `sourceText`, `questionCount` | `title`, `aiConfig` |
 | `flashcards` | Flashcard deck | `cards` (array) | `title`, `description` |
 | `dialogcards` | Dialog cards | `cards` (array) | `title`, `mode` |
+| `singlechoiceset` (or `single-choice-set`) | Single-choice quiz questions (only one correct answer) | `questions` (array) | `title`, `behaviour`, `labels`, `feedback` |
+| `ai-singlechoiceset` (or `ai-single-choice-set`) | AI-generated single-choice questions | `prompt` | `title`, `questionCount`, `distractorsPerQuestion`, `difficulty`, `aiConfig` |
 
 **CLI Options:**
 - `--ai-provider <gemini|claude|auto>` - Choose AI provider (default: auto-detect)

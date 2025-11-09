@@ -6,7 +6,7 @@ import { AIConfiguration } from "./types";
 /**
  * Content directive types that can be specified in YAML
  */
-export type ContentType = "text" | "image" | "audio" | "ai-text" | "ai-quiz" | "flashcards" | "dialogcards" | "accordion" | "ai-accordion";
+export type ContentType = "text" | "image" | "audio" | "ai-text" | "ai-quiz" | "flashcards" | "dialogcards" | "accordion" | "ai-accordion" | "singlechoiceset" | "single-choice-set" | "ai-singlechoiceset" | "ai-single-choice-set";
 
 /**
  * Base content item interface
@@ -139,6 +139,10 @@ export interface DialogCardsContent extends ContentItem {
 export { AccordionContent } from "../handlers/embedded/AccordionHandler";
 export { AIAccordionContent } from "../handlers/ai/AIAccordionHandler";
 
+// Export single choice set content types
+export { SingleChoiceSetContent } from "../handlers/embedded/SingleChoiceSetHandler";
+export { AISingleChoiceSetContent } from "../handlers/ai/AISingleChoiceSetHandler";
+
 /**
  * Union type for all content items
  */
@@ -151,7 +155,9 @@ export type AnyContentItem =
   | FlashcardsContent
   | DialogCardsContent
   | import("../handlers/embedded/AccordionHandler").AccordionContent
-  | import("../handlers/ai/AIAccordionHandler").AIAccordionContent;
+  | import("../handlers/ai/AIAccordionHandler").AIAccordionContent
+  | import("../handlers/embedded/SingleChoiceSetHandler").SingleChoiceSetContent
+  | import("../handlers/ai/AISingleChoiceSetHandler").AISingleChoiceSetContent;
 
 /**
  * Chapter definition from YAML
@@ -197,228 +203,211 @@ export interface ChapterDefinition {
  * - Interactive Books (via YAML/JSON BookDefinition)
  * - Smart Import API (via request payload)
  * - Any AI-generated H5P content
+ *
+ * Configuration hierarchy (from highest to lowest priority):
+ * 1. item.aiConfig (specific content item - highest priority)
+ * 2. chapter.aiConfig (overrides book level)
+ * 3. book.aiConfig (this field - overrides system defaults)
+ * 4. System defaults (grade-6, educational, plain-html - lowest priority)
+ *
+ * All AI handlers should use AIPromptBuilder.resolveConfig() to properly merge
+ * configurations from all three levels.
  */
 export interface BookDefinition {
   title: string;
-  language: string;
-  description?: string;
+  language?: string;
+  coverImage?: string;
   chapters: ChapterDefinition[];
   /**
-   * Optional AI configuration for all AI-generated content in this book.
+   * Optional AI configuration for all AI-generated content in the book.
    *
-   * Provides default reading level, tone, and customization for all AI content
-   * items (ai-text, ai-quiz) throughout the book. Chapters and individual items
-   * can override these settings as needed.
+   * Provides default AI configuration for all AI content types (ai-text, ai-quiz, ai-accordion, etc.)
+   * Chapters can override with chapter.aiConfig, and individual items can override with item.aiConfig.
    *
-   * Configuration hierarchy (from highest to lowest priority):
-   * 1. item.aiConfig (specific content item)
-   * 2. chapter.aiConfig (specific chapter)
-   * 3. book.aiConfig (this field)
-   * 4. system defaults (grade-6, educational, plain-html)
+   * Use this to set a consistent reading level and tone for the entire book,
+   * while still allowing chapter-level and item-level customization.
    *
-   * @example
+   * @example Book for middle school students:
    * {
-   *   title: "Biology for 6th Graders",
-   *   language: "en",
+   *   title: "Introduction to Biology",
    *   aiConfig: {
    *     targetAudience: "grade-6",
    *     tone: "educational",
-   *     customization: "Focus on visual learners. Use real-world examples."
+   *     customization: "Use simple vocabulary. Define scientific terms."
    *   },
    *   chapters: [...]
    * }
+   *
+   * @example Book for advanced readers:
+   * {
+   *   title: "Advanced Quantum Mechanics",
+   *   aiConfig: {
+   *     targetAudience: "college",
+   *     tone: "academic",
+   *     customization: "Use formal mathematical notation. Assume calculus knowledge."
+   *   },
+   *   chapters: [...]
+   * }
+   *
+   * Added in Phase 5: AI Configuration System
    */
   aiConfig?: AIConfiguration;
 }
 
 /**
- * YamlInputParser parses YAML input files describing H5P Interactive Book structure.
- * Supports book metadata, chapters, content types, and AI directives.
+ * YamlInputParser parses YAML book definitions into structured BookDefinition objects.
+ *
+ * Supports:
+ * - Multiple content types (text, image, audio, flashcards, dialog cards, accordion, single choice set)
+ * - AI-generated content (ai-text, ai-quiz, ai-accordion, ai-singlechoiceset)
+ * - Book-level, chapter-level, and item-level AI configuration (Phase 5)
+ * - Relative and absolute file paths
+ * - Comprehensive validation
  */
 export class YamlInputParser {
   /**
-   * Valid reading level values for aiConfig.targetAudience validation
+   * Parses a YAML file into a BookDefinition.
+   * @param yamlFilePath Path to YAML file
+   * @returns Parsed and validated BookDefinition
    */
-  private static readonly VALID_READING_LEVELS = [
-    "elementary",
-    "grade-6",
-    "grade-9",
-    "high-school",
-    "college",
-    "professional",
-    "esl-beginner",
-    "esl-intermediate"
-  ];
-
-  /**
-   * Valid tone values for aiConfig.tone validation
-   */
-  private static readonly VALID_TONES = [
-    "educational",
-    "professional",
-    "casual",
-    "academic"
-  ];
-
-  /**
-   * Parses a YAML file into a BookDefinition structure.
-   * @param yamlPath Path to YAML file
-   * @returns Parsed book definition
-   * @throws Error if file cannot be read or YAML is invalid
-   */
-  public async parse(yamlPath: string): Promise<BookDefinition> {
-    try {
-      // Read YAML file
-      const yamlContent = await fsExtra.readFile(yamlPath, "utf8");
-
-      // Parse YAML
-      const parsed = yaml.load(yamlContent) as any;
-
-      // Validate structure
-      this.validateBookDefinition(parsed);
-
-      // Resolve relative paths in content items
-      const basePath = path.dirname(path.resolve(yamlPath));
-      this.resolveContentPaths(parsed, basePath);
-
-      return parsed as BookDefinition;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new Error(`Failed to parse YAML file: ${error.message}`);
-      }
-      throw new Error("Failed to parse YAML file: Unknown error");
+  public static parseYamlFile(yamlFilePath: string): BookDefinition {
+    if (!fsExtra.existsSync(yamlFilePath)) {
+      throw new Error(`YAML file not found: ${yamlFilePath}`);
     }
+
+    const yamlContent = fsExtra.readFileSync(yamlFilePath, "utf-8");
+    const basePath = path.dirname(yamlFilePath);
+
+    return this.parseYamlString(yamlContent, basePath);
   }
 
   /**
-   * Validates that the parsed YAML has required structure.
-   * @param parsed Parsed YAML object
-   * @throws Error if validation fails
+   * Parses YAML content string into a BookDefinition.
+   * @param yamlContent YAML content as string
+   * @param basePath Base directory for resolving relative paths (defaults to current directory)
+   * @returns Parsed and validated BookDefinition
    */
-  private validateBookDefinition(parsed: any): void {
-    if (!parsed || typeof parsed !== "object") {
-      throw new Error("YAML must contain an object");
+  public static parseYamlString(yamlContent: string, basePath: string = process.cwd()): BookDefinition {
+    let parsed: any;
+
+    try {
+      parsed = yaml.load(yamlContent);
+    } catch (error: any) {
+      throw new Error(`Failed to parse YAML: ${error.message}`);
     }
 
-    if (!parsed.title || typeof parsed.title !== "string") {
+    if (!parsed || typeof parsed !== "object") {
+      throw new Error("YAML content must be a valid object");
+    }
+
+    // Validate and construct BookDefinition
+    const bookDef = this.validateAndBuildBookDefinition(parsed);
+
+    // Resolve relative file paths to absolute paths
+    this.resolveContentPaths(bookDef, basePath);
+
+    return bookDef;
+  }
+
+  /**
+   * Validates parsed YAML and constructs a BookDefinition.
+   * @param data Parsed YAML data
+   * @returns Validated BookDefinition
+   */
+  private static validateAndBuildBookDefinition(data: any): BookDefinition {
+    // Validate book-level fields
+    if (!data.title || typeof data.title !== "string") {
       throw new Error("Book must have a 'title' field (string)");
     }
 
-    if (!parsed.language || typeof parsed.language !== "string") {
-      throw new Error("Book must have a 'language' field (string)");
-    }
-
-    // Validate book-level aiConfig if present (Task 5.5.3)
-    if (parsed.aiConfig) {
-      this.validateAIConfig(parsed.aiConfig, "Book");
-    }
-
-    if (!Array.isArray(parsed.chapters)) {
+    if (!data.chapters || !Array.isArray(data.chapters)) {
       throw new Error("Book must have a 'chapters' field (array)");
     }
 
-    if (parsed.chapters.length === 0) {
+    if (data.chapters.length === 0) {
       throw new Error("Book must have at least one chapter");
     }
 
+    // Validate book-level aiConfig if present (Task 5.5.1)
+    if (data.aiConfig) {
+      this.validateAIConfig(data.aiConfig, "Book");
+    }
+
     // Validate each chapter
-    parsed.chapters.forEach((chapter: any, index: number) => {
+    for (let i = 0; i < data.chapters.length; i++) {
+      const chapter = data.chapters[i];
+
       if (!chapter.title || typeof chapter.title !== "string") {
-        throw new Error(`Chapter ${index + 1} must have a 'title' field (string)`);
+        throw new Error(`Chapter ${i + 1} must have a 'title' field (string)`);
       }
 
-      // Validate chapter-level aiConfig if present (Task 5.5.3)
-      if (chapter.aiConfig) {
-        this.validateAIConfig(chapter.aiConfig, `Chapter ${index + 1}`);
-      }
-
-      if (!Array.isArray(chapter.content)) {
-        throw new Error(`Chapter ${index + 1} must have a 'content' field (array)`);
+      if (!chapter.content || !Array.isArray(chapter.content)) {
+        throw new Error(`Chapter ${i + 1} must have a 'content' field (array)`);
       }
 
       if (chapter.content.length === 0) {
-        throw new Error(`Chapter ${index + 1} must have at least one content item`);
+        throw new Error(`Chapter ${i + 1} must have at least one content item`);
+      }
+
+      // Validate chapter-level aiConfig if present (Task 5.5.2)
+      if (chapter.aiConfig) {
+        this.validateAIConfig(chapter.aiConfig, `Chapter ${i + 1}`);
       }
 
       // Validate each content item
-      chapter.content.forEach((item: any, itemIndex: number) => {
-        this.validateContentItem(item, index + 1, itemIndex + 1);
-      });
-    });
+      for (let j = 0; j < chapter.content.length; j++) {
+        this.validateContentItem(chapter.content[j], i + 1, j + 1);
+      }
+    }
+
+    return data as BookDefinition;
   }
 
   /**
-   * Validates AI configuration structure and values.
+   * Validates AI configuration structure.
    * @param aiConfig AI configuration object to validate
-   * @param context Context string for error messages (e.g., "Book", "Chapter 1", "Chapter 2, item 3")
-   * @throws Error if validation fails
-   * @private
+   * @param prefix Prefix for error messages (e.g., "Book", "Chapter 1", "Chapter 2, item 3")
    */
-  private validateAIConfig(aiConfig: any, context: string): void {
+  private static validateAIConfig(aiConfig: any, prefix: string): void {
     if (typeof aiConfig !== "object" || aiConfig === null) {
-      throw new Error(`${context}: aiConfig must be an object`);
+      throw new Error(`${prefix} aiConfig must be an object`);
     }
 
     // Validate targetAudience if present
-    if (aiConfig.targetAudience !== undefined) {
-      if (typeof aiConfig.targetAudience !== "string") {
-        throw new Error(`${context}: aiConfig.targetAudience must be a string`);
-      }
-
-      if (!YamlInputParser.VALID_READING_LEVELS.includes(aiConfig.targetAudience)) {
-        throw new Error(
-          `${context}: Invalid targetAudience: '${aiConfig.targetAudience}'. ` +
-          `Valid options: ${YamlInputParser.VALID_READING_LEVELS.join(", ")}`
-        );
-      }
+    if (aiConfig.targetAudience !== undefined && typeof aiConfig.targetAudience !== "string") {
+      throw new Error(`${prefix} aiConfig.targetAudience must be a string`);
     }
 
     // Validate tone if present
-    if (aiConfig.tone !== undefined) {
-      if (typeof aiConfig.tone !== "string") {
-        throw new Error(`${context}: aiConfig.tone must be a string`);
-      }
-
-      if (!YamlInputParser.VALID_TONES.includes(aiConfig.tone)) {
-        throw new Error(
-          `${context}: Invalid tone: '${aiConfig.tone}'. ` +
-          `Valid options: ${YamlInputParser.VALID_TONES.join(", ")}`
-        );
-      }
+    if (aiConfig.tone !== undefined && typeof aiConfig.tone !== "string") {
+      throw new Error(`${prefix} aiConfig.tone must be a string`);
     }
 
     // Validate customization if present
     if (aiConfig.customization !== undefined && typeof aiConfig.customization !== "string") {
-      throw new Error(`${context}: aiConfig.customization must be a string`);
+      throw new Error(`${prefix} aiConfig.customization must be a string`);
     }
 
-    // Validate outputStyle if present (for completeness, though usually defaults to plain-html)
-    if (aiConfig.outputStyle !== undefined) {
-      const validOutputStyles = ["plain-html", "rich-html", "markdown"];
-      if (!validOutputStyles.includes(aiConfig.outputStyle)) {
-        throw new Error(
-          `${context}: Invalid outputStyle: '${aiConfig.outputStyle}'. ` +
-          `Valid options: ${validOutputStyles.join(", ")}`
-        );
-      }
+    // Validate outputFormat if present
+    if (aiConfig.outputFormat !== undefined && typeof aiConfig.outputFormat !== "string") {
+      throw new Error(`${prefix} aiConfig.outputFormat must be a string`);
     }
   }
 
   /**
-   * Validates a single content item.
+   * Validates individual content items.
    * @param item Content item to validate
-   * @param chapterNum Chapter number for error messages
-   * @param itemNum Item number for error messages
-   * @throws Error if validation fails
+   * @param chapterNum Chapter number (for error messages)
+   * @param itemNum Item number (for error messages)
    */
-  private validateContentItem(item: any, chapterNum: number, itemNum: number): void {
+  private static validateContentItem(item: any, chapterNum: number, itemNum: number): void {
     const prefix = `Chapter ${chapterNum}, item ${itemNum}`;
 
     if (!item.type || typeof item.type !== "string") {
       throw new Error(`${prefix} must have a 'type' field (string)`);
     }
 
-    const validTypes: ContentType[] = ["text", "image", "audio", "ai-text", "ai-quiz", "flashcards", "dialogcards", "accordion", "ai-accordion"];
+    const validTypes: ContentType[] = ["text", "image", "audio", "ai-text", "ai-quiz", "flashcards", "dialogcards", "accordion", "ai-accordion", "singlechoiceset", "single-choice-set", "ai-singlechoiceset", "ai-single-choice-set"];
     if (!validTypes.includes(item.type)) {
       throw new Error(
         `${prefix} has invalid type '${item.type}'. Valid types: ${validTypes.join(", ")}`
@@ -497,6 +486,23 @@ export class YamlInputParser {
           throw new Error(`${prefix} (ai-accordion) must have a 'prompt' field (string)`);
         }
         break;
+
+      case "singlechoiceset":
+      case "single-choice-set":
+        if (!Array.isArray(item.questions)) {
+          throw new Error(`${prefix} (singlechoiceset) must have 'questions' array`);
+        }
+        if (item.questions.length === 0) {
+          throw new Error(`${prefix} (singlechoiceset) must have at least one question`);
+        }
+        break;
+
+      case "ai-singlechoiceset":
+      case "ai-single-choice-set":
+        if (!item.prompt || typeof item.prompt !== "string") {
+          throw new Error(`${prefix} (ai-singlechoiceset) must have a 'prompt' field (string)`);
+        }
+        break;
     }
   }
 
@@ -505,7 +511,7 @@ export class YamlInputParser {
    * @param bookDef Book definition with potentially relative paths
    * @param basePath Base directory to resolve paths from
    */
-  private resolveContentPaths(bookDef: any, basePath: string): void {
+  private static resolveContentPaths(bookDef: any, basePath: string): void {
     for (const chapter of bookDef.chapters) {
       for (const item of chapter.content) {
         // Resolve paths for image and audio content
@@ -547,6 +553,14 @@ export class YamlInputParser {
           }
         }
       }
+    }
+
+    // Resolve cover image path if present
+    if (bookDef.coverImage &&
+        !bookDef.coverImage.startsWith("http://") &&
+        !bookDef.coverImage.startsWith("https://") &&
+        !path.isAbsolute(bookDef.coverImage)) {
+      bookDef.coverImage = path.resolve(basePath, bookDef.coverImage);
     }
   }
 }
