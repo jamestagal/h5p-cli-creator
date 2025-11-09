@@ -8,7 +8,7 @@ describe("Documentation Examples Validation", () => {
     it("should validate comprehensive-demo.yaml structure", () => {
       const yamlPath = path.join(
         __dirname,
-        "../../examples/comprehensive-demo.yaml"
+        "../../examples/yaml/comprehensive-demo.yaml"
       );
       const yamlContent = fs.readFileSync(yamlPath, "utf-8");
       const parsed = yaml.load(yamlContent) as any;
@@ -24,7 +24,7 @@ describe("Documentation Examples Validation", () => {
     it("should validate biology-lesson-migrated.yaml has aiConfig", () => {
       const yamlPath = path.join(
         __dirname,
-        "../../examples/biology-lesson-migrated.yaml"
+        "../../examples/yaml/biology-lesson-migrated.yaml"
       );
 
       if (!fs.existsSync(yamlPath)) {

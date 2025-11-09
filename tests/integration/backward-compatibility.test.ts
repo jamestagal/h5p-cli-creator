@@ -26,7 +26,7 @@ describe("Backward Compatibility", () => {
 
   describe("Existing YAML files compile unchanged", () => {
     it("should compile comprehensive-demo.yaml without aiConfig", async () => {
-      const yamlPath = path.join(__dirname, "..", "..", "examples", "comprehensive-demo.yaml");
+      const yamlPath = path.join(__dirname, "..", "..", "examples", "yaml", "comprehensive-demo.yaml");
 
       // Verify file exists
       const exists = await fsExtra.pathExists(yamlPath);
@@ -42,7 +42,7 @@ describe("Backward Compatibility", () => {
     });
 
     it("should compile biology-lesson.yaml without aiConfig", async () => {
-      const yamlPath = path.join(__dirname, "..", "..", "examples", "biology-lesson.yaml");
+      const yamlPath = path.join(__dirname, "..", "..", "examples", "yaml", "biology-lesson.yaml");
 
       // Verify file exists
       const exists = await fsExtra.pathExists(yamlPath);
