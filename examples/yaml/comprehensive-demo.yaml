@@ -26,12 +26,12 @@ chapters:
           99.86% of the total mass of the solar system!
 
       - type: image
-        path: "../tests/images/test-image.jpg"
+        path: "../../tests/images/test-image.jpg"
         alt: "The Sun showing solar flares and surface activity"
         title: "Our Sun"
 
       - type: audio
-        path: "../tests/audios/test-audio.mp3"
+        path: "../../tests/audios/test-audio.mp3"
         title: "Listen: Facts About the Sun"
 
   - title: "The Inner Planets"
@@ -67,6 +67,38 @@ chapters:
 
           - front: "Neptune"
             back: "The farthest planet from the Sun. It has the strongest winds in the solar system, reaching speeds up to 2,100 km/h. Its blue color comes from methane."
+
+  - title: "Solar System FAQ"
+    content:
+      - type: text
+        title: "Common Questions"
+        text: |
+          Here are some frequently asked questions about our solar system.
+          Click on each question to reveal the answer!
+
+      - type: accordion
+        title: "Manual FAQ About the Solar System"
+        panels:
+          - title: "How old is the Solar System?"
+            content: "The Solar System formed approximately 4.6 billion years ago from a collapsing cloud of gas and dust. This process created the Sun and all the planets we see today."
+
+          - title: "Why do planets orbit the Sun?"
+            content: "Planets orbit the Sun due to gravity. The Sun's massive gravitational pull keeps the planets in their orbits, while their forward motion prevents them from falling into the Sun."
+
+          - title: "Could humans live on Mars?"
+            content: "Currently, Mars is not habitable for humans without protective equipment. It has a thin atmosphere, extreme temperatures, and no liquid water on the surface. However, scientists are studying ways to potentially terraform Mars in the future."
+
+      - type: ai-accordion
+        title: "AI-Generated FAQ About Planets"
+        prompt: "Create FAQ about the unique characteristics of each planet in our solar system. Include questions about size, atmosphere, moons, and interesting features."
+        panelCount: 8
+        style: "faq"
+
+      - type: ai-accordion
+        title: "Solar System Glossary"
+        prompt: "Create a glossary of important astronomical terms related to the solar system. Include terms like orbit, planet, asteroid, comet, atmosphere, gravity, etc."
+        panelCount: 6
+        style: "glossary"
 
   - title: "Test Your Knowledge"
     content:

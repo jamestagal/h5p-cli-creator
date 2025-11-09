@@ -6,7 +6,7 @@ import { AIConfiguration } from "./types";
 /**
  * Content directive types that can be specified in YAML
  */
-export type ContentType = "text" | "image" | "audio" | "ai-text" | "ai-quiz" | "flashcards" | "dialogcards";
+export type ContentType = "text" | "image" | "audio" | "ai-text" | "ai-quiz" | "flashcards" | "dialogcards" | "accordion" | "ai-accordion";
 
 /**
  * Base content item interface
@@ -135,6 +135,10 @@ export interface DialogCardsContent extends ContentItem {
   }>;
 }
 
+// Export accordion content types
+export { AccordionContent } from "../handlers/embedded/AccordionHandler";
+export { AIAccordionContent } from "../handlers/ai/AIAccordionHandler";
+
 /**
  * Union type for all content items
  */
@@ -145,7 +149,9 @@ export type AnyContentItem =
   | AudioContent
   | AIQuizContent
   | FlashcardsContent
-  | DialogCardsContent;
+  | DialogCardsContent
+  | import("../handlers/embedded/AccordionHandler").AccordionContent
+  | import("../handlers/ai/AIAccordionHandler").AIAccordionContent;
 
 /**
  * Chapter definition from YAML
@@ -412,7 +418,7 @@ export class YamlInputParser {
       throw new Error(`${prefix} must have a 'type' field (string)`);
     }
 
-    const validTypes: ContentType[] = ["text", "image", "audio", "ai-text", "ai-quiz", "flashcards", "dialogcards"];
+    const validTypes: ContentType[] = ["text", "image", "audio", "ai-text", "ai-quiz", "flashcards", "dialogcards", "accordion", "ai-accordion"];
     if (!validTypes.includes(item.type)) {
       throw new Error(
         `${prefix} has invalid type '${item.type}'. Valid types: ${validTypes.join(", ")}`
@@ -474,6 +480,21 @@ export class YamlInputParser {
         }
         if (item.cards.length === 0) {
           throw new Error(`${prefix} (dialogcards) must have at least one card`);
+        }
+        break;
+
+      case "accordion":
+        if (!Array.isArray(item.panels)) {
+          throw new Error(`${prefix} (accordion) must have a 'panels' field (array)`);
+        }
+        if (item.panels.length === 0) {
+          throw new Error(`${prefix} (accordion) must have at least one panel`);
+        }
+        break;
+
+      case "ai-accordion":
+        if (!item.prompt || typeof item.prompt !== "string") {
+          throw new Error(`${prefix} (ai-accordion) must have a 'prompt' field (string)`);
         }
         break;
     }

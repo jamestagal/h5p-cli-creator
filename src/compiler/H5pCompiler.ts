@@ -1,6 +1,7 @@
 import { HandlerRegistry } from "../handlers/HandlerRegistry";
 import { LibraryRegistry } from "./LibraryRegistry";
 import { QuizGenerator } from "../ai/QuizGenerator";
+import { AIPromptBuilder } from "../ai/AIPromptBuilder";
 import { SemanticValidator } from "./SemanticValidator";
 import { ContentBuilder } from "./ContentBuilder";
 import { PackageAssembler } from "./PackageAssembler";
@@ -46,11 +47,15 @@ export interface CompilerOptions {
  * ```
  */
 export class H5pCompiler {
+  private aiPromptBuilder: AIPromptBuilder;
+
   constructor(
     private handlerRegistry: HandlerRegistry,
     private libraryRegistry: LibraryRegistry,
     private quizGenerator: QuizGenerator
-  ) {}
+  ) {
+    this.aiPromptBuilder = new AIPromptBuilder();
+  }
 
   /**
    * Compiles a BookDefinition into an .h5p package Buffer.
@@ -234,6 +239,7 @@ export class H5pCompiler {
       chapterBuilder,
       libraryRegistry: this.libraryRegistry,
       quizGenerator: this.quizGenerator,
+      aiPromptBuilder: this.aiPromptBuilder,
       logger: {
         log: console.log,
         warn: console.warn,

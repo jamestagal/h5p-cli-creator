@@ -331,4 +331,54 @@ Return ONLY a JSON array with this exact format (no additional text):
     const quizContent = await this.generateQuiz(sourceText, questionCount, config);
     return this.toH5pFormat(quizContent.questions);
   }
+
+  /**
+   * Generates raw AI content using the configured provider.
+   * This is a lower-level method that can be used by other handlers
+   * (e.g., AIAccordionHandler) to generate custom content.
+   *
+   * @param systemPrompt System instructions for the AI (optional, only used with Claude)
+   * @param userPrompt The user's prompt/request
+   * @returns Raw text response from the AI
+   * @throws Error if API call fails
+   */
+  public async generateRawContent(systemPrompt: string, userPrompt: string): Promise<string> {
+    try {
+      if (this.provider === "anthropic" && this.anthropic) {
+        const message = await this.anthropic.messages.create({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2048,
+          system: systemPrompt,
+          messages: [
+            {
+              role: "user",
+              content: userPrompt
+            }
+          ]
+        });
+
+        // Extract text from Claude's response
+        return message.content
+          .filter((block) => block.type === "text")
+          .map((block) => (block as any).text)
+          .join("");
+      } else if (this.provider === "google" && this.gemini) {
+        // Gemini doesn't have separate system prompts, combine them
+        const combinedPrompt = systemPrompt
+          ? `${systemPrompt}\n\n${userPrompt}`
+          : userPrompt;
+
+        const model = this.gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const result = await model.generateContent(combinedPrompt);
+        return result.response.text();
+      } else {
+        throw new Error("No AI provider initialized");
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`AI content generation failed: ${error.message}`);
+      }
+      throw new Error("AI content generation failed: Unknown error");
+    }
+  }
 }

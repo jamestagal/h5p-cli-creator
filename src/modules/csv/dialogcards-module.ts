@@ -144,6 +144,7 @@ export class DialogCardsModule implements yargs.CommandModule {
         chapterBuilder,
         libraryRegistry,
         quizGenerator: null as any, // Not needed for dialog cards
+        aiPromptBuilder: null as any, // Not needed for dialog cards
         logger: {
           log: verbose ? console.log : () => {},
           warn: console.warn,

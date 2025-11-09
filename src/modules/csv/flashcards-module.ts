@@ -143,6 +143,7 @@ export class FlashcardsModule implements yargs.CommandModule {
         chapterBuilder,
         libraryRegistry,
         quizGenerator: null as any, // Not needed for flashcards
+        aiPromptBuilder: null as any, // Not needed for flashcards
         logger: {
           log: verbose ? console.log : () => {},
           warn: console.warn,

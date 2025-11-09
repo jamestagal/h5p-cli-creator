@@ -1,6 +1,7 @@
 import { ChapterBuilder } from "../compiler/ChapterBuilder";
 import { LibraryRegistry } from "../compiler/LibraryRegistry";
 import { QuizGenerator } from "../ai/QuizGenerator";
+import { AIPromptBuilder } from "../ai/AIPromptBuilder";
 import { MediaFile } from "../compiler/ContentBuilder";
 import { AIConfiguration } from "../compiler/types";
 
@@ -40,6 +41,12 @@ export interface HandlerContext {
    * Used by QuizHandler to generate H5P.MultiChoice content.
    */
   quizGenerator: QuizGenerator;
+
+  /**
+   * AI prompt builder for generating system prompts.
+   * Used by AI handlers to build prompts with reading level and tone configuration.
+   */
+  aiPromptBuilder: AIPromptBuilder;
 
   /**
    * Logger for progress and debug messages.

@@ -14,6 +14,8 @@ import { AITextHandler } from "../../handlers/core/AITextHandler";
 import { QuizHandler } from "../../handlers/ai/QuizHandler";
 import { FlashcardsHandler } from "../../handlers/embedded/FlashcardsHandler";
 import { DialogCardsHandler } from "../../handlers/embedded/DialogCardsHandler";
+import { AccordionHandler } from "../../handlers/embedded/AccordionHandler";
+import { AIAccordionHandler } from "../../handlers/ai/AIAccordionHandler";
 import { H5pCompiler } from "../../compiler/H5pCompiler";
 
 // Load environment variables
@@ -103,6 +105,8 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
       handlerRegistry.register(new QuizHandler());
       handlerRegistry.register(new FlashcardsHandler());
       handlerRegistry.register(new DialogCardsHandler());
+      handlerRegistry.register(new AccordionHandler());
+      handlerRegistry.register(new AIAccordionHandler());
 
       // Override API key if provided
       if (apiKey) {
