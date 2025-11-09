@@ -7,7 +7,64 @@ The Smart Import API provides a powerful workflow for generating multiple H5P co
 **Phase 5 Status:** Architecture documented, types exported, foundation established
 **Phase 6 Status:** Full implementation (coming soon)
 
+## TL;DR - Key Architectural Decision
+
+**LEARNING INTEGRITY PRINCIPLE:** Smart Import generates ALL content (flashcards, quizzes, summaries, etc.) FROM the extracted source text, not from thin air.
+
+```typescript
+// ✅ CORRECT (Smart Import - Source-Based)
+userPrompt = `Based on this source text: "${sourceText}", create 10 flashcards...`;
+
+// ❌ WRONG (Would create hallucinated content)
+userPrompt = `Create 10 flashcards about photosynthesis...`;
+```
+
+**Why this matters:**
+- **Learning Integrity**: Assessments test what was actually taught in the source material
+- **Content Consistency**: All activities reference the same foundational knowledge
+- **Educational Quality**: No AI hallucinations - only source-derived content
+
+**Implementation Status:**
+- **Phase 5 (Current)**: Prompt-based generation (YAML/JSON workflow) ✅
+- **Phase 6 (Next)**: Add source-based generation (Smart Import) + support both modes 🚧
+
+**Handler Pattern (Phase 6):**
+```typescript
+// Handlers check for sourceText and use appropriate mode
+if (context.sourceText) {
+  // Source-based: Generate FROM extracted text
+  userPrompt = `Based on: ${context.sourceText}...`;
+} else {
+  // Prompt-based: Generate FROM user prompt
+  userPrompt = `${item.prompt}...`;
+}
+```
+
 ## Key Concepts
+
+### Source Content as Foundation for Learning Integrity
+
+**CRITICAL ARCHITECTURAL PRINCIPLE:** All AI-generated content in Smart Import is derived from the **extracted source text**. This ensures:
+
+1. **Learning Integrity**: Questions, flashcards, and activities are based on the actual source material, not AI hallucinations
+2. **Content Consistency**: All generated content types reference the same foundational knowledge
+3. **Educational Quality**: Assessments test what was actually taught in the source material
+
+**Two AI Generation Modes:**
+
+1. **Source-Based Generation** (Smart Import - Phase 6, Recommended)
+   - AI generates content FROM extracted source text
+   - Used for: Flashcards, quizzes, dialog cards, summaries
+   - Pattern: `generateRawContent(systemPrompt, "Based on this text: [sourceText], create 10 flashcards...")`
+   - Ensures: Learning integrity and factual accuracy
+
+2. **Prompt-Based Generation** (Interactive Book - Phase 5, Current)
+   - AI generates content FROM user prompt alone
+   - Used for: ai-text, ai-quiz, ai-accordion in YAML/JSON workflow
+   - Pattern: `generateRawContent(systemPrompt, "Explain photosynthesis for grade 6...")`
+   - Flexible: But may generate content not aligned with source material
+
+**Implementation Goal (Phase 6+):** Both modes should be supported. Smart Import uses source-based mode by default, but can fall back to prompt-based mode if no source is available.
 
 ### Two Entry Points for AI Configuration
 
@@ -17,12 +74,14 @@ The h5p-cli-creator system supports two distinct entry points for AI-powered con
    - Input: YAML or JSON BookDefinition
    - Output: Single Interactive Book .h5p package
    - Configuration: Via `BookDefinition.aiConfig`
+   - AI Mode: Prompt-based generation (user prompts)
    - Use case: Creating structured educational books with chapters
 
 2. **Smart Import Entry Point** (Foundation in Phase 5, implementation in Phase 6)
    - Input: Source content (PDF/text/URL) + generation request
    - Output: Multiple .h5p packages of different content types
    - Configuration: Via `SmartImportRequest.aiConfig`
+   - AI Mode: Source-based generation (extracted text + prompts)
    - Use case: Rapid content generation from existing materials
 
 **Key Architectural Principle:** Both entry points use the **same** `AIConfiguration` type, `AIPromptBuilder` service, and reading level presets. The AI configuration system is truly universal.
@@ -675,26 +734,35 @@ Response: HTTP 400
 - [x] Document API structure and workflow
 - [x] Establish universal AIConfiguration architecture
 - [x] Document relationship to Interactive Book entry point
+- [x] Implement prompt-based AI generation (YAML/JSON workflow)
+- [x] Document source-based vs prompt-based generation modes
 
 ### Phase 6 (Next)
+- [ ] **Extend HandlerContext with sourceText field**
 - [ ] Implement source content extraction (PDF, URL, text)
 - [ ] Implement concept identification AI service
+- [ ] **Update AI handlers to support both generation modes:**
+  - [ ] Detect `context.sourceText` presence
+  - [ ] Use source-based prompts when available
+  - [ ] Fall back to prompt-based when sourceText is undefined
 - [ ] Implement standalone content generators:
-  - [ ] FlashcardsGenerator
-  - [ ] DialogCardsGenerator
-  - [ ] SummaryGenerator
-  - [ ] QuizGenerator (extend existing)
+  - [ ] FlashcardsGenerator (source-based)
+  - [ ] DialogCardsGenerator (source-based)
+  - [ ] SummaryGenerator (source-based)
+  - [ ] QuizGenerator (extend existing for source-based mode)
+  - [ ] DragTextGenerator (source-based)
+  - [ ] AccordionGenerator (source-based)
 - [ ] Implement composite content generators:
   - [ ] InteractiveBookGenerator (leverage Phase 5 work)
   - [ ] CoursePresentationGenerator
   - [ ] QuestionSetGenerator
 - [ ] Implement Smart Import API endpoints:
-  - [ ] POST /api/smart-import/upload
+  - [ ] POST /api/smart-import/upload (extract sourceText)
   - [ ] GET /api/smart-import/source/:id
-  - [ ] POST /api/smart-import/extract-concepts
-  - [ ] POST /api/smart-import/generate
+  - [ ] POST /api/smart-import/extract-concepts (analyze sourceText)
+  - [ ] POST /api/smart-import/generate (pass sourceText to handlers)
 - [ ] Create Smart Import UI components
-- [ ] Write integration tests
+- [ ] Write integration tests for both generation modes
 
 ### Phase 7+ (Future)
 - [ ] Interactive Video support
@@ -731,6 +799,49 @@ Both use the same:
 - Tone specifications
 - Configuration resolution logic
 
+### HandlerContext Extension for Source Text (Phase 6)
+
+The `HandlerContext` interface will be extended to support source-based generation:
+
+```typescript
+export interface HandlerContext {
+  chapterBuilder: ChapterBuilder;
+  libraryRegistry: LibraryRegistry;
+  quizGenerator: QuizGenerator;
+  aiPromptBuilder: AIPromptBuilder;
+  logger: Logger;
+  mediaFiles: MediaFile[];
+  options: Options;
+  bookConfig?: AIConfiguration;
+  chapterConfig?: AIConfiguration;
+
+  /**
+   * Optional source text for AI content generation.
+   *
+   * When present, AI handlers should generate content BASED ON this source text
+   * to ensure learning integrity (assessments test actual content).
+   *
+   * When absent, AI handlers use prompt-based generation (more flexible,
+   * but may generate content not aligned with specific source material).
+   *
+   * Populated by:
+   * - Smart Import workflow (Phase 6): Extracted from PDF/URL/text upload
+   * - Interactive Book YAML (Phase 5): undefined (uses prompt-based mode)
+   *
+   * @example
+   * // Source-based generation (Smart Import)
+   * if (context.sourceText) {
+   *   const userPrompt = `Based on this text: ${context.sourceText}, create quiz...`;
+   * }
+   * // Prompt-based generation (YAML)
+   * else {
+   *   const userPrompt = `${item.prompt}`;
+   * }
+   */
+  sourceText?: string;
+}
+```
+
 ### Stateless Prompt Building
 
 ```typescript
@@ -766,6 +877,119 @@ class InteractiveBookGenerator implements ContentGenerator { ... }
 ```
 
 All generators use `AIPromptBuilder` universally.
+
+### Source-Based vs Prompt-Based Generation Examples
+
+**Source-Based Generation (Smart Import - Ensures Learning Integrity):**
+
+```typescript
+// Handler implementation for Smart Import
+export class AIDragTextHandler implements ContentHandler {
+  public async process(context: HandlerContext, item: AIDragTextContent): Promise<void> {
+    const { quizGenerator, sourceText } = context;  // sourceText from extraction!
+
+    // Resolve AI config
+    const resolvedConfig = AIPromptBuilder.resolveConfig(
+      item.aiConfig,
+      context.chapterConfig,
+      context.bookConfig
+    );
+    const systemPrompt = AIPromptBuilder.buildSystemPrompt(resolvedConfig);
+
+    // BUILD USER PROMPT WITH SOURCE TEXT
+    const userPrompt = `Based on the following source text, create ${item.sentenceCount || 5} drag-the-words sentences.
+
+SOURCE TEXT:
+${sourceText}
+
+Generate sentences that test comprehension of key concepts from the source text above.
+Return JSON array: [{ "text": "...", "blanks": [{ "answer": "word" }] }]`;
+
+    const response = await quizGenerator.generateRawContent(systemPrompt, userPrompt);
+    // Process response...
+  }
+}
+```
+
+**Prompt-Based Generation (Interactive Book - Flexible but May Hallucinate):**
+
+```typescript
+// Handler implementation for Interactive Book YAML
+export class AIDragTextHandler implements ContentHandler {
+  public async process(context: HandlerContext, item: AIDragTextContent): Promise<void> {
+    const { quizGenerator } = context;
+    // NO sourceText - just user's prompt!
+
+    // Resolve AI config
+    const resolvedConfig = AIPromptBuilder.resolveConfig(
+      item.aiConfig,
+      context.chapterConfig,
+      context.bookConfig
+    );
+    const systemPrompt = AIPromptBuilder.buildSystemPrompt(resolvedConfig);
+
+    // BUILD USER PROMPT FROM ITEM PROMPT ALONE
+    const userPrompt = `${item.prompt}
+
+Generate ${item.sentenceCount || 5} drag-the-words sentences.
+Return JSON array: [{ "text": "...", "blanks": [{ "answer": "word" }] }]`;
+
+    const response = await quizGenerator.generateRawContent(systemPrompt, userPrompt);
+    // Process response...
+  }
+}
+```
+
+**Unified Handler Supporting Both Modes (Phase 6 Goal):**
+
+```typescript
+export class AIDragTextHandler implements ContentHandler {
+  public async process(context: HandlerContext, item: AIDragTextContent): Promise<void> {
+    const { quizGenerator, sourceText } = context;
+
+    // Resolve AI config
+    const resolvedConfig = AIPromptBuilder.resolveConfig(
+      item.aiConfig,
+      context.chapterConfig,
+      context.bookConfig
+    );
+    const systemPrompt = AIPromptBuilder.buildSystemPrompt(resolvedConfig);
+
+    // CHOOSE MODE BASED ON CONTEXT
+    let userPrompt: string;
+
+    if (sourceText) {
+      // SOURCE-BASED MODE (Smart Import)
+      userPrompt = `Based on the following source text, ${item.prompt}
+
+SOURCE TEXT:
+${sourceText}
+
+Generate ${item.sentenceCount || 5} sentences that test comprehension of key concepts from the source.
+Return JSON array: [{ "text": "...", "blanks": [{ "answer": "word" }] }]`;
+    } else {
+      // PROMPT-BASED MODE (Interactive Book YAML)
+      userPrompt = `${item.prompt}
+
+Generate ${item.sentenceCount || 5} drag-the-words sentences.
+Return JSON array: [{ "text": "...", "blanks": [{ "answer": "word" }] }]`;
+    }
+
+    const response = await quizGenerator.generateRawContent(systemPrompt, userPrompt);
+    // Process response...
+  }
+}
+```
+
+**Key Differences:**
+
+| Aspect | Source-Based (Smart Import) | Prompt-Based (YAML/JSON) |
+|--------|----------------------------|--------------------------|
+| Input | Extracted source text + prompt | User prompt only |
+| Learning Integrity | High (tests actual content) | Variable (may hallucinate) |
+| Use Case | Converting existing materials | Creating new content |
+| Context Availability | `context.sourceText` present | `context.sourceText` undefined |
+| Prompt Pattern | "Based on this text: [source]..." | "Create content about..." |
 
 ## See Also
 
