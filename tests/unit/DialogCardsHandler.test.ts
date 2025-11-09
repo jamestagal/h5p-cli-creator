@@ -29,9 +29,9 @@ describe("DialogCardsHandler", () => {
     expect(handler.getContentType()).toBe("dialogcards");
   });
 
-  it("should return H5P.DialogCards as required library", () => {
+  it("should return H5P.Dialogcards as required library", () => {
     const libs = handler.getRequiredLibraries();
-    expect(libs).toEqual(["H5P.DialogCards"]);
+    expect(libs).toEqual(["H5P.Dialogcards"]);  // lowercase 'c' - correct H5P library name
   });
 
   it("should validate content with cards array", () => {
@@ -118,10 +118,10 @@ describe("DialogCardsHandler", () => {
     const dialogCardsContent = addCustomContentSpy.mock.calls[0][0];
 
     // Verify structure
-    expect(dialogCardsContent.library).toBe("H5P.DialogCards 1.9");
+    expect(dialogCardsContent.library).toBe("H5P.Dialogcards 1.9");  // lowercase 'c' - correct H5P library name
     expect(dialogCardsContent.params.dialogs).toHaveLength(2);
-    expect(dialogCardsContent.params.dialogs[0].text).toBe("Hello");
-    expect(dialogCardsContent.params.dialogs[0].answer).toBe("Hola");
+    expect(dialogCardsContent.params.dialogs[0].text).toBe("<p>Hello</p>");  // HTML wrapped
+    expect(dialogCardsContent.params.dialogs[0].answer).toBe("<p>Hola</p>");  // HTML wrapped
     expect(dialogCardsContent.params.mode).toBe("repetition");
   });
 
@@ -145,7 +145,7 @@ describe("DialogCardsHandler", () => {
     // Full media handling will be tested in integration tests
   });
 
-  it("should default to repetition mode when not specified", async () => {
+  it("should default to normal mode when not specified", async () => {
     const item = {
       type: "dialogcards" as const,
       cards: [{ front: "Hello", back: "Hola" }],
@@ -154,6 +154,6 @@ describe("DialogCardsHandler", () => {
     await handler.process(mockContext, item);
 
     const dialogCardsContent = addCustomContentSpy.mock.calls[0][0];
-    expect(dialogCardsContent.params.mode).toBe("repetition");
+    expect(dialogCardsContent.params.mode).toBe("normal");  // Default is "normal" mode (matching H5P.com behavior)
   });
 });

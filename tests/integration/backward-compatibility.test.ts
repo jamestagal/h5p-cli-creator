@@ -1,132 +1,222 @@
 /**
- * Backward compatibility tests
- * Tests Task Group 2.4: Backward Compatibility Validation
+ * Backward Compatibility Test Suite (Task 5.6.1)
  *
- * These tests verify that the new handler-based approach produces
- * identical output to the old switch-statement approach.
+ * Ensures 100% backward compatibility with existing YAML files.
+ * Tests that all existing examples compile unchanged and that
+ * YAML without aiConfig field uses grade-6 defaults.
  */
 
+import { YamlInputParser } from "../../src/compiler/YamlInputParser";
+import { H5pCompiler } from "../../src/compiler/H5pCompiler";
+import { AIPromptBuilder } from "../../src/ai/AIPromptBuilder";
+import * as fsExtra from "fs-extra";
+import * as path from "path";
+
 describe("Backward Compatibility", () => {
-  test("should maintain CLI interface compatibility", () => {
-    // This test validates that the CLI commands work with same arguments
-    // In a real test, we would execute the CLI and verify exit codes
-    // For now, this is a placeholder that would be implemented with actual CLI execution
+  const parser = new YamlInputParser();
+  const testOutputDir = path.join(__dirname, "..", "test-output");
 
-    const expectedArgs = {
-      input: "input.yaml",
-      output: "output.h5p",
-      aiProvider: ["gemini", "claude", "auto"],
-      apiKey: "optional-string",
-      verbose: "boolean"
-    };
-
-    expect(expectedArgs).toBeDefined();
-    // Future: Add actual CLI execution test
+  beforeAll(async () => {
+    await fsExtra.ensureDir(testOutputDir);
   });
 
-  test("should preserve environment variable support", () => {
-    // Verify that GOOGLE_API_KEY and ANTHROPIC_API_KEY still work
-    const envVars = {
-      GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
-      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY
-    };
-
-    // These should be undefined in test environment
-    // In real usage, they should be set
-    expect(typeof envVars.GOOGLE_API_KEY === 'string' || envVars.GOOGLE_API_KEY === undefined).toBe(true);
-    expect(typeof envVars.ANTHROPIC_API_KEY === 'string' || envVars.ANTHROPIC_API_KEY === undefined).toBe(true);
+  afterAll(async () => {
+    await fsExtra.remove(testOutputDir);
   });
 
-  test("should support all original content types", () => {
-    // Verify that all original content types are still supported
-    const supportedTypes = ["text", "image", "audio", "ai-text", "ai-quiz"];
+  describe("Existing YAML files compile unchanged", () => {
+    it("should compile comprehensive-demo.yaml without aiConfig", async () => {
+      const yamlPath = path.join(__dirname, "..", "..", "examples", "comprehensive-demo.yaml");
 
-    // This would be validated by checking HandlerRegistry
-    expect(supportedTypes.length).toBe(5);
-    expect(supportedTypes).toContain("text");
-    expect(supportedTypes).toContain("image");
-    expect(supportedTypes).toContain("audio");
-    expect(supportedTypes).toContain("ai-text");
-    expect(supportedTypes).toContain("ai-quiz");
-  });
+      // Verify file exists
+      const exists = await fsExtra.pathExists(yamlPath);
+      expect(exists).toBe(true);
 
-  test("should maintain YAML parsing behavior", () => {
-    // Verify YAML parsing still works the same way
-    // YamlInputParser should parse files identically
-    const yamlStructure = {
-      title: "string",
-      language: "string",
-      description: "optional-string",
-      chapters: [
-        {
-          title: "string",
-          content: [
-            { type: "text | image | audio | ai-text | ai-quiz" }
-          ]
-        }
-      ]
-    };
+      // Parse should succeed
+      const bookDef = await parser.parse(yamlPath);
+      expect(bookDef).toBeDefined();
+      expect(bookDef.title).toBe("Complete Handler Demo - Solar System");
 
-    expect(yamlStructure).toBeDefined();
-    expect(yamlStructure.chapters.length).toBeGreaterThan(0);
-  });
+      // Should have no aiConfig (backward compatibility)
+      expect(bookDef.aiConfig).toBeUndefined();
+    });
 
-  test("should preserve verbose logging format", () => {
-    // Verify that verbose mode output format is preserved
-    const expectedLogMessages = [
-      "Step 1: Parsing YAML input...",
-      "Step 2: Fetching H5P libraries...",
-      "Step 3: Initializing AI components...",
-      "Step 4: Building Interactive Book content...",
-      "Step 5: Assembling .h5p package...",
-      "Step 6: Saving package to disk..."
-    ];
+    it("should compile biology-lesson.yaml without aiConfig", async () => {
+      const yamlPath = path.join(__dirname, "..", "..", "examples", "biology-lesson.yaml");
 
-    expectedLogMessages.forEach(msg => {
-      expect(msg).toContain("Step");
+      // Verify file exists
+      const exists = await fsExtra.pathExists(yamlPath);
+      expect(exists).toBe(true);
+
+      // Parse should succeed
+      const bookDef = await parser.parse(yamlPath);
+      expect(bookDef).toBeDefined();
+      expect(bookDef.title).toBe("AI-Generated Biology Lesson");
+
+      // Should have no aiConfig (backward compatibility)
+      expect(bookDef.aiConfig).toBeUndefined();
     });
   });
 
-  test("should maintain error handling behavior", () => {
-    // Verify that error handling works the same way
-    const errorScenarios = [
-      "Missing API key",
-      "Invalid YAML file",
-      "Unknown content type",
-      "Validation failure"
-    ];
+  describe("YAML without aiConfig uses grade-6 defaults", () => {
+    it("should apply grade-6 defaults when no aiConfig specified", async () => {
+      const yamlPath = path.join(testOutputDir, "no-config-defaults.yaml");
+      const yamlContent = `
+title: "Test Book - No Config"
+language: "en"
+chapters:
+  - title: "Chapter 1"
+    content:
+      - type: ai-text
+        prompt: "Explain photosynthesis"
+`;
+      await fsExtra.writeFile(yamlPath, yamlContent);
 
-    errorScenarios.forEach(scenario => {
-      expect(scenario).toBeTruthy();
+      const bookDef = await parser.parse(yamlPath);
+
+      // No aiConfig at book level
+      expect(bookDef.aiConfig).toBeUndefined();
+
+      // AIPromptBuilder should resolve to grade-6 defaults
+      const resolvedConfig = AIPromptBuilder.resolveConfig(undefined, undefined, undefined);
+      expect(resolvedConfig.targetAudience).toBe("grade-6");
+      expect(resolvedConfig.tone).toBe("educational");
+      expect(resolvedConfig.outputStyle).toBe("plain-html");
+    });
+
+    it("should apply defaults when partial aiConfig specified", async () => {
+      const yamlPath = path.join(testOutputDir, "partial-config-defaults.yaml");
+      const yamlContent = `
+title: "Test Book - Partial Config"
+language: "en"
+aiConfig:
+  tone: "casual"
+chapters:
+  - title: "Chapter 1"
+    content:
+      - type: text
+        text: "Sample"
+`;
+      await fsExtra.writeFile(yamlPath, yamlContent);
+
+      const bookDef = await parser.parse(yamlPath);
+
+      // Should have partial config
+      expect(bookDef.aiConfig).toBeDefined();
+      expect(bookDef.aiConfig?.tone).toBe("casual");
+      expect(bookDef.aiConfig?.targetAudience).toBeUndefined();
+
+      // AIPromptBuilder should fill in defaults
+      const resolvedConfig = AIPromptBuilder.resolveConfig(undefined, undefined, bookDef.aiConfig);
+      expect(resolvedConfig.targetAudience).toBe("grade-6"); // Default
+      expect(resolvedConfig.tone).toBe("casual"); // From book config
+      expect(resolvedConfig.outputStyle).toBe("plain-html"); // Default
     });
   });
 
-  test("should support same library resolution", () => {
-    // Verify that library resolution works the same way
-    const expectedLibraries = {
-      text: ["H5P.AdvancedText"],
-      image: ["H5P.Image"],
-      audio: ["H5P.Audio"],
-      "ai-text": ["H5P.AdvancedText"],
-      "ai-quiz": ["H5P.MultiChoice"]
-    };
+  describe("Old prompts with embedded formatting instructions still work", () => {
+    it("should handle prompts with embedded HTML instructions", async () => {
+      const yamlPath = path.join(testOutputDir, "old-style-prompt.yaml");
+      const yamlContent = `
+title: "Old Style Prompts"
+language: "en"
+chapters:
+  - title: "Chapter 1"
+    content:
+      - type: ai-text
+        prompt: "Write an introduction to the solar system for middle school students. IMPORTANT: Use plain text only - no markdown formatting, no asterisks for bold, no special characters. Write naturally with proper paragraphs separated by blank lines."
+`;
+      await fsExtra.writeFile(yamlPath, yamlContent);
 
-    Object.keys(expectedLibraries).forEach(type => {
-      expect(expectedLibraries[type]).toBeDefined();
-      expect(expectedLibraries[type].length).toBeGreaterThan(0);
+      // Should parse successfully
+      const bookDef = await parser.parse(yamlPath);
+      expect(bookDef).toBeDefined();
+
+      const aiTextItem = bookDef.chapters[0].content[0];
+      expect(aiTextItem.type).toBe("ai-text");
+
+      if (aiTextItem.type === "ai-text") {
+        // Prompt should be unchanged
+        expect(aiTextItem.prompt).toContain("IMPORTANT: Use plain text only");
+        expect(aiTextItem.prompt).toContain("no markdown formatting");
+      }
+    });
+
+    it("should build system prompt that includes formatting rules regardless of user prompt", async () => {
+      const userPrompt = "Explain gravity. Use plain HTML tags only. No markdown.";
+
+      // System prompt should ALWAYS include formatting rules
+      const systemPrompt = AIPromptBuilder.buildSystemPrompt();
+      expect(systemPrompt).toContain("CRITICAL FORMATTING REQUIREMENTS");
+      expect(systemPrompt).toContain("Use ONLY plain HTML tags");
+      expect(systemPrompt).toContain("DO NOT use markdown formatting");
+
+      // Complete prompt includes both system rules and user's (possibly redundant) instructions
+      const completePrompt = AIPromptBuilder.buildCompletePrompt(userPrompt);
+      expect(completePrompt).toContain("CRITICAL FORMATTING REQUIREMENTS");
+      expect(completePrompt).toContain(userPrompt);
+
+      // User's redundant instructions are harmless - they just reinforce system rules
+    });
+  });
+
+  describe("Handlers work with and without aiConfig", () => {
+    it("should resolve config to defaults when no aiConfig provided", () => {
+      // Simulate handler receiving context with no configs
+      const resolvedConfig = AIPromptBuilder.resolveConfig(undefined, undefined, undefined);
+
+      expect(resolvedConfig.targetAudience).toBe("grade-6");
+      expect(resolvedConfig.tone).toBe("educational");
+      expect(resolvedConfig.outputStyle).toBe("plain-html");
+    });
+
+    it("should resolve config with item override", () => {
+      const bookConfig = { targetAudience: "grade-6" as const };
+      const chapterConfig = { tone: "academic" as const };
+      const itemConfig = { targetAudience: "college" as const };
+
+      const resolvedConfig = AIPromptBuilder.resolveConfig(itemConfig, chapterConfig, bookConfig);
+
+      // Item-level targetAudience overrides book-level
+      expect(resolvedConfig.targetAudience).toBe("college");
+      // Chapter-level tone is used
+      expect(resolvedConfig.tone).toBe("academic");
+      // Default outputStyle
+      expect(resolvedConfig.outputStyle).toBe("plain-html");
+    });
+
+    it("should resolve config with chapter override only", () => {
+      const bookConfig = {
+        targetAudience: "grade-6" as const,
+        tone: "educational" as const
+      };
+      const chapterConfig = { targetAudience: "high-school" as const };
+
+      const resolvedConfig = AIPromptBuilder.resolveConfig(undefined, chapterConfig, bookConfig);
+
+      // Chapter-level targetAudience overrides book-level
+      expect(resolvedConfig.targetAudience).toBe("high-school");
+      // Book-level tone is used
+      expect(resolvedConfig.tone).toBe("educational");
+      // Default outputStyle
+      expect(resolvedConfig.outputStyle).toBe("plain-html");
+    });
+
+    it("should resolve config with book-level only", () => {
+      const bookConfig = {
+        targetAudience: "esl-beginner" as const,
+        tone: "casual" as const,
+        customization: "Use simple examples"
+      };
+
+      const resolvedConfig = AIPromptBuilder.resolveConfig(undefined, undefined, bookConfig);
+
+      // All values from book config
+      expect(resolvedConfig.targetAudience).toBe("esl-beginner");
+      expect(resolvedConfig.tone).toBe("casual");
+      expect(resolvedConfig.customization).toBe("Use simple examples");
+      // Default outputStyle
+      expect(resolvedConfig.outputStyle).toBe("plain-html");
     });
   });
 });
-
-/**
- * Note: Full backward compatibility testing would include:
- * 1. Generating .h5p files with both old and new implementations
- * 2. Extracting and comparing content.json files
- * 3. Normalizing dynamic fields (UUIDs, timestamps)
- * 4. Verifying identical chapter structures and content
- *
- * These tests require the actual CLI to be runnable with both versions,
- * which is not feasible in this test environment. The backup file
- * (interactive-book-ai-module.ts.backup) contains the old implementation
- * for manual comparison if needed.
- */

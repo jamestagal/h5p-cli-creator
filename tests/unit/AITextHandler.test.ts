@@ -87,7 +87,8 @@ describe("AITextHandler", () => {
     expect(mockLogger.warn).toHaveBeenCalled();
     expect(mockChapterBuilder.addTextPage).toHaveBeenCalledWith(
       "Test Title",
-      expect.stringContaining("AI text generation failed")
+      expect.stringContaining("AI text generation failed"),
+      true  // escapeHtml parameter
     );
 
     // Restore environment variables

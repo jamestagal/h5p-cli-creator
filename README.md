@@ -65,7 +65,7 @@ export class MyCustomHandler implements ContentHandler {
 - Clean separation of concerns
 - Easy to test and maintain
 
-For detailed instructions, see the [Handler Development Guide](docs/Handler_Development_Guide.md).
+For detailed instructions, see the [Handler Development Guide](docs/developer-guides/Handler_Development_Guide.md).
 
 ### API Integration
 
@@ -88,7 +88,7 @@ return new Response(h5pBuffer, {
 });
 ```
 
-For complete API integration instructions, see the [API Integration Guide](docs/API_Integration_Guide.md).
+For complete API integration instructions, see the [API Integration Guide](docs/developer-guides/api-integration.md).
 
 ## Run
 * Install [NodeJS](https://nodejs.org/)
@@ -185,6 +185,7 @@ Create interactive digital books with **AI-generated content** including text, q
 **Features:**
 - ✅ **AI Text Generation** - Automatically generate educational content from prompts
 - ✅ **AI Quiz Generation** - Create multiple choice questions from source text
+- ✅ **Reading Level Control** - Choose from 8 reading levels (elementary to professional)
 - ✅ **Template-Free** - No template files required, all content built programmatically
 - ✅ **Dual AI Providers** - Supports both Google Gemini 2.5 Flash and Anthropic Claude Sonnet 4
 - ✅ **Mixed Content** - Combine manual text, AI text, images, audio, and quizzes
@@ -201,8 +202,94 @@ Create interactive digital books with **AI-generated content** including text, q
 echo "GOOGLE_API_KEY=your_api_key_here" > .env
 
 # Generate AI-powered book
-node ./dist/index.js interactivebook-ai ./examples/biology-lesson.yaml ./output.h5p --verbose
+node ./dist/index.js interactivebook-ai ./examples/yaml/biology-lesson.yaml ./output.h5p --verbose
 ```
+
+#### AI Configuration 🎯 NEW!
+
+Control how AI generates content with simple configuration. Set reading level, tone, and customization once for your entire book:
+
+```yaml
+title: "Biology Fundamentals"
+language: "en"
+
+# AI Configuration - applies to ALL AI content!
+aiConfig:
+  targetAudience: "grade-6"        # Choose from 8 reading levels
+  tone: "educational"              # Choose from 4 tone options
+  customization: "Focus on visual learners. Include real-world examples."
+
+chapters:
+  - title: "Photosynthesis"
+    content:
+      - type: ai-text
+        prompt: "Explain photosynthesis"  # Simple! No formatting instructions needed
+```
+
+**8 Reading Levels Available:**
+
+| Level | Grade/Age | Best For |
+|-------|-----------|----------|
+| `elementary` | Grades 1-5 | Young students, basic concepts |
+| `grade-6` | Ages 11-12 | **DEFAULT** - Middle school |
+| `grade-9` | Ages 14-15 | High school freshmen/sophomores |
+| `high-school` | Grades 10-12 | College prep, AP courses |
+| `college` | Undergraduate | University students |
+| `professional` | Adult | Workplace training |
+| `esl-beginner` | A1-A2 CEFR | English learners (beginner) |
+| `esl-intermediate` | B1-B2 CEFR | English learners (intermediate) |
+
+**Before (the old way):**
+```yaml
+- type: ai-text
+  prompt: "Explain photosynthesis for 6th grade students. Use simple sentences. No markdown formatting. Use plain text only."
+```
+
+**After (the new way):**
+```yaml
+aiConfig:
+  targetAudience: "grade-6"
+
+chapters:
+  - content:
+      - type: ai-text
+        prompt: "Explain photosynthesis"  # Clean and simple!
+```
+
+**Benefits:**
+- ✅ Write simple, focused prompts
+- ✅ Consistent reading level across all AI content
+- ✅ No more formatting instructions in prompts
+- ✅ Easy to change reading level for entire book
+- ✅ Optional customization for specific teaching approaches
+
+**Configuration Hierarchy:**
+
+You can set aiConfig at three levels with increasing specificity:
+
+```yaml
+# Book level - applies to everything
+aiConfig:
+  targetAudience: "grade-6"
+
+chapters:
+  # Chapter level - overrides book setting for this chapter
+  - title: "Advanced Topics"
+    aiConfig:
+      targetAudience: "high-school"
+    content:
+      # Item level - overrides chapter and book settings
+      - type: ai-text
+        aiConfig:
+          targetAudience: "college"
+        prompt: "Explain quantum photosynthesis"
+```
+
+**See Documentation:**
+- [Teacher's Guide: AI Configuration](docs/user-guides/teacher-guide-ai-config.md) - Choosing reading levels, customization tips
+- [YAML Format Reference](docs/user-guides/yaml-format.md) - Complete YAML syntax with aiConfig examples
+- [API Integration Guide](docs/developer-guides/api-integration.md) - Using aiConfig in web applications
+- [Prompt Engineering Reference](docs/developer-guides/prompt-engineering.md) - How system prompts work (technical)
 
 **YAML Input Format:**
 
@@ -259,10 +346,10 @@ chapters:
 | Type | Description | Required Fields | Optional Fields |
 |------|-------------|-----------------|-----------------|
 | `text` | Manual text content | `text` | `title` |
-| `ai-text` | AI-generated educational text | `prompt` | `title` |
+| `ai-text` | AI-generated educational text | `prompt` | `title`, `aiConfig` |
 | `image` | Image content | `path` | `title`, `alt` |
 | `audio` | Audio narration | `path` | `title` |
-| `ai-quiz` | AI-generated multiple choice quiz | `sourceText`, `questionCount` | `title` |
+| `ai-quiz` | AI-generated multiple choice quiz | `sourceText`, `questionCount` | `title`, `aiConfig` |
 | `flashcards` | Flashcard deck | `cards` (array) | `title`, `description` |
 | `dialogcards` | Dialog cards | `cards` (array) | `title`, `mode` |
 
@@ -290,17 +377,20 @@ node ./dist/index.js interactivebook-ai ./lesson.yaml ./output.h5p --verbose
 **AI Text Generation Best Practices:**
 
 1. **Be specific in prompts** - Include target audience, length, and style
-2. **Avoid markdown** - Request plain text only (AI models default to markdown)
-3. **Specify paragraph separation** - Ask for "paragraphs separated by blank lines"
+2. **Use aiConfig for reading level** - Don't embed reading level in prompts
+3. **Keep prompts focused** - Trust the system to handle formatting and style
 4. **Provide context** - Give enough background for the AI to generate accurate content
 
-**Example Prompt:**
+**Example with AI Configuration:**
 ```yaml
-prompt: "Write a clear, educational summary of mitosis for 9th grade biology students.
-Include the four phases (prophase, metaphase, anaphase, telophase) and their key
-characteristics. Make it about 200 words. IMPORTANT: Use plain text only - no markdown
-formatting, no asterisks for bold, no special characters. Write naturally with proper
-paragraphs separated by blank lines."
+aiConfig:
+  targetAudience: "grade-9"
+  customization: "Use medical examples. Include diagrams where helpful."
+
+chapters:
+  - content:
+      - type: ai-text
+        prompt: "Explain mitosis"  # Simple and focused!
 ```
 
 **AI Quiz Generation Best Practices:**
@@ -309,22 +399,28 @@ paragraphs separated by blank lines."
 2. **Adjust question count** - 5 questions per topic is usually ideal
 3. **Include definitions** - AI generates better questions when terms are defined
 4. **Add context** - Background information helps create better distractors
+5. **Use aiConfig for difficulty** - Control question complexity with targetAudience
 
-**Example Quiz:**
+**Example Quiz with AI Configuration:**
 ```yaml
-- type: ai-quiz
-  title: "Cell Division Quiz"
-  questionCount: 5
-  sourceText: |
-    Mitosis is the process of cell division that results in two identical daughter cells.
+aiConfig:
+  targetAudience: "high-school"
 
-    The four phases are:
-    1. Prophase: Chromosomes condense and become visible
-    2. Metaphase: Chromosomes align at the cell's equator
-    3. Anaphase: Sister chromatids separate and move to opposite poles
-    4. Telophase: Nuclear envelopes reform around each set of chromosomes
+chapters:
+  - content:
+      - type: ai-quiz
+        title: "Cell Division Quiz"
+        questionCount: 5
+        sourceText: |
+          Mitosis is the process of cell division that results in two identical daughter cells.
 
-    Mitosis is essential for growth, repair, and asexual reproduction.
+          The four phases are:
+          1. Prophase: Chromosomes condense and become visible
+          2. Metaphase: Chromosomes align at the cell's equator
+          3. Anaphase: Sister chromatids separate and move to opposite poles
+          4. Telophase: Nuclear envelopes reform around each set of chromosomes
+
+          Mitosis is essential for growth, repair, and asexual reproduction.
 ```
 
 **What Gets Generated:**
@@ -335,19 +431,109 @@ paragraphs separated by blank lines."
 - **Media files embedded** (images and audio)
 
 **See Example:**
-Check out [examples/biology-lesson.yaml](examples/biology-lesson.yaml) for a complete working example with AI text generation, images, audio, and quizzes.
+Check out [examples/yaml/biology-lesson.yaml](examples/yaml/biology-lesson.yaml) for a complete working example with AI text generation, images, audio, and quizzes.
 
 ## Contributing
 
 We welcome contributions! To add a new content type or fix bugs:
 
 1. **Fork the repository** and create a feature branch
-2. **Follow the handler pattern** - See [Handler Development Guide](docs/Handler_Development_Guide.md)
+2. **Follow the handler pattern** - See [Handler Development Guide](docs/developer-guides/Handler_Development_Guide.md)
 3. **Write tests** - Ensure your handler has unit tests
 4. **Update documentation** - Add examples and update this README
 5. **Submit a pull request** - We'll review and provide feedback
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+
+## ⚠️ Critical: H5P Library Versioning
+
+**IMPORTANT:** H5P platforms are **strict about library versions**. If your generated package declares a library version that doesn't match what the platform expects, the content **will not render**.
+
+### The Version Matching Problem
+
+When you upload an H5P package to a platform (h5p.com, Moodle, WordPress, etc.), the platform validates that:
+1. All declared library versions in `h5p.json` match the bundled libraries
+2. All library references in `content.json` match the declared versions
+3. The library versions are compatible with the platform's H5P core version
+
+**Example of the issue:**
+- Your package declares `H5P.Dialogcards 1.8` in h5p.json
+- Your package bundles `H5P.Dialogcards-1.8` library files
+- But the platform expects/requires `H5P.Dialogcards 1.9`
+- **Result:** Content appears in editor but shows "Empty column" and doesn't render
+
+### How to Fix Version Mismatches
+
+**Step 1: Identify the Expected Version**
+- Create sample content manually on the target platform
+- Download the .h5p file
+- Extract and check `h5p.json` to see which versions the platform uses
+
+**Step 2: Update Your Cache**
+- Place the correct version in `content-type-cache/`
+- Use versioned filenames: `H5P.Dialogcards-1.9.h5p` (not just `H5P.Dialogcards.h5p`)
+- The LibraryRegistry will automatically select the latest version in cache
+
+**Step 3: Update Handler Code**
+- Modify the handler to reference the correct version
+- Example: Change `library: "H5P.Dialogcards 1.8"` to `library: "H5P.Dialogcards 1.9"`
+- Located in: `src/handlers/embedded/DialogCardsHandler.ts` (or similar)
+
+**Step 4: Rebuild and Verify**
+```bash
+# Rebuild package
+npm run build
+node ./dist/index.js interactivebook-ai ./examples/your-file.yaml ./output.h5p
+
+# Verify versions in h5p.json
+unzip -q -c output.h5p "h5p.json" | python3 -m json.tool | grep -A 3 "Dialogcards"
+
+# Verify library files are bundled
+unzip -l output.h5p | grep "H5P.Dialogcards"
+```
+
+### Debugging Version Issues
+
+If content isn't rendering after upload:
+
+1. **Check h5p.json dependencies** - Extract and verify all `preloadedDependencies` versions
+2. **Check content.json library references** - Search for all `"library":` declarations
+3. **Compare with working package** - Download a manually-created package from the same platform
+4. **Verify library files** - Ensure the correct version directory is in the .h5p (e.g., `H5P.Dialogcards-1.9/`)
+5. **Check library.json** - Inside the library directory, verify `majorVersion`, `minorVersion`, `patchVersion`
+
+### Library Cache Management
+
+The `content-type-cache/` directory stores H5P library packages:
+
+```
+content-type-cache/
+├── H5P.InteractiveBook-1.11.h5p    ✅ Versioned (preferred)
+├── H5P.Dialogcards-1.9.h5p         ✅ Versioned (preferred)
+├── H5P.MultiChoice-1.16.h5p        ✅ Versioned (preferred)
+└── H5P.Image.h5p                   ⚠️  Non-versioned (legacy)
+```
+
+**Best practices:**
+- Always use versioned filenames when adding to cache
+- Keep working packages from your target platform for reference
+- Test generated packages on the same platform where they'll be deployed
+- When updating a library, remove old versions from cache to avoid conflicts
+
+### Common Version Pitfalls
+
+❌ **Don't:**
+- Mix library versions from different sources
+- Assume version compatibility (1.8 ≠ 1.9)
+- Use non-versioned cache filenames
+- Skip testing on the target platform
+
+✅ **Do:**
+- Match versions to your target platform exactly
+- Use versioned cache filenames
+- Test on the deployment platform before distributing
+- Keep working reference packages from the platform
+- Document which platform/version combinations work
 
 ## Coding conventions
 All classes that exist in the actual H5P libraries or content types start with `H5p`, e.g. `H5pImage`. All classes that are part of the creator and don't exist in external libraries or content types don't start with this prefix.

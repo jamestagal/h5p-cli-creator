@@ -2,6 +2,7 @@ import { ChapterBuilder } from "../compiler/ChapterBuilder";
 import { LibraryRegistry } from "../compiler/LibraryRegistry";
 import { QuizGenerator } from "../ai/QuizGenerator";
 import { MediaFile } from "../compiler/ContentBuilder";
+import { AIConfiguration } from "../compiler/types";
 
 /**
  * Logger interface for progress and debug messages
@@ -19,6 +20,7 @@ export interface Logger {
  * - Library and AI service registries
  * - Media file tracking
  * - Configuration options
+ * - AI configuration cascade (book > chapter > item)
  */
 export interface HandlerContext {
   /**
@@ -71,4 +73,52 @@ export interface HandlerContext {
      */
     aiProvider?: "gemini" | "claude" | "auto";
   };
+
+  /**
+   * Book-level AI configuration (if specified in BookDefinition).
+   *
+   * Provides default AI configuration for all AI-generated content in the book.
+   * This is the lowest priority level in the configuration cascade.
+   *
+   * Configuration cascade (from highest to lowest priority):
+   * 1. item.aiConfig (specific content item - highest priority)
+   * 2. chapterConfig (this chapter - overrides book level)
+   * 3. bookConfig (this field - overrides system defaults)
+   * 4. System defaults (grade-6, educational, plain-html - lowest priority)
+   *
+   * Handlers should use AIPromptBuilder.resolveConfig() to properly merge
+   * configurations from all three levels (item, chapter, book).
+   *
+   * @see AIConfiguration for available configuration options
+   * @see AIPromptBuilder.resolveConfig() for configuration merging logic
+   *
+   * Added in Phase 5: AI Configuration System
+   */
+  bookConfig?: AIConfiguration;
+
+  /**
+   * Chapter-level AI configuration (if specified in ChapterDefinition).
+   *
+   * Overrides book-level AI configuration for all AI content in this chapter.
+   * Individual items can still override with their own aiConfig.
+   *
+   * Use this when a specific chapter requires different reading level or tone
+   * than the rest of the book (e.g., an advanced chapter in an otherwise
+   * beginner-level book).
+   *
+   * Configuration cascade (from highest to lowest priority):
+   * 1. item.aiConfig (specific content item - highest priority)
+   * 2. chapterConfig (this field - overrides book level)
+   * 3. bookConfig (book-level - overrides system defaults)
+   * 4. System defaults (grade-6, educational, plain-html - lowest priority)
+   *
+   * Handlers should use AIPromptBuilder.resolveConfig() to properly merge
+   * configurations from all three levels (item, chapter, book).
+   *
+   * @see AIConfiguration for available configuration options
+   * @see AIPromptBuilder.resolveConfig() for configuration merging logic
+   *
+   * Added in Phase 5: AI Configuration System
+   */
+  chapterConfig?: AIConfiguration;
 }

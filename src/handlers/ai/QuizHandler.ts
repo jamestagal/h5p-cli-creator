@@ -1,10 +1,13 @@
 import { ContentHandler } from "../ContentHandler";
 import { HandlerContext } from "../HandlerContext";
 import { AIQuizContent } from "../../compiler/YamlInputParser";
+import { AIPromptBuilder } from "../../ai/AIPromptBuilder";
 
 /**
  * QuizHandler processes AI-generated quiz content items for Interactive Books.
  * Uses QuizGenerator to create multiple-choice questions from source text.
+ *
+ * Phase 5: Integrated with AIPromptBuilder for reading level-appropriate quiz generation.
  */
 export class QuizHandler implements ContentHandler {
   /**
@@ -17,22 +20,44 @@ export class QuizHandler implements ContentHandler {
   /**
    * Process an AI-quiz content item by generating quiz questions and adding to chapter.
    * Calls QuizGenerator with source text and question count.
-   * @param context Handler execution context with QuizGenerator
-   * @param item AI-quiz content item with sourceText and optional questionCount
+   *
+   * Phase 5: Applies AI configuration to quiz generation:
+   * - Reading level affects question vocabulary and complexity
+   * - Tone affects question style (educational, professional, etc.)
+   * - Customization can add specific requirements
+   *
+   * Configuration cascade (highest to lowest priority):
+   * 1. item.aiConfig (specific to this quiz)
+   * 2. context.chapterConfig (chapter-level override)
+   * 3. context.bookConfig (book-level default)
+   * 4. System defaults (grade-6, educational)
+   *
+   * @param context Handler execution context with QuizGenerator and configuration cascade
+   * @param item AI-quiz content item with sourceText and optional aiConfig
    */
   public async process(context: HandlerContext, item: AIQuizContent): Promise<void> {
-    const { chapterBuilder, quizGenerator, logger, options } = context;
+    const { chapterBuilder, quizGenerator, logger, options, bookConfig, chapterConfig } = context;
+
+    // Resolve configuration hierarchy: item > chapter > book > defaults
+    const resolvedConfig = AIPromptBuilder.resolveConfig(
+      item.aiConfig,
+      chapterConfig,
+      bookConfig
+    );
 
     if (options.verbose) {
       logger.log(`    - Generating AI quiz: "${item.title || 'Quiz'}"`);
+      logger.log(`      Reading level: ${resolvedConfig.targetAudience}`);
       logger.log(`      Source text length: ${item.sourceText.length} characters`);
       logger.log(`      Questions: ${item.questionCount || 5}`);
     }
 
     try {
+      // Generate quiz with reading level configuration
       const quizContent = await quizGenerator.generateH5pQuiz(
         item.sourceText,
-        item.questionCount || 5
+        item.questionCount || 5,
+        resolvedConfig
       );
       chapterBuilder.addQuizPage(quizContent);
 
@@ -50,7 +75,10 @@ export class QuizHandler implements ContentHandler {
   }
 
   /**
-   * Validate AI-quiz content item structure
+   * Validate AI-quiz content item structure.
+   *
+   * Phase 5: Validates optional aiConfig fields if provided.
+   *
    * @param item Content item to validate
    * @returns Validation result with optional error message
    */
@@ -58,6 +86,36 @@ export class QuizHandler implements ContentHandler {
     if (!item.sourceText || typeof item.sourceText !== "string") {
       return { valid: false, error: "AI quiz content must have a 'sourceText' field (string)" };
     }
+
+    // Validate aiConfig if present (same validation as AITextHandler)
+    if (item.aiConfig) {
+      const validLevels = [
+        "elementary",
+        "grade-6",
+        "grade-9",
+        "high-school",
+        "college",
+        "professional",
+        "esl-beginner",
+        "esl-intermediate"
+      ];
+      const validTones = ["educational", "professional", "casual", "academic"];
+
+      if (item.aiConfig.targetAudience && !validLevels.includes(item.aiConfig.targetAudience)) {
+        return {
+          valid: false,
+          error: `Invalid targetAudience: ${item.aiConfig.targetAudience}. Valid options: ${validLevels.join(", ")}`
+        };
+      }
+
+      if (item.aiConfig.tone && !validTones.includes(item.aiConfig.tone)) {
+        return {
+          valid: false,
+          error: `Invalid tone: ${item.aiConfig.tone}. Valid options: ${validTones.join(", ")}`
+        };
+      }
+    }
+
     return { valid: true };
   }
 

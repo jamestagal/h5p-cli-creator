@@ -72,7 +72,7 @@ export class DialogCardsHandler implements ContentHandler {
   }
 
   public getRequiredLibraries(): string[] {
-    return ["H5P.DialogCards"];
+    return ["H5P.Dialogcards"];  // Note: lowercase 'c' in 'cards' for library name
   }
 
   public async process(
@@ -100,8 +100,9 @@ export class DialogCardsHandler implements ContentHandler {
     const dialogs = [];
     for (const cardData of item.cards) {
       const card: any = {
-        text: cardData.front,
-        answer: cardData.back,
+        text: `<p>${cardData.front}</p>`,
+        answer: `<p>${cardData.back}</p>`,
+        tips: {},  // Required empty tips object
       };
 
       // Handle optional image
@@ -196,19 +197,55 @@ export class DialogCardsHandler implements ContentHandler {
     }
 
     // Build H5P.DialogCards content structure
+    // IMPORTANT: Field order must match H5P.com: params, library, subContentId (added by wrapper), metadata
     const dialogCardsContent = {
-      library: "H5P.DialogCards 1.9",
       params: {
+        mode: item.mode || "normal",  // Use "normal" mode by default (matching H5P.com)
         dialogs: dialogs,
-        mode: item.mode || "repetition",
         behaviour: {
+          enableRetry: true,
           disableBackwardsNavigation: false,
-          randomCards: true,
           scaleTextNotCard: false,
+          randomCards: false,
+          maxProficiency: 5,
+          quickProgression: false,
         },
+        // UI labels (required for Dialog Cards to render properly)
+        answer: "Turn",
+        next: "Next",
+        prev: "Previous",
+        retry: "Retry",
+        correctAnswer: "I got it right!",
+        incorrectAnswer: "I got it wrong",
+        round: "Round @round",
+        cardsLeft: "Cards left: @number",
+        nextRound: "Proceed to round @round",
+        startOver: "Start over",
+        showSummary: "Next",
+        summary: "Summary",
+        summaryCardsRight: "Cards you got right:",
+        summaryCardsWrong: "Cards you got wrong:",
+        summaryCardsNotShown: "Cards in pool not shown:",
+        summaryOverallScore: "Overall Score",
+        summaryCardsCompleted: "Cards you have completed learning:",
+        summaryCompletedRounds: "Completed rounds:",
+        summaryAllDone: "Well done! You have mastered all @cards cards by getting them correct @max times!",
+        progressText: "Card @card of @total",
+        cardFrontLabel: "Card front",
+        cardBackLabel: "Card back",
+        tipButtonLabel: "Show tip",
+        audioNotSupported: "Your browser does not support this audio",
+        confirmStartingOver: {
+          header: "Start over?",
+          body: "All progress will be lost. Are you sure you want to start over?",
+          cancelLabel: "Cancel",
+          confirmLabel: "Start over",
+        },
+        title: `<p>${item.title || "Dialog Cards"}</p>`,
       },
+      library: "H5P.Dialogcards 1.9",
       metadata: {
-        contentType: "DialogCards",
+        contentType: "Dialog Cards",
         license: "U",
         title: item.title || "Dialog Cards",
       },

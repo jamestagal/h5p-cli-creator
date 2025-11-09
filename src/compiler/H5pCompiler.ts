@@ -4,8 +4,10 @@ import { QuizGenerator } from "../ai/QuizGenerator";
 import { SemanticValidator } from "./SemanticValidator";
 import { ContentBuilder } from "./ContentBuilder";
 import { PackageAssembler } from "./PackageAssembler";
+import { LibraryValidator } from "./LibraryValidator";
 import { HandlerContext } from "../handlers/HandlerContext";
 import { BookDefinition, AnyContentItem } from "./YamlInputParser";
+import { AIConfiguration } from "./types";
 import * as JSZip from "jszip";
 
 /**
@@ -64,9 +66,23 @@ export class H5pCompiler {
   ): Promise<Buffer> {
     const { verbose = false, basePath = process.cwd() } = options;
 
-    // Step 1: Fetch required libraries
-    if (verbose) console.log("Fetching required libraries...");
+    // Step 1: Validate required libraries (detect version/case mismatches)
     const requiredLibraries = this.handlerRegistry.getRequiredLibrariesForBook(bookDef);
+
+    if (verbose) {
+      const validator = new LibraryValidator();
+      const validationResults = await validator.validateLibraries(requiredLibraries, verbose);
+      const summary = validator.getSummary(validationResults);
+
+      if (summary.hasIssues) {
+        console.log(`\n⚠ Warning: Found ${summary.caseMismatch + summary.versionMismatch} library issue(s)`);
+        console.log(`  - Case mismatches will be handled automatically`);
+        console.log(`  - Version mismatches may cause runtime errors\n`);
+      }
+    }
+
+    // Step 2: Fetch required libraries
+    if (verbose) console.log("Fetching required libraries...");
 
     if (verbose) {
       console.log(`  - Required libraries: ${requiredLibraries.join(", ")}`);
@@ -98,17 +114,45 @@ export class H5pCompiler {
     const builder = new ContentBuilder(this.libraryRegistry, validator);
 
     builder.createBook(bookDef.title, bookDef.language);
-    if (verbose) console.log(`  - Created book: "${bookDef.title}"`);
+    if (verbose) {
+      console.log(`  - Created book: "${bookDef.title}"`);
+
+      // Log book-level AI configuration if present (Task 5.5.5)
+      if (bookDef.aiConfig) {
+        const targetAudience = bookDef.aiConfig.targetAudience || "grade-6";
+        const tone = bookDef.aiConfig.tone || "educational";
+        console.log(`  - Book-level AI config: ${targetAudience}, ${tone}`);
+        if (bookDef.aiConfig.customization) {
+          console.log(`    Customization: "${bookDef.aiConfig.customization.substring(0, 60)}${bookDef.aiConfig.customization.length > 60 ? "..." : ""}"`);
+        }
+      }
+    }
 
     // Process each chapter
     for (let i = 0; i < bookDef.chapters.length; i++) {
       const chapter = bookDef.chapters[i];
-      if (verbose) console.log(`  - Processing chapter ${i + 1}: "${chapter.title}"`);
+      if (verbose) {
+        console.log(`  - Processing chapter ${i + 1}: "${chapter.title}"`);
+
+        // Log chapter-level AI configuration if present (Task 5.5.5)
+        if (chapter.aiConfig) {
+          const targetAudience = chapter.aiConfig.targetAudience || "grade-6";
+          const tone = chapter.aiConfig.tone || "educational";
+          console.log(`    Chapter-level AI config override: ${targetAudience}, ${tone}`);
+        }
+      }
 
       const chapterBuilder = builder.addChapter(chapter.title);
 
-      // Create handler context
-      const context = this.createContext(chapterBuilder, builder, basePath, options);
+      // Create handler context with book and chapter AI configs (Task 5.5.5, 5.5.6)
+      const context = this.createContext(
+        chapterBuilder,
+        builder,
+        basePath,
+        options,
+        bookDef.aiConfig,  // Pass book-level AI config
+        chapter.aiConfig   // Pass chapter-level AI config
+      );
 
       // Process each content item
       for (const item of chapter.content) {
@@ -164,14 +208,27 @@ export class H5pCompiler {
   }
 
   /**
-   * Creates a HandlerContext for handler execution
+   * Creates a HandlerContext for handler execution.
+   *
+   * Passes book-level and chapter-level AI configuration through context
+   * to allow handlers to resolve configuration hierarchy.
+   *
+   * @param chapterBuilder ChapterBuilder for adding content
+   * @param builder ContentBuilder for media file tracking
+   * @param basePath Base path for resolving file paths
+   * @param options Compiler options
+   * @param bookConfig Book-level AI configuration (optional) - Task 5.5.6
+   * @param chapterConfig Chapter-level AI configuration (optional) - Task 5.5.6
+   * @returns HandlerContext with all dependencies and configuration
    * @private
    */
   private createContext(
     chapterBuilder: any,
     builder: ContentBuilder,
     basePath: string,
-    options: CompilerOptions
+    options: CompilerOptions,
+    bookConfig?: AIConfiguration,      // Task 5.5.6: Add bookConfig parameter
+    chapterConfig?: AIConfiguration    // Task 5.5.6: Add chapterConfig parameter
   ): HandlerContext {
     return {
       chapterBuilder,
@@ -187,7 +244,9 @@ export class H5pCompiler {
       options: {
         verbose: options.verbose,
         aiProvider: options.aiProvider
-      }
+      },
+      bookConfig,      // Task 5.5.6: Include bookConfig in context
+      chapterConfig    // Task 5.5.6: Include chapterConfig in context
     };
   }
 

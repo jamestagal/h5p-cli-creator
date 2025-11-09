@@ -91,7 +91,12 @@ describe("QuizHandler", () => {
 
     expect(mockQuizGenerator.generateH5pQuiz).toHaveBeenCalledWith(
       "Biology is the study of life",
-      3
+      3,
+      expect.objectContaining({
+        targetAudience: "grade-6",
+        tone: "educational",
+        outputStyle: "plain-html"
+      })
     );
     expect(mockChapterBuilder.addQuizPage).toHaveBeenCalledWith([
       { question: "Q1", answers: [] },
@@ -109,7 +114,12 @@ describe("QuizHandler", () => {
 
     expect(mockQuizGenerator.generateH5pQuiz).toHaveBeenCalledWith(
       "Source text without question count",
-      5
+      5,
+      expect.objectContaining({
+        targetAudience: "grade-6",
+        tone: "educational",
+        outputStyle: "plain-html"
+      })
     );
   });
 

@@ -3,6 +3,7 @@ import { H5pImage } from "../models/h5p-image";
 import { H5pAudio } from "../models/h5p-audio";
 import { MediaFile } from "./ContentBuilder";
 import { H5pMultipleChoiceContent } from "../ai/types";
+import { randomUUID } from "crypto";
 
 /**
  * ChapterBuilder provides methods for adding content pages to a chapter.
@@ -44,28 +45,85 @@ export class ChapterBuilder {
   }
 
   /**
+   * Wraps content in Interactive Book's Row/RowColumn structure.
+   * H5P Interactive Book requires all content to be wrapped in H5P.Row → H5P.RowColumn containers.
+   * Also adds subContentId (UUID) to all content elements as required by H5P.
+   * @param content The actual H5P content to wrap (e.g., AdvancedText, DialogCards, etc.)
+   * @returns Wrapped content ready for Interactive Book
+   */
+  private wrapInRowColumn(content: any): any {
+    // Ensure inner content has subContentId and correct field order
+    // H5P requires specific field order: params, library, metadata, subContentId
+    const contentWithId = content.subContentId
+      ? content
+      : {
+          params: content.params,
+          library: content.library,
+          metadata: content.metadata,
+          subContentId: randomUUID()
+        };
+
+    // Build the Row/RowColumn wrapper with proper field order matching H5P.com
+    const rowColumn = {
+      params: {
+        content: [contentWithId]
+      },
+      library: "H5P.RowColumn 1.0",
+      subContentId: randomUUID(),
+      metadata: {
+        contentType: "Column",
+        license: "U",
+        title: "Untitled Column"
+      }
+    };
+
+    const row = {
+      params: {
+        columns: [
+          {
+            width: 100,
+            content: rowColumn
+          }
+        ]
+      },
+      library: "H5P.Row 1.0",
+      subContentId: randomUUID(),
+      metadata: {
+        contentType: "Row",
+        license: "U",
+        title: "Untitled Row"
+      }
+    };
+
+    return {
+      content: row,
+      useSeparator: "auto"
+    };
+  }
+
+  /**
    * Adds a text page to the chapter.
    * @param title Page title (displayed as H2 heading)
    * @param text Page text content (supports paragraphs separated by double newlines)
+   * @param escapeHtml Whether to escape HTML tags (default: true). Set to false for AI-generated HTML content.
    * @returns This builder for method chaining
    */
-  public addTextPage(title: string, text: string): this {
-    const html = this.buildTextHtml(title, text);
+  public addTextPage(title: string, text: string, escapeHtml: boolean = true): this {
+    const html = this.buildTextHtml(title, text, escapeHtml);
 
-    this.chapterContent.push({
-      content: {
-        library: "H5P.AdvancedText 1.1",
-        params: {
-          text: html
-        },
-        metadata: {
-          contentType: "Text",
-          license: "U",
-          title: title || "Untitled Text"
-        }
+    const content = {
+      library: "H5P.AdvancedText 1.1",
+      params: {
+        text: html
       },
-      useSeparator: "auto"
-    });
+      metadata: {
+        contentType: "Text",
+        license: "U",
+        title: title || "Untitled Text"
+      }
+    };
+
+    this.chapterContent.push(this.wrapInRowColumn(content));
 
     return this;
   }
@@ -103,22 +161,21 @@ export class ChapterBuilder {
     ret.image.path = filename;
 
     // Add image content to chapter
-    this.chapterContent.push({
-      content: {
-        library: "H5P.Image 1.1",
-        params: {
-          contentName: "Image",
-          file: ret.image,
-          alt: alt
-        },
-        metadata: {
-          contentType: "Image",
-          license: "U",
-          title: title || alt
-        }
+    const content = {
+      library: "H5P.Image 1.1",
+      params: {
+        contentName: "Image",
+        file: ret.image,
+        alt: alt
       },
-      useSeparator: "auto"
-    });
+      metadata: {
+        contentType: "Image",
+        license: "U",
+        title: title || alt
+      }
+    };
+
+    this.chapterContent.push(this.wrapInRowColumn(content));
 
     return this;
   }
@@ -155,28 +212,27 @@ export class ChapterBuilder {
     ret.audio.path = filename;
 
     // Add audio content to chapter
-    this.chapterContent.push({
-      content: {
-        library: "H5P.Audio 1.5",
-        params: {
-          contentName: "Audio",
-          files: [ret.audio],
-          playerMode: "full",
-          fitToWrapper: false,
-          controls: true,
-          autoplay: false,
-          audioNotSupported: "Your browser does not support this audio",
-          playAudio: "Play audio",
-          pauseAudio: "Pause audio"
-        },
-        metadata: {
-          contentType: "Audio",
-          license: "U",
-          title: title || "Audio"
-        }
+    const content = {
+      library: "H5P.Audio 1.5",
+      params: {
+        contentName: "Audio",
+        files: [ret.audio],
+        playerMode: "full",
+        fitToWrapper: false,
+        controls: true,
+        autoplay: false,
+        audioNotSupported: "Your browser does not support this audio",
+        playAudio: "Play audio",
+        pauseAudio: "Pause audio"
       },
-      useSeparator: "auto"
-    });
+      metadata: {
+        contentType: "Audio",
+        license: "U",
+        title: title || "Audio"
+      }
+    };
+
+    this.chapterContent.push(this.wrapInRowColumn(content));
 
     return this;
   }
@@ -188,12 +244,9 @@ export class ChapterBuilder {
    * @returns This builder for method chaining
    */
   public addQuizPage(quizContent: H5pMultipleChoiceContent[]): this {
-    // Add each quiz question as a separate content item
+    // Add each quiz question as a separate content item, wrapped in Row/RowColumn
     for (const question of quizContent) {
-      this.chapterContent.push({
-        content: question,
-        useSeparator: "auto"
-      });
+      this.chapterContent.push(this.wrapInRowColumn(question));
     }
 
     return this;
@@ -205,10 +258,7 @@ export class ChapterBuilder {
    * @returns This builder for method chaining
    */
   public addCustomContent(content: any): this {
-    this.chapterContent.push({
-      content,
-      useSeparator: "auto"
-    });
+    this.chapterContent.push(this.wrapInRowColumn(content));
 
     return this;
   }
@@ -246,14 +296,22 @@ export class ChapterBuilder {
    * Builds HTML content from title and text with proper formatting.
    * @param title Page title to display as heading
    * @param text Page text content (can contain multiple paragraphs)
+   * @param escapeHtml Whether to escape HTML tags in the content
    * @returns HTML string with formatted content
    */
-  private buildTextHtml(title: string, text: string): string {
+  private buildTextHtml(title: string, text: string, escapeHtml: boolean): string {
     let html = "";
     if (title) {
       html += `<h2>${this.escapeHtml(title)}</h2>\n`;
     }
-    // Split text into paragraphs (double newlines indicate paragraph breaks)
+
+    // If escapeHtml is false (AI-generated HTML), use content as-is
+    if (!escapeHtml) {
+      html += text;
+      return html;
+    }
+
+    // For plain text, split into paragraphs and escape
     const paragraphs = text.split("\n\n").filter(p => p.trim());
     for (const para of paragraphs) {
       html += `<p>${this.escapeHtml(para.trim())}</p>\n`;

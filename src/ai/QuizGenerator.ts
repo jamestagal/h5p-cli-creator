@@ -6,12 +6,16 @@ import {
   H5pMultipleChoiceContent,
   H5pMultipleChoiceParams
 } from "./types";
+import { AIConfiguration } from "../compiler/types";
+import { AIPromptBuilder } from "./AIPromptBuilder";
 
 type AIProvider = "anthropic" | "google";
 
 /**
  * QuizGenerator uses AI (Claude or Gemini) to generate multiple-choice quiz questions
  * from source text and format them as H5P.MultipleChoice content.
+ *
+ * Phase 5: Integrated with AIConfiguration for reading level-appropriate quiz generation.
  */
 export class QuizGenerator {
   private anthropic?: Anthropic;
@@ -56,17 +60,27 @@ export class QuizGenerator {
 
   /**
    * Generates quiz questions from source text using AI (Claude or Gemini).
+   *
+   * Phase 5: Accepts optional AIConfiguration to:
+   * - Match vocabulary to reading level (elementary, grade-6, college, etc.)
+   * - Adjust question complexity based on target audience
+   * - Apply tone and customization to quiz style
+   *
    * @param sourceText Educational text to generate quiz questions from
    * @param questionCount Number of questions to generate (default: 5)
+   * @param config Optional AI configuration for reading level and tone
    * @returns QuizContent with generated questions
    * @throws Error if API call fails or response cannot be parsed
    */
   public async generateQuiz(
     sourceText: string,
-    questionCount: number = 5
+    questionCount: number = 5,
+    config?: AIConfiguration
   ): Promise<QuizContent> {
     try {
-      const prompt = `Generate ${questionCount} multiple-choice quiz questions about this educational text:
+      // Build reading-level-aware prompt
+      const readingLevel = config?.targetAudience || "grade-6";
+      const basePrompt = `Generate ${questionCount} multiple-choice quiz questions about this educational text:
 
 ${sourceText}
 
@@ -76,6 +90,8 @@ Requirements:
 - Questions should test understanding, not just recall
 - Answers should be clear and unambiguous
 - Include common misconceptions as incorrect answers
+- Match the vocabulary and complexity to ${readingLevel} reading level
+${this.getReadingLevelQuizGuidance(readingLevel)}
 
 Return ONLY a JSON array with this exact format (no additional text):
 [
@@ -89,6 +105,11 @@ Return ONLY a JSON array with this exact format (no additional text):
     ]
   }
 ]`;
+
+      // Use AIPromptBuilder for consistent formatting if customization provided
+      const prompt = config?.customization
+        ? AIPromptBuilder.buildCompletePrompt(basePrompt, config)
+        : basePrompt;
 
       let responseText: string;
 
@@ -127,6 +148,35 @@ Return ONLY a JSON array with this exact format (no additional text):
       }
       throw new Error("Quiz generation failed: Unknown error");
     }
+  }
+
+  /**
+   * Provides reading-level-specific guidance for quiz question generation.
+   *
+   * Each reading level has unique requirements for:
+   * - Vocabulary complexity in questions and answers
+   * - Question structure and sentence length
+   * - Type of thinking skills tested
+   *
+   * Phase 5: Ensures quiz questions match the same reading level as text content.
+   *
+   * @param level Reading level (elementary, grade-6, college, etc.)
+   * @returns Specific guidance string to include in quiz prompt
+   * @private
+   */
+  private getReadingLevelQuizGuidance(level: string): string {
+    const guidance: Record<string, string> = {
+      "elementary": "- Use very simple vocabulary in questions and answers\n- Questions should test basic comprehension only\n- Avoid complex sentence structures in questions",
+      "grade-6": "- Use grade-appropriate vocabulary\n- Include some application questions beyond recall\n- Keep questions clear and direct",
+      "grade-9": "- Use broader vocabulary and some technical terms\n- Include analysis and application questions\n- Test deeper understanding of concepts",
+      "high-school": "- Use advanced vocabulary and subject terminology\n- Focus on analysis, evaluation, and synthesis\n- Test critical thinking skills",
+      "college": "- Use discipline-specific language freely\n- Test higher-order thinking and analysis\n- Include questions requiring synthesis of concepts",
+      "professional": "- Use industry terminology\n- Focus on practical application and problem-solving\n- Test real-world scenario understanding",
+      "esl-beginner": "- Use only common, high-frequency vocabulary\n- Keep questions very simple and direct\n- Avoid idioms and complex grammar",
+      "esl-intermediate": "- Use everyday vocabulary with some expansion\n- Include varied sentence patterns\n- Introduce common expressions gradually"
+    };
+
+    return guidance[level] || guidance["grade-6"];
   }
 
   /**
@@ -265,15 +315,20 @@ Return ONLY a JSON array with this exact format (no additional text):
   /**
    * Generates quiz and returns H5P.MultipleChoice structures.
    * Convenience method combining generateQuiz and toH5pFormat.
+   *
+   * Phase 5: Accepts optional AIConfiguration to match reading level.
+   *
    * @param sourceText Educational text to generate quiz questions from
    * @param questionCount Number of questions to generate (default: 5)
+   * @param config Optional AI configuration for reading level and tone
    * @returns Array of H5P.MultipleChoice content structures
    */
   public async generateH5pQuiz(
     sourceText: string,
-    questionCount: number = 5
+    questionCount: number = 5,
+    config?: AIConfiguration
   ): Promise<H5pMultipleChoiceContent[]> {
-    const quizContent = await this.generateQuiz(sourceText, questionCount);
+    const quizContent = await this.generateQuiz(sourceText, questionCount, config);
     return this.toH5pFormat(quizContent.questions);
   }
 }

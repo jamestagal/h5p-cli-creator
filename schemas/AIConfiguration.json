@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/sr258/h5p-cli-creator/schemas/AIConfiguration.json",
+  "title": "AIConfiguration",
+  "description": "AI configuration for content generation. Controls reading level, tone, and style of AI-generated content.",
+  "type": "object",
+  "properties": {
+    "targetAudience": {
+      "type": "string",
+      "enum": [
+        "elementary",
+        "grade-6",
+        "grade-9",
+        "high-school",
+        "college",
+        "professional",
+        "esl-beginner",
+        "esl-intermediate"
+      ],
+      "default": "grade-6",
+      "description": "Target reading level for vocabulary and sentence complexity.",
+      "examples": ["grade-6", "high-school", "esl-beginner"]
+    },
+    "tone": {
+      "type": "string",
+      "enum": ["educational", "professional", "casual", "academic"],
+      "default": "educational",
+      "description": "Tone and style of generated content.",
+      "examples": ["educational", "academic"]
+    },
+    "outputStyle": {
+      "type": "string",
+      "enum": ["plain-html", "rich-html", "markdown"],
+      "default": "plain-html",
+      "description": "Output formatting style. Note: H5P requires plain-html, other options reserved for future use.",
+      "examples": ["plain-html"]
+    },
+    "customization": {
+      "type": "string",
+      "description": "Free-text customization instructions appended to system prompt. Examples: 'Focus on visual learners', 'Include real-world examples', 'Use analogies to explain complex concepts'",
+      "maxLength": 1000,
+      "examples": [
+        "Focus on visual learners. Include real-world examples.",
+        "Use medical analogies when possible.",
+        "Emphasize practical application over theory."
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "targetAudience": "grade-6",
+      "tone": "educational"
+    },
+    {
+      "targetAudience": "high-school",
+      "tone": "academic",
+      "customization": "Include connections to AP Biology curriculum"
+    },
+    {
+      "targetAudience": "esl-beginner",
+      "tone": "educational",
+      "customization": "Use only present tense. Avoid idioms."
+    }
+  ]
+}
