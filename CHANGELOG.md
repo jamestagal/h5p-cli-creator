@@ -9,6 +9,132 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Essay Questions Handler (H5P.Essay-1.5)
+
+**New Content Types:**
+- `essay` - Manual essay questions with keyword-based automatic scoring
+- `ai-essay` - AI-generated essay questions
+
+**Key Features:**
+- **Keyword-Based Automatic Scoring**: Score essays by checking for important keywords
+- **Wildcard Matching**: Use `*` for partial matching (e.g., `*photo*` matches "photograph", "photosynthesis")
+- **Regex Support**: Use `/pattern/` format for advanced keyword matching
+- **Keyword Alternatives**: Accept synonyms for fair scoring (e.g., "rocky" or "terrestrial")
+- **Per-Keyword Points and Occurrences**: Award different points per keyword, control how many times points are awarded
+- **Per-Keyword Feedback**: Provide specific feedback when keywords are found or missed
+- **Sample Solutions**: Include introduction and sample answer to help students learn
+- **Character Length Constraints**: Set minimum and maximum essay lengths to enforce writing requirements
+- **Media Support**: Add images, videos, or audio above essay questions for context
+- **Overall Feedback Ranges**: Provide different feedback based on score percentage
+- **AI Generation**: Automatically create essay questions with relevant keywords, alternatives, and sample solutions
+  - Easy: 3-5 keywords, 50-200 chars, simple vocabulary
+  - Medium: 5-7 keywords, 100-500 chars, moderate vocabulary
+  - Hard: 7-10 keywords, 200-1000 chars, advanced vocabulary
+- **Universal AI Configuration**: Use aiConfig to control reading level and tone across all AI-generated content
+
+**Implementation Details:**
+- Location: `src/handlers/embedded/EssayHandler.ts` (manual)
+- Location: `src/handlers/ai/AIEssayHandler.ts` (AI-generated)
+- H5P Library: H5P.Essay 1.5
+- Dependencies: H5P.Question 1.5, H5P.JoubelUI 1.3, H5P.TextUtilities 1.3, H5P.FontIcons 1.0, FontAwesome 4.5, H5P.Transition 1.0
+- Test Coverage: 14+ unit tests across both handlers
+- Integration: Fully integrated with Interactive Book compiler
+
+**Configuration Options:**
+- `minimumLength` / `maximumLength` - Character count constraints
+- `percentagePassing` / `percentageMastering` - Scoring thresholds (0-100)
+- `enableRetry` - Allow retry after checking (default: true)
+- `ignoreScoring` - Show only feedback, no score (default: false)
+- Per-keyword: `caseSensitive`, `forgiveMistakes`, `points`, `occurrences`
+- Custom UI labels and overall feedback ranges
+
+**Documentation:**
+- README.md: Complete usage guide with examples
+- examples/yaml/essay-example.yaml: Comprehensive examples for all features
+- examples/yaml/comprehensive-demo.yaml: Integration examples
+
+**Example Usage:**
+```yaml
+# Manual essay with keywords and alternatives
+- type: essay
+  title: "Planet Classification"
+  taskDescription: "Explain the difference between inner planets and outer planets."
+  keywords:
+    - keyword: "rocky"
+      alternatives: ["terrestrial", "solid", "earth-like"]
+      points: 10
+      feedbackIncluded: "Excellent! You correctly identified the inner planets."
+    - keyword: "gas"
+      alternatives: ["gaseous", "gas giant"]
+      points: 10
+  behaviour:
+    minimumLength: 100
+    maximumLength: 400
+
+# Essay with wildcards and sample solution
+- type: essay
+  title: "Describe Jupiter"
+  taskDescription: "Write a description of Jupiter."
+  keywords:
+    - keyword: "largest"
+      points: 10
+    - keyword: "*Great Red Spot*"
+      points: 20
+    - keyword: "moon*"
+      points: 10
+  solution:
+    introduction: "A strong answer should include Jupiter's size, composition, and features."
+    sample: "Jupiter is the largest planet in our solar system..."
+  behaviour:
+    minimumLength: 80
+    maximumLength: 500
+
+# AI-generated essay
+- type: ai-essay
+  title: "Photosynthesis Process"
+  prompt: "Create an essay question about photosynthesis, including inputs, outputs, and where it occurs"
+  keywordCount: 7
+  difficulty: "medium"
+  includeAlternatives: true
+  includeSampleSolution: true
+  minimumLength: 150
+  maximumLength: 500
+```
+
+**Critical Bug Fixes:**
+- ✅ Wildcard `*` characters preserved without escaping in keyword strings
+- ✅ Regex `/pattern/` format preserved without modification
+- ✅ Keyword alternatives validated as array and passed correctly to H5P structure
+- ✅ Character length validation includes cross-field check (maximumLength > minimumLength)
+- ✅ HTML stripping applied to all AI-generated text content
+- ✅ Per-keyword points and occurrences validated as positive number/integer
+- ✅ AI response cleaning handles markdown code fences and whitespace
+- ✅ SubContentId generated for Essay content AND nested media content
+- ✅ Fallback content provides helpful troubleshooting guidance
+- ✅ Feedback strings validated for maximum length (1000 chars per keyword)
+- ✅ Task description validated for maximum length (10000 chars)
+
+**Validation:**
+- Generated .h5p packages tested on h5p.com
+- User interaction verified: writing essays, checking answers, viewing scores, retry
+- Keyword matching tested: wildcards (`*photo*`), alternatives, case sensitivity
+- Per-keyword feedback displays correctly (included/missed)
+- Sample solutions display with introduction and sample answer
+- Character count indicator shows min/max limits
+- AI-generated essays produce coherent, relevant content with appropriate keywords
+- Difficulty levels produce appropriate complexity (easy vs hard)
+
+**Related Files:**
+- `src/handlers/embedded/EssayHandler.ts`
+- `src/handlers/ai/AIEssayHandler.ts`
+- `src/compiler/YamlInputParser.ts` (type system updates)
+- `tests/unit/handlers/embedded/EssayHandler.test.ts`
+- `tests/unit/handlers/ai/AIEssayHandler.test.ts`
+- `examples/yaml/essay-example.yaml`
+- `examples/yaml/comprehensive-demo.yaml`
+
+---
+
 #### Fill in the Blanks Handler (H5P.Blanks-1.14)
 
 **New Content Types:**

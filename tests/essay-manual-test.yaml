@@ -1,0 +1,114 @@
+title: "Essay Handler Test - Manual"
+language: en
+chapters:
+  - title: "Basic Essay Tests"
+    content:
+      # Test 1: Basic essay with simple keywords
+      - type: essay
+        title: "The Hobbit Summary"
+        taskDescription: |
+          Please describe the novel "The Hobbit" by J.R.R. Tolkien
+          with at least 100 characters and up to 500 characters.
+        placeholderText: "In a hole in the ground there lived a hobbit..."
+        keywords:
+          - keyword: "Bilbo"
+            points: 10
+            occurrences: 3
+            feedbackMissed: "You should mention the main character by name."
+          - keyword: "Gandalf"
+            points: 20
+            forgiveMistakes: true
+            feedbackMissed: "Did you mention what the wizard did?"
+          - keyword: "Smaug"
+            points: 20
+            feedbackIncluded: "Great! You remembered the dragon's name!"
+          - keyword: "adventure"
+            alternatives: ["quest", "journey"]
+            points: 10
+        behaviour:
+          minimumLength: 100
+          maximumLength: 500
+          percentagePassing: 50
+          percentageMastering: 80
+        overallFeedback:
+          - from: 0
+            to: 49
+            feedback: "Maybe you should read the book again?"
+          - from: 50
+            to: 79
+            feedback: "Great! You know some things about The Hobbit!"
+          - from: 80
+            to: 100
+            feedback: "Excellent! You're a fantasy expert!"
+
+      # Test 2: Essay with alternatives and tips
+      - type: essay
+        title: "Photosynthesis Explanation"
+        taskDescription: "Explain the process of photosynthesis in plants. Include the role of chlorophyll, sunlight, and carbon dioxide."
+        placeholderText: "Photosynthesis is the process by which..."
+        keywords:
+          - keyword: "chlorophyll"
+            alternatives: ["chloroplast pigment", "green pigment"]
+            points: 2
+            feedbackIncluded: "Excellent! You mentioned chlorophyll."
+            feedbackMissed: "Remember to discuss the role of chlorophyll."
+          - keyword: "sunlight"
+            alternatives: ["solar energy", "light energy"]
+            points: 2
+            feedbackIncluded: "Good! You explained the role of sunlight."
+          - keyword: "carbon dioxide"
+            alternatives: ["CO2"]
+            points: 2
+            feedbackMissed: "Don't forget to mention carbon dioxide."
+          - keyword: "glucose"
+            alternatives: ["sugar", "energy"]
+            points: 2
+            feedbackIncluded: "Great! You mentioned the output product."
+        behaviour:
+          minimumLength: 150
+          maximumLength: 600
+        solution:
+          introduction: "Remember that you were not expected to come up with the exact same solution. This is just a good example."
+          sample: "Photosynthesis is the process by which green plants use sunlight to convert carbon dioxide and water into glucose and oxygen. Chlorophyll, the green pigment in plants, captures light energy which drives this chemical reaction."
+
+      # Test 3: Essay with wildcard keywords (CRITICAL TEST)
+      - type: essay
+        title: "Photography Essay"
+        taskDescription: "Write about different types of photography. Use terms related to photos, pictures, and cameras."
+        keywords:
+          - keyword: "*photo*"
+            points: 5
+            feedbackIncluded: "Good use of photography terminology!"
+          - keyword: "*camera*"
+            points: 5
+          - keyword: "lens"
+            alternatives: ["optics", "glass"]
+            points: 3
+        behaviour:
+          minimumLength: 50
+          maximumLength: 300
+
+  - title: "Essay with Media"
+    content:
+      # Test 4: Essay with image
+      - type: essay
+        title: "Describe the Image"
+        taskDescription: "Look at the image above and describe what you see. Use descriptive language."
+        placeholderText: "In the image, I can see..."
+        keywords:
+          - keyword: "image"
+            alternatives: ["picture", "photo"]
+            points: 5
+          - keyword: "color"
+            alternatives: ["colour", "hue"]
+            points: 3
+          - keyword: "detail"
+            alternatives: ["details"]
+            points: 3
+        media:
+          path: images/test-image.jpg
+          type: image
+          alt: "Test image for essay"
+        behaviour:
+          minimumLength: 50
+          maximumLength: 200

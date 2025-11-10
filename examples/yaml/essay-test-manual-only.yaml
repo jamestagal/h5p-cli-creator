@@ -1,0 +1,65 @@
+title: "Essay Test - Manual Only"
+language: "en"
+description: "Test manual essay questions without AI"
+
+chapters:
+  - title: "Test Essays"
+    content:
+      - type: text
+        title: "Testing"
+        text: "This is a test of manual essay questions."
+
+      - type: essay
+        title: "Simple Essay"
+        taskDescription: "Write about the Sun."
+        keywords:
+          - keyword: "star"
+            points: 10
+          - keyword: "light"
+            points: 10
+        behaviour:
+          minimumLength: 50
+          maximumLength: 300
+
+      - type: essay
+        title: "Essay with Alternatives"
+        taskDescription: "Describe planets."
+        keywords:
+          - keyword: "rocky"
+            alternatives: ["terrestrial", "solid"]
+            points: 10
+          - keyword: "gas"
+            alternatives: ["gaseous"]
+            points: 10
+        behaviour:
+          minimumLength: 100
+          maximumLength: 400
+
+      - type: essay
+        title: "Essay with Solution"
+        taskDescription: "Explain gravity."
+        keywords:
+          - keyword: "force"
+            points: 10
+          - keyword: "mass"
+            points: 10
+        solution:
+          introduction: "A good answer explains what gravity is."
+          sample: "Gravity is a force that attracts objects with mass toward each other."
+        behaviour:
+          minimumLength: 50
+          maximumLength: 300
+
+      - type: essay
+        title: "Essay with Media"
+        taskDescription: "Describe the image."
+        media:
+          path: "../../tests/images/test-image.jpg"
+          type: "image"
+          alt: "Test image"
+        keywords:
+          - keyword: "image"
+            points: 10
+        behaviour:
+          minimumLength: 30
+          maximumLength: 200
