@@ -321,6 +321,54 @@ chapters:
           targetAudience: "high-school"
           tone: "technical"
 
+  - title: "True/False Questions"
+    content:
+      - type: text
+        title: "True or False?"
+        text: |
+          Test your knowledge with these true/false questions!
+          Decide whether each statement is true or false.
+
+      - type: truefalse
+        title: "Manual: The Sun"
+        question: "The Sun is a star"
+        correct: true
+
+      - type: truefalse
+        title: "Manual: Earth's Position"
+        question: "Earth is the largest planet in our solar system"
+        correct: false
+        behaviour:
+          feedbackOnWrong: "Jupiter is actually the largest planet in our solar system!"
+
+      - type: truefalse
+        title: "Manual: Planet with Media"
+        question: "Saturn has beautiful rings made of ice and rock particles"
+        correct: true
+        media:
+          path: "../../tests/images/test-image.jpg"
+          type: "image"
+          alt: "Saturn and its spectacular ring system"
+
+      - type: true-false
+        title: "Using Type Alias"
+        question: "Mercury is the closest planet to the Sun"
+        correct: true
+        behaviour:
+          feedbackOnCorrect: "Excellent! Mercury orbits closest to the Sun."
+
+      - type: ai-truefalse
+        title: "AI-Generated: Solar System Facts"
+        prompt: "Create true/false questions about planet sizes, distances from the Sun, and unique characteristics of planets in our solar system"
+        questionCount: 5
+        difficulty: "medium"
+
+      - type: ai-true-false
+        title: "AI-Generated: Easy Planet Facts"
+        prompt: "Create simple true/false questions about basic facts that students should know about planets, the Sun, and moons"
+        questionCount: 3
+        difficulty: "easy"
+
   - title: "Summary and Conclusion"
     content:
       - type: ai-text

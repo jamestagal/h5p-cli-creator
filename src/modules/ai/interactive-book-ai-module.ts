@@ -22,6 +22,8 @@ import { DragTextHandler } from "../../handlers/embedded/DragTextHandler";
 import { AIDragTextHandler } from "../../handlers/ai/AIDragTextHandler";
 import { BlanksHandler } from "../../handlers/embedded/BlanksHandler";
 import { AIBlanksHandler } from "../../handlers/ai/AIBlanksHandler";
+import { TrueFalseHandler } from "../../handlers/embedded/TrueFalseHandler";
+import { AITrueFalseHandler } from "../../handlers/ai/AITrueFalseHandler";
 import { H5pCompiler } from "../../compiler/H5pCompiler";
 
 // Load environment variables
@@ -119,6 +121,8 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
       handlerRegistry.register(new AIDragTextHandler(), ["ai-drag-the-words"]);
       handlerRegistry.register(new BlanksHandler(), ["fill-in-the-blanks"]);
       handlerRegistry.register(new AIBlanksHandler(), ["ai-fill-in-the-blanks"]);
+      handlerRegistry.register(new TrueFalseHandler(), ["true-false"]);
+      handlerRegistry.register(new AITrueFalseHandler(), ["ai-true-false"]);
 
       // Override API key if provided
       if (apiKey) {

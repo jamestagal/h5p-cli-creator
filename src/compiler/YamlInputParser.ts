@@ -6,7 +6,7 @@ import { AIConfiguration } from "./types";
 /**
  * Content directive types that can be specified in YAML
  */
-export type ContentType = "text" | "image" | "audio" | "ai-text" | "ai-quiz" | "flashcards" | "dialogcards" | "accordion" | "ai-accordion" | "singlechoiceset" | "single-choice-set" | "ai-singlechoiceset" | "ai-single-choice-set" | "dragtext" | "drag-the-words" | "ai-dragtext" | "ai-drag-the-words" | "blanks" | "fill-in-the-blanks" | "ai-blanks" | "ai-fill-in-the-blanks";
+export type ContentType = "text" | "image" | "audio" | "ai-text" | "ai-quiz" | "flashcards" | "dialogcards" | "accordion" | "ai-accordion" | "singlechoiceset" | "single-choice-set" | "ai-singlechoiceset" | "ai-single-choice-set" | "dragtext" | "drag-the-words" | "ai-dragtext" | "ai-drag-the-words" | "blanks" | "fill-in-the-blanks" | "ai-blanks" | "ai-fill-in-the-blanks" | "truefalse" | "true-false" | "ai-truefalse" | "ai-true-false";
 
 /**
  * Base content item interface
@@ -151,6 +151,10 @@ export { AIDragTextContent } from "../handlers/ai/AIDragTextHandler";
 export { BlanksContent } from "../handlers/embedded/BlanksHandler";
 export { AIBlanksContent } from "../handlers/ai/AIBlanksHandler";
 
+// Export true/false content types
+export { TrueFalseContent } from "../handlers/embedded/TrueFalseHandler";
+export { AITrueFalseContent } from "../handlers/ai/AITrueFalseHandler";
+
 /**
  * Union type for all content items
  */
@@ -169,7 +173,9 @@ export type AnyContentItem =
   | import("../handlers/embedded/DragTextHandler").DragTextContent
   | import("../handlers/ai/AIDragTextHandler").AIDragTextContent
   | import("../handlers/embedded/BlanksHandler").BlanksContent
-  | import("../handlers/ai/AIBlanksHandler").AIBlanksContent;
+  | import("../handlers/ai/AIBlanksHandler").AIBlanksContent
+  | import("../handlers/embedded/TrueFalseHandler").TrueFalseContent
+  | import("../handlers/ai/AITrueFalseHandler").AITrueFalseContent;
 
 /**
  * Chapter definition from YAML
@@ -270,8 +276,8 @@ export interface BookDefinition {
  * YamlInputParser parses YAML book definitions into structured BookDefinition objects.
  *
  * Supports:
- * - Multiple content types (text, image, audio, flashcards, dialog cards, accordion, single choice set, drag text, blanks)
- * - AI-generated content (ai-text, ai-quiz, ai-accordion, ai-singlechoiceset, ai-dragtext, ai-blanks)
+ * - Multiple content types (text, image, audio, flashcards, dialog cards, accordion, single choice set, drag text, blanks, true/false)
+ * - AI-generated content (ai-text, ai-quiz, ai-accordion, ai-singlechoiceset, ai-dragtext, ai-blanks, ai-truefalse)
  * - Book-level, chapter-level, and item-level AI configuration (Phase 5)
  * - Relative and absolute file paths
  * - Comprehensive validation
@@ -419,7 +425,7 @@ export class YamlInputParser {
       throw new Error(`${prefix} must have a 'type' field (string)`);
     }
 
-    const validTypes: ContentType[] = ["text", "image", "audio", "ai-text", "ai-quiz", "flashcards", "dialogcards", "accordion", "ai-accordion", "singlechoiceset", "single-choice-set", "ai-singlechoiceset", "ai-single-choice-set", "dragtext", "drag-the-words", "ai-dragtext", "ai-drag-the-words", "blanks", "fill-in-the-blanks", "ai-blanks", "ai-fill-in-the-blanks"];
+    const validTypes: ContentType[] = ["text", "image", "audio", "ai-text", "ai-quiz", "flashcards", "dialogcards", "accordion", "ai-accordion", "singlechoiceset", "single-choice-set", "ai-singlechoiceset", "ai-single-choice-set", "dragtext", "drag-the-words", "ai-dragtext", "ai-drag-the-words", "blanks", "fill-in-the-blanks", "ai-blanks", "ai-fill-in-the-blanks", "truefalse", "true-false", "ai-truefalse", "ai-true-false"];
     if (!validTypes.includes(item.type)) {
       throw new Error(
         `${prefix} has invalid type '${item.type}'. Valid types: ${validTypes.join(", ")}`
@@ -550,6 +556,23 @@ export class YamlInputParser {
       case "ai-fill-in-the-blanks":
         if (!item.prompt || typeof item.prompt !== "string") {
           throw new Error(`${prefix} (ai-blanks) must have a 'prompt' field (string)`);
+        }
+        break;
+
+      case "truefalse":
+      case "true-false":
+        if (!item.question || typeof item.question !== "string") {
+          throw new Error(`${prefix} (truefalse) must have 'question' field (string)`);
+        }
+        if (typeof item.correct !== "boolean") {
+          throw new Error(`${prefix} (truefalse) must have 'correct' field (boolean)`);
+        }
+        break;
+
+      case "ai-truefalse":
+      case "ai-true-false":
+        if (!item.prompt || typeof item.prompt !== "string") {
+          throw new Error(`${prefix} (ai-truefalse) must have a 'prompt' field (string)`);
         }
         break;
     }
