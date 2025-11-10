@@ -263,5 +263,7 @@ export {
   AudioContent,
   AIQuizContent,
   FlashcardsContent,
-  DialogCardsContent
+  DialogCardsContent,
+  TrueFalseContent,
+  AITrueFalseContent
 } from "./YamlInputParser";

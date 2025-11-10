@@ -24,6 +24,11 @@ This project uses a **handler-based plugin architecture** that makes it easy to 
 **Embedded Types:**
 - `flashcards` - Flashcard decks for memorization
 - `dialogcards` - Dialog cards for language learning
+- `truefalse` - Simple true/false questions with optional media
+- `singlechoiceset` - Single-choice quiz questions
+- `dragtext` - Drag-the-words fill-in-the-blank exercises
+- `accordion` - Collapsible FAQ or glossary panels
+- `summary` - Summary content with keywords
 
 ### Creating Custom Handlers
 
@@ -352,8 +357,54 @@ chapters:
 | `ai-quiz` | AI-generated multiple choice quiz | `sourceText`, `questionCount` | `title`, `aiConfig` |
 | `flashcards` | Flashcard deck | `cards` (array) | `title`, `description` |
 | `dialogcards` | Dialog cards | `cards` (array) | `title`, `mode` |
+| `accordion` (or `accordions`) | Collapsible FAQ or glossary panels | `panels` (array with `title` and `content`) | `title`, `style` |
+| `ai-accordion` | AI-generated collapsible panels | `prompt` | `title`, `panelCount`, `style`, `difficulty`, `aiConfig` |
+| `summary` | Summary content with keywords | `text` | `title`, `keywords` (array) |
+| `ai-summary` | AI-generated summary with keywords | `prompt` | `title`, `keywordCount`, `difficulty`, `aiConfig` |
+| `dragtext` (or `drag-the-words`) | Drag-the-words fill-in-the-blank exercises | `sentences` (array), `distractors` (array) | `title`, `taskDescription`, `behaviour`, `labels` |
+| `ai-dragtext` (or `ai-drag-the-words`) | AI-generated drag-the-words exercises | `prompt` | `title`, `sentenceCount`, `blanksPerSentence`, `difficulty`, `includeDistractors`, `distractorCount`, `aiConfig` |
 | `singlechoiceset` (or `single-choice-set`) | Single-choice quiz questions (only one correct answer) | `questions` (array) | `title`, `behaviour`, `labels`, `feedback` |
 | `ai-singlechoiceset` (or `ai-single-choice-set`) | AI-generated single-choice questions | `prompt` | `title`, `questionCount`, `distractorsPerQuestion`, `difficulty`, `aiConfig` |
+| `truefalse` (or `true-false`) | Simple true/false questions | `question`, `correct` (boolean) | `title`, `media`, `behaviour`, `labels` |
+| `ai-truefalse` (or `ai-true-false`) | AI-generated true/false questions | `prompt` | `title`, `questionCount`, `difficulty`, `aiConfig` |
+
+**TrueFalse Questions - YAML Examples:**
+
+```yaml
+# Basic manual true/false question
+- type: truefalse
+  question: "The Sun is a star"
+  correct: true
+
+# With custom feedback
+- type: truefalse
+  title: "Solar System Size"
+  question: "Earth is the largest planet in our solar system"
+  correct: false
+  behaviour:
+    feedbackOnWrong: "Jupiter is actually the largest planet!"
+
+# With media
+- type: truefalse
+  title: "Geography Question"
+  question: "This image shows Earth from space"
+  correct: true
+  media:
+    path: "./images/earth.jpg"
+    type: "image"
+    alt: "Photo of Earth from space"
+
+# AI-generated questions
+- type: ai-truefalse
+  title: "Solar System Quiz"
+  prompt: "Create true/false questions about planets in our solar system"
+  questionCount: 5
+  difficulty: "medium"
+```
+
+**Note about boolean-to-string conversion:** The TrueFalse handler automatically converts your boolean `correct` field (true/false) to the string format ("true"/"false") required by H5P.TrueFalse. You always use booleans in YAML, and the handler handles the conversion internally.
+
+**See Complete Example:** Check out [examples/yaml/truefalse-example.yaml](examples/yaml/truefalse-example.yaml) for comprehensive TrueFalse examples including media support, behaviour customization, label localization, and AI generation.
 
 **CLI Options:**
 - `--ai-provider <gemini|claude|auto>` - Choose AI provider (default: auto-detect)
