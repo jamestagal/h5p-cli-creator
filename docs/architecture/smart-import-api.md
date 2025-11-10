@@ -136,11 +136,13 @@ const request = {
 
 ## Smart Import Workflow
 
-Inspired by H5P.com's Smart Import, our implementation provides a 4-step process:
+The Smart Import workflow transforms source materials into H5P content through a transparent, reviewable 4-step process:
 
-### Step 1: Upload Source
+### **STEP 1: Upload Content**
 
-User provides content source and language:
+Upload content (PDF, audio, video) or paste a link (URL) for analysis. Optionally customize with learning objectives, difficulty level, target language, etc.
+
+**User Action**: Provides content source and configuration options
 
 ```typescript
 POST /api/smart-import/upload
@@ -161,9 +163,13 @@ Response:
 }
 ```
 
-### Step 2: Review Text
+### **STEP 2: Review Text**
 
-AI extracts and cleans content:
+We transcode or scrape the content and make a textual version for you to review. Edit the text to focus on key learning material before concept extraction.
+
+**User Action**: Reviews and edits extracted text
+
+**System Action**: Extracts text from source (PDF/audio/video/URL)
 
 ```typescript
 GET /api/smart-import/source/{sourceId}
@@ -181,11 +187,17 @@ Response:
 }
 ```
 
-User can edit extracted text before proceeding.
+**Phase 6A Implementation**: CLI workflow uses file editing; API workflow provides edit interface.
 
-### Step 3: Review Concepts
+---
 
-AI identifies key concepts for content generation:
+### **STEP 3: Review Concepts**
+
+We analyze the reviewed text and find concepts in it. The concepts chosen will be used to create interactive questions and more. Review and edit the extracted concepts as needed.
+
+**User Action**: Reviews and selects concepts for content generation
+
+**System Action**: AI extracts key concepts from reviewed text (language-agnostic)
 
 ```typescript
 POST /api/smart-import/extract-concepts
@@ -216,9 +228,15 @@ Response:
 }
 ```
 
-### Step 4: Select Content Types & Generate
+---
 
-User configures AI and selects which content types to generate:
+### **STEP 4: Select Content Types**
+
+You choose what content types should be created (flashcards, quizzes, dialogcards, etc.) and we generate the content for you based on your chosen concepts with language-aware AI!
+
+**User Action**: Selects content types and configures language options
+
+**System Action**: Generates H5P content FROM concepts (not hallucinated)
 
 ```typescript
 POST /api/smart-import/generate
@@ -227,12 +245,19 @@ POST /api/smart-import/generate
   "sourceText": "...",
   "language": "en",
 
-  // Universal AI configuration (Phase 5 ✅)
+  // Universal AI configuration (Phase 5 ✅) + Language-aware (Phase 6A ✅)
   "aiConfig": {
-    "targetAudience": "grade-6",
-    "tone": "educational",
-    "customization": "Focus on visual learners"
+    "readingLevel": "grade-6",           // Phase 5: Reading level presets
+    "tone": "educational",               // Phase 5: Tone presets
+    "targetLanguage": "vi",              // Phase 6A: Target language for generation
+    "includeTranslations": true,         // Phase 6A: Include translations for language learning
+    "customPrompt": "Focus on visual learners"
   },
+
+  // Extracted concepts from Step 3 (Phase 6A ✅)
+  "concepts": [
+    { "term": "Photosynthesis", "definition": "...", "importance": "high", "language": "en" }
+  ],
 
   // Select output types
   "outputTypes": [
@@ -767,32 +792,54 @@ Response: HTTP 400
 - [x] Implement prompt-based AI generation (YAML/JSON workflow)
 - [x] Document source-based vs prompt-based generation modes
 
-### Phase 6 (Next)
-- [ ] **Extend HandlerContext with sourceText field**
-- [ ] Implement source content extraction (PDF, URL, text)
-- [ ] Implement concept identification AI service
-- [ ] **Update AI handlers to support both generation modes:**
-  - [ ] Detect `context.sourceText` presence
-  - [ ] Use source-based prompts when available
-  - [ ] Fall back to prompt-based when sourceText is undefined
-- [ ] Implement standalone content generators:
-  - [ ] FlashcardsGenerator (source-based)
-  - [ ] DialogCardsGenerator (source-based)
-  - [ ] SummaryGenerator (source-based)
-  - [ ] QuizGenerator (extend existing for source-based mode)
-  - [ ] DragTextGenerator (source-based)
-  - [ ] AccordionGenerator (source-based)
-- [ ] Implement composite content generators:
-  - [ ] InteractiveBookGenerator (leverage Phase 5 work)
-  - [ ] CoursePresentationGenerator
-  - [ ] QuestionSetGenerator
-- [ ] Implement Smart Import API endpoints:
-  - [ ] POST /api/smart-import/upload (extract sourceText)
-  - [ ] GET /api/smart-import/source/:id
-  - [ ] POST /api/smart-import/extract-concepts (analyze sourceText)
-  - [ ] POST /api/smart-import/generate (pass sourceText to handlers)
-- [ ] Create Smart Import UI components
-- [ ] Write integration tests for both generation modes
+### Phase 6A: 4-Step Workflow Foundation (Current)
+**STEP 1: Upload Content - Source Extraction**
+- [ ] Implement SourceExtractor service (PDF, audio, video, URL extraction)
+- [ ] Create extract-text CLI command
+- [ ] Add npm dependencies: pdf-parse, openai (Whisper), cheerio, ffmpeg
+- [ ] Write SourceExtractionResult types
+- [ ] Unit tests for SourceExtractor (7 tests)
+- [ ] Integration tests for extract-text CLI (5 tests)
+
+**STEP 2: Review Text - Manual Editing**
+- [x] Support manual file editing workflow (no code needed)
+- [ ] Document file editing process in user guides
+
+**STEP 3: Review Concepts - Concept Extraction**
+- [ ] Implement ConceptExtractor service (language-agnostic AI extraction)
+- [ ] Create ExtractedConcept and ConceptExtractionResult types
+- [ ] Create extract-concepts CLI command
+- [ ] Unit tests for ConceptExtractor (8 tests)
+- [ ] Integration tests for extract-concepts CLI (4 tests)
+
+**STEP 4: Select Content Types - Language-Aware Generation**
+- [ ] Add targetLanguage and includeTranslations fields to AIConfiguration
+- [ ] Update AIPromptBuilder to inject language instructions
+- [ ] Extend HandlerContext with concepts field (3-tier fallback)
+- [ ] Update AI handlers to check context.concepts first
+- [ ] Create generate-from-concepts CLI command
+- [ ] Unit tests for AIPromptBuilder language features (6 tests)
+- [ ] Integration tests for generate-from-concepts CLI (5 tests)
+- [ ] Integration tests for language-aware generation (6 tests)
+
+**Infrastructure & Documentation**
+- [ ] Create /sources/ folder structure (files/, links/, text/)
+- [ ] Create /extracted/ folder structure with subdirectories
+- [ ] Update README.md with Smart Import workflow documentation
+- [ ] Update Vietnamese story demo with targetLanguage examples
+- [ ] Write CLI usage examples for all 3 commands
+
+### Phase 6B: Advanced Extraction (Future)
+- [ ] Word/EPUB/PowerPoint extraction
+- [ ] Image OCR text extraction (Tesseract)
+- [ ] Advanced concept extraction (entity recognition, relationships)
+- [ ] Concept database and persistence layer
+
+### Phase 6C: Smart Import UI (Future)
+- [ ] SvelteKit frontend for Smart Import workflow
+- [ ] Visual concept review and editing interface
+- [ ] Batch content generation interface
+- [ ] Source content library management
 
 ### Phase 7+ (Future)
 - [ ] Interactive Video support
@@ -829,9 +876,9 @@ Both use the same:
 - Tone specifications
 - Configuration resolution logic
 
-### HandlerContext Extension for Source Text (Phase 6)
+### HandlerContext Extension for Smart Import (Phase 6A)
 
-The `HandlerContext` interface will be extended to support source-based generation:
+The `HandlerContext` interface will be extended to support source-based generation with concepts:
 
 ```typescript
 export interface HandlerContext {
@@ -855,7 +902,7 @@ export interface HandlerContext {
    * but may generate content not aligned with specific source material).
    *
    * Populated by:
-   * - Smart Import workflow (Phase 6): Extracted from PDF/URL/text upload
+   * - Smart Import Step 1 (Phase 6A): Extracted from PDF/audio/video/URL
    * - Interactive Book YAML (Phase 5): undefined (uses prompt-based mode)
    *
    * @example
@@ -869,6 +916,39 @@ export interface HandlerContext {
    * }
    */
   sourceText?: string;
+
+  /**
+   * Optional extracted concepts for concept-based content generation.
+   *
+   * When present, AI handlers should use concepts as PRIMARY content source
+   * for vocabulary cards, quizzes, and other learning activities.
+   *
+   * This enables the 3-tier fallback pattern:
+   * 1. Use concepts if available (BEST - structured, reviewed concepts)
+   * 2. Use sourceText if provided (GOOD - source-based generation)
+   * 3. Use prompt alone (OK - prompt-based generation)
+   *
+   * Populated by:
+   * - Smart Import Step 3 (Phase 6A): Extracted concepts from reviewed text
+   * - YAML with concepts field: User-provided concepts
+   * - Otherwise: undefined (falls back to sourceText or prompt)
+   *
+   * @example
+   * // Concept-based generation (BEST)
+   * if (context.concepts && context.concepts.length > 0) {
+   *   // Use concepts directly for flashcards/vocabulary
+   *   const cards = context.concepts.map(c => ({ term: c.term, definition: c.definition }));
+   * }
+   * // Source-based generation (GOOD)
+   * else if (context.sourceText) {
+   *   const userPrompt = `Based on this text: ${context.sourceText}, create quiz...`;
+   * }
+   * // Prompt-based generation (OK)
+   * else {
+   *   const userPrompt = `${item.prompt}`;
+   * }
+   */
+  concepts?: ExtractedConcept[];
 }
 ```
 
