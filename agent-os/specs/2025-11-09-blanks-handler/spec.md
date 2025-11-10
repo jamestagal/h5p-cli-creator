@@ -204,3 +204,235 @@ This ensures Blanks packages can be:
 - Drag-and-drop functionality (that's H5P.DragText, not H5P.Blanks)
 - Multiple blanks in a single word position (each `{blank}` or `*answer*` is one distinct input field)
 - Automatic blank generation from text (user must specify which words are blanks)
+
+## Bugs to Avoid
+
+Based on lessons learned from DragText handler implementation, avoid these common pitfalls:
+
+### 1. **Dual Format Fields (Array vs String)**
+
+**Problem**: Fields that support both native H5P format (string) and simplified format (array) will cause `TypeError: field.map is not a function` if you only handle arrays.
+
+**Example from DragText**:
+```typescript
+// ❌ WRONG - Only handles array format
+distractors?: string[];
+distractorsField = item.distractors.map(d => `*${d}*`).join("\n");
+
+// ✅ CORRECT - Handles both formats
+distractors?: string[] | string;
+if (typeof item.distractors === "string") {
+  distractorsField = item.distractors;  // Already formatted
+} else if (Array.isArray(item.distractors)) {
+  distractorsField = item.distractors.map(d => `*${d}*`).join("\n");
+}
+```
+
+**Action for Blanks Handler**: H5P.Blanks doesn't have a distractors field, but ensure any optional fields that could support dual formats are typed and handled correctly.
+
+---
+
+### 2. **External Media URLs in Examples**
+
+**Problem**: Using external URLs (like `via.placeholder.com`) in example YAML files causes network errors during package generation, especially when services are unavailable.
+
+**Example from DragText**:
+```yaml
+# ❌ WRONG - External URL
+- type: image
+  path: https://via.placeholder.com/600x400.png
+
+# ✅ CORRECT - Local test file
+- type: image
+  path: ../../tests/images/test-image.jpg
+```
+
+**Action for Blanks Handler**:
+- If `blanks-example.yaml` includes media examples, use **existing local test files** from the project
+- Available test files: `tests/images/test-image.jpg`, `tests/audios/test-audio.mp3`
+- Document the media path format relative to YAML file location
+
+---
+
+### 3. **Format Mismatch in Comprehensive Examples**
+
+**Problem**: Including examples that use native H5P format (string) when the interface only declares array format causes validation or runtime errors.
+
+**Example from DragText**: The example file included a native format example `distractors: "*word*\n*word*"` but the interface only had `distractors?: string[]`.
+
+**Action for Blanks Handler**:
+- If `questions` field supports both simplified (`{blank}`) and native (`*answer*`) formats, ensure BOTH formats are explicitly documented and tested in `blanks-example.yaml`
+- Validate that example YAML content matches the interface definitions
+- Include comments explaining which format is being used in each example
+
+---
+
+### 4. **HTML Stripping from AI Responses**
+
+**Problem**: AI responses may include unwanted HTML tags (`<p>`, `<br>`, etc.) that break H5P content structure if not stripped.
+
+**Action for Blanks Handler**:
+```typescript
+// ✅ Include HTML stripping utility
+private stripHtml(text: string): string {
+  return text
+    .replace(/<\/?p>/gi, "")      // Remove <p> and </p>
+    .replace(/<br\s*\/?>/gi, " ")  // Replace <br> with space
+    .replace(/<[^>]+>/g, "")       // Remove all other HTML tags
+    .trim();
+}
+
+// Apply to AI-generated content
+const cleanText = this.stripHtml(sentence.text);
+const cleanAnswer = this.stripHtml(blank.answer);
+```
+
+---
+
+### 5. **Blank Count Validation**
+
+**Problem**: Mismatch between the number of `{blank}` placeholders in text and the length of the `blanks` array causes confusing errors or broken content.
+
+**Action for Blanks Handler**:
+```typescript
+// ✅ Validate blank count matches
+const blankCount = (sentence.text.match(/\{blank\}/g) || []).length;
+if (blankCount !== sentence.blanks.length) {
+  return {
+    valid: false,
+    error: `Sentence ${i + 1} has ${blankCount} {blank} markers but ${sentence.blanks.length} blanks defined`
+  };
+}
+```
+
+Include this validation in BOTH:
+- `BlanksHandler.validate()` for manual content
+- `AIBlanksHandler` response parsing for AI-generated content
+
+---
+
+### 6. **Missing Type Aliases in Registration**
+
+**Problem**: Forgetting to register type aliases means users can't use alternative type names (e.g., `"fill-in-the-blanks"` vs `"blanks"`).
+
+**Action for Blanks Handler**:
+```typescript
+// ✅ Register with aliases in interactive-book-ai-module.ts
+handlerRegistry.register(new BlanksHandler(), ["fill-in-the-blanks"]);
+handlerRegistry.register(new AIBlanksHandler(), ["ai-fill-in-the-blanks"]);
+```
+
+Test both type identifiers work in YAML:
+```yaml
+- type: blanks            # Primary identifier
+- type: fill-in-the-blanks  # Alias
+- type: ai-blanks         # Primary AI identifier
+- type: ai-fill-in-the-blanks  # Alias
+```
+
+---
+
+### 7. **Verbose Logging with Sensitive Info**
+
+**Problem**: Logging full prompts or AI responses in verbose mode can expose sensitive content or clutter logs.
+
+**Action for Blanks Handler**:
+```typescript
+// ✅ Log concise summaries, not full content
+if (options.verbose) {
+  logger.log(`    - Generating AI blanks: "${item.title || 'Untitled'}"`);
+  logger.log(`      Prompt: "${item.prompt.substring(0, 60)}..."`);
+  logger.log(`      Sentence count: ${sentenceCount}`);
+  logger.log(`      Blanks per sentence: ${blanksPerSentence}`);
+}
+
+// After AI generation
+if (options.verbose) {
+  logger.log(`      ✓ Generated ${result.sentences.length} sentences with ${result.totalBlanks} total blanks`);
+  const sampleText = result.sentences[0].text.substring(0, 60);
+  logger.log(`      Sample: "${sampleText}..."`);
+}
+```
+
+---
+
+### 8. **SubContentId Generation Inconsistency**
+
+**Problem**: Forgetting to generate unique `subContentId` for each content item can cause H5P rendering issues.
+
+**Action for Blanks Handler**:
+```typescript
+// ✅ Always include in H5P structure
+private generateSubContentId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+}
+
+const h5pContent = {
+  library: "H5P.Blanks 1.14",
+  params: { /* ... */ },
+  metadata: { /* ... */ },
+  subContentId: this.generateSubContentId()  // ← Don't forget!
+};
+```
+
+---
+
+### 9. **AI JSON Response Format Assumptions**
+
+**Problem**: Assuming AI will always return clean JSON without markdown code fences or extra whitespace causes parsing errors.
+
+**Action for Blanks Handler**:
+```typescript
+// ✅ Clean AI response before parsing
+const cleaned = response.trim()
+  .replace(/^```json\n?/, "")   // Remove opening fence
+  .replace(/\n?```$/, "")       // Remove closing fence
+  .trim();
+
+const data = JSON.parse(cleaned);
+
+// Validate structure
+if (!data.sentences || !Array.isArray(data.sentences)) {
+  throw new Error("AI response missing 'sentences' array");
+}
+```
+
+---
+
+### 10. **Fallback Content Quality**
+
+**Problem**: Providing unhelpful fallback content when AI generation fails (like just "Error") leaves users confused.
+
+**Action for Blanks Handler**:
+```typescript
+// ✅ Provide informative fallback
+private getFallbackContent(prompt: string): BlanksResult {
+  return {
+    sentences: [
+      {
+        text: `AI generation failed for prompt: "${prompt.substring(0, 40)}...". Please check your API key and try again. Answer: {blank}`,
+        blanks: [{ answer: "error" }]
+      }
+    ],
+    totalBlanks: 1
+  };
+}
+```
+
+---
+
+### Summary Checklist for Blanks Handler Implementation
+
+Before considering the handler complete, verify:
+
+- [ ] All fields that could support dual formats (array vs string) are typed correctly
+- [ ] Example YAML files use **only local test files** for media (no external URLs)
+- [ ] Both simplified (`{blank}`) and native (`*answer*`) format examples included
+- [ ] HTML stripping applied to all AI-generated text content
+- [ ] Blank count validation matches `{blank}` markers with blanks array length
+- [ ] Type aliases registered in HandlerRegistry
+- [ ] Verbose logging shows summaries, not full sensitive content
+- [ ] SubContentId generated for every H5P content item
+- [ ] AI response cleaning handles markdown code fences and whitespace
+- [ ] Fallback content provides helpful error messages
+- [ ] Test package generated successfully and validated on H5P.com

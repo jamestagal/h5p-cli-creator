@@ -443,3 +443,28 @@ This tasks breakdown aligns with:
 - **Code Reuse**: Leverages existing patterns from Accordion and Summary handlers
 - **Error Handling**: Clear validation messages and fallback behavior
 - **Documentation**: Comprehensive examples and README updates
+
+## Important: Bugs to Avoid
+
+**BEFORE starting implementation, carefully review the "Bugs to Avoid" section in spec.md**
+
+The spec includes 10 critical bug patterns learned from DragText and SingleChoiceSet implementations:
+
+1. **Boolean-to-String Conversion (MOST CRITICAL)** - H5P.TrueFalse requires string "true"/"false", not boolean
+2. **External Media URLs** - Use only local test files, not external URLs
+3. **HTML Stripping** - Strip HTML from AI responses before processing
+4. **Type Aliases Registration** - Register both "truefalse" and "true-false"
+5. **SubContentId Generation** - Generate unique IDs for all content
+6. **AI Response Cleaning** - Handle markdown code fences properly
+7. **Verbose Logging** - Log summaries, not sensitive full content
+8. **Fallback Quality** - Provide helpful error messages on AI failure
+9. **Media Type Detection** - Properly detect and handle image/video/audio
+10. **Validation Messages** - Provide specific, actionable error messages
+
+**Each bug includes**:
+- Problem description
+- Code example showing wrong vs correct approach
+- Specific action for TrueFalse handler
+- Testing recommendations
+
+Consulting this section BEFORE implementation will save significant debugging time and ensure production quality on first pass.
