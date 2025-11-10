@@ -168,6 +168,74 @@ chapters:
         questionCount: 5
         distractorsPerQuestion: 2
 
+  - title: "Drag the Words Exercises"
+    content:
+      - type: text
+        title: "Fill-in-the-Blank Exercises"
+        text: |
+          Test your knowledge by dragging words into the correct blanks!
+          These exercises help reinforce what you've learned.
+
+      - type: dragtext
+        title: "Planet Basics"
+        taskDescription: "Complete these facts about our solar system"
+        sentences:
+          - text: "The Sun is the {blank} in our solar system."
+            blanks:
+              - answer: ["star", "center"]
+                tip: "It's a massive ball of hot plasma"
+
+          - text: "Earth is the {blank} planet from the Sun."
+            blanks:
+              - answer: "third"
+                tip: "Count from the Sun outward"
+
+          - text: "The largest planet is {blank}."
+            blanks:
+              - answer: "Jupiter"
+
+        distractors:
+          - "moon"
+          - "asteroid"
+          - "fourth"
+          - "Saturn"
+
+      - type: dragtext
+        title: "Planet Characteristics"
+        taskDescription: "Fill in the blanks about planet features"
+        sentences:
+          - text: "{blank} is known for its beautiful ring system."
+            blanks:
+              - answer: "Saturn"
+
+          - text: "The planet with the strongest winds is {blank}."
+            blanks:
+              - answer: "Neptune"
+
+          - text: "{blank} rotates on its side."
+            blanks:
+              - answer: "Uranus"
+
+        distractors:
+          - "Mars"
+          - "Venus"
+
+      - type: ai-drag-the-words
+        title: "AI-Generated: Solar System Facts"
+        prompt: "Create fill-in-the-blank sentences about planet sizes, distances from the Sun, and unique features of planets in our solar system"
+        sentenceCount: 4
+        blanksPerSentence: 2
+        difficulty: "medium"
+        includeDistractors: true
+        distractorCount: 3
+
+      - type: ai-dragtext
+        title: "AI-Generated: Easy Planet Quiz"
+        prompt: "Create simple fill-in-the-blank sentences about basic planet facts that middle school students should know"
+        sentenceCount: 3
+        difficulty: "easy"
+        includeDistractors: true
+
   - title: "Summary and Conclusion"
     content:
       - type: ai-text
