@@ -1,0 +1,189 @@
+title: "True/False Questions - Production Demo"
+language: "en"
+description: "Production-ready demonstration of H5P.TrueFalse handler features"
+
+chapters:
+  - title: "Welcome to True/False Questions"
+    content:
+      - type: text
+        title: "About True/False Questions"
+        text: |
+          True/False Questions Features
+
+          This Interactive Book demonstrates all features of the TrueFalse handler:
+
+          - Simple true/false statements
+          - Custom feedback messages
+          - Optional retry and solutions
+          - Media support (images, audio, video)
+          - Behavior customization
+          - AI-generated questions (not shown here to avoid API calls)
+
+  - title: "Basic Questions"
+    content:
+      - type: text
+        title: "Simple True/False Statements"
+        text: |
+          These are the simplest true/false questions - just a statement and whether it's true or false.
+
+      - type: truefalse
+        title: "Solar System Fact"
+        question: "The Sun is a star"
+        correct: true
+
+      - type: truefalse
+        title: "Geography Fact"
+        question: "The Earth is flat"
+        correct: false
+
+      - type: truefalse
+        title: "Capital City"
+        question: "Paris is the capital of France"
+        correct: true
+
+      - type: truefalse
+        title: "Planet Size"
+        question: "Mars is larger than Jupiter"
+        correct: false
+
+  - title: "Questions with Custom Feedback"
+    content:
+      - type: text
+        title: "Providing Educational Feedback"
+        text: |
+          Custom feedback helps students understand WHY an answer is right or wrong.
+          This reinforces learning and provides context.
+
+      - type: truefalse
+        title: "Largest Planet"
+        question: "Earth is the largest planet in our solar system"
+        correct: false
+        behaviour:
+          feedbackOnWrong: "Jupiter is actually the largest planet in our solar system! It's more than 11 times wider than Earth."
+          feedbackOnCorrect: "That's right! Jupiter is the largest planet."
+
+      - type: truefalse
+        title: "Earth Rotation"
+        question: "Earth rotates on its axis once every 24 hours"
+        correct: true
+        behaviour:
+          feedbackOnCorrect: "Correct! This rotation gives us day and night cycles."
+          feedbackOnWrong: "Actually, Earth does rotate once every 24 hours, creating our day-night cycle."
+
+      - type: truefalse
+        title: "Moon Light Source"
+        question: "The Moon produces its own light"
+        correct: false
+        behaviour:
+          feedbackOnCorrect: "That's right! The Moon reflects sunlight; it doesn't produce its own light."
+          feedbackOnWrong: "The Moon doesn't have its own light. It reflects sunlight, which is why we can see it."
+
+      - type: truefalse
+        title: "Water State"
+        question: "Water freezes at 0 degrees Celsius"
+        correct: true
+        behaviour:
+          feedbackOnCorrect: "Correct! At 0°C (32°F), water changes from liquid to solid ice."
+          feedbackOnWrong: "Water does freeze at 0°C at standard atmospheric pressure."
+
+  - title: "Science True/False Quiz"
+    content:
+      - type: text
+        title: "Test Your Science Knowledge"
+        text: |
+          These questions cover basic science concepts.
+          Try to answer without guessing!
+
+      - type: truefalse
+        title: "Speed of Light"
+        question: "Light travels faster than sound"
+        correct: true
+
+      - type: truefalse
+        title: "Human Bones"
+        question: "An adult human has 206 bones"
+        correct: true
+
+      - type: truefalse
+        title: "Chemical Formula"
+        question: "Water's chemical formula is H2O"
+        correct: true
+
+      - type: truefalse
+        title: "Photosynthesis"
+        question: "Plants produce oxygen through photosynthesis"
+        correct: true
+
+      - type: truefalse
+        title: "Sound in Space"
+        question: "Sound can travel through the vacuum of space"
+        correct: false
+
+  - title: "Custom Behavior Settings"
+    content:
+      - type: text
+        title: "Controlling User Experience"
+        text: |
+          You can customize how students interact with questions.
+          Enable or disable retry, show solutions, and confirmation dialogs.
+
+      - type: truefalse
+        title: "No Retry Allowed"
+        question: "The Pacific Ocean is the largest ocean on Earth"
+        correct: true
+        behaviour:
+          enableRetry: false
+          feedbackOnCorrect: "Correct! The Pacific Ocean covers about 46% of the water surface."
+
+      - type: truefalse
+        title: "Solutions Available"
+        question: "Mammals are warm-blooded animals"
+        correct: true
+        behaviour:
+          enableSolutionsButton: true
+          enableRetry: true
+
+      - type: truefalse
+        title: "Confirmation Required"
+        question: "DNA stands for Deoxyribonucleic Acid"
+        correct: true
+        behaviour:
+          confirmCheckDialog: true
+          confirmRetryDialog: true
+
+  - title: "Mixed Difficulty Questions"
+    content:
+      - type: text
+        title: "Challenge Your Knowledge"
+        text: |
+          These questions range from easy to challenging.
+          All questions include helpful feedback.
+
+      - type: truefalse
+        title: "Easy: Basic Geography"
+        question: "Australia is both a country and a continent"
+        correct: true
+        behaviour:
+          feedbackOnCorrect: "Yes! Australia is unique in being both a country and a continent."
+
+      - type: truefalse
+        title: "Medium: Human Body"
+        question: "The human heart has four chambers"
+        correct: true
+        behaviour:
+          feedbackOnCorrect: "Correct! Two atria and two ventricles make up the four chambers."
+
+      - type: truefalse
+        title: "Hard: Physics"
+        question: "Absolute zero is -273.15 degrees Celsius"
+        correct: true
+        behaviour:
+          feedbackOnCorrect: "Excellent! This is the lowest possible temperature where molecular motion stops."
+
+      - type: truefalse
+        title: "Medium: History"
+        question: "The Great Wall of China is visible from the Moon with the naked eye"
+        correct: false
+        behaviour:
+          feedbackOnCorrect: "Correct! This is a common myth. The Great Wall is not visible from the Moon without aid."
+          feedbackOnWrong: "This is actually a myth! While the wall is long, it's not wide enough to be visible from the Moon."

@@ -1,0 +1,255 @@
+# Vietnamese Story Demo - "Con Mèo Ăn Bài Tập" (The Cat Ate My Homework)
+#
+# This comprehensive demo showcases ALL implemented content handlers using a Vietnamese language story
+# Story: Thảo's cat eats her homework - a fun tale for Vietnamese language learners
+#
+# Build this example:
+#   npm run build
+#   node dist/index.js interactivebook-ai ./examples/yaml/vietnamese-story-demo.yaml ./vietnamese-story.h5p
+
+title: "Con Mèo Ăn Bài Tập - The Cat Ate My Homework"
+language: "vi"
+description: "Câu chuyện vui bằng tiếng Việt về Thảo và con mèo của cô ấy"
+
+# Optional: Universal AI configuration for all AI-generated content
+aiConfig:
+  readingLevel: "grade-6"
+  tone: "educational"
+
+chapters:
+  # ====================
+  # Chapter 1: Introduction - Using text and ai-text
+  # ====================
+  - title: "Giới Thiệu - Introduction"
+    content:
+      - type: text
+        title: "Xin Chào!"
+        text: |
+          Xin chào mọi người!
+          Tên của mình là Thảo.
+          Đây là câu chuyện vui hôm nay.
+
+      - type: ai-text
+        prompt: "Write a brief introduction in Vietnamese (with English translation below) welcoming students to this funny story about a girl named Thảo and her mischievous cat. Keep it friendly and encouraging for language learners. Use plain text only - no markdown."
+        title: "Chào Mừng - Welcome"
+
+  # ====================
+  # Chapter 2: The Homework - Using text, image, and audio
+  # ====================
+  - title: "Vở Bài Tập - The Homework"
+    content:
+      - type: text
+        title: "Bài Tập Về Nhà"
+        text: |
+          Vở bài tập.
+          Đây là vở bài tập của tôi.
+          Tôi đang làm bài tập về nhà.
+          Tôi đang làm bài tập về nhà của tôi.
+          Vở bài tập ở trên bàn.
+          Vở bài tập của tôi ở trên bàn.
+
+      - type: image
+        path: "../../tests/images/test-image.jpg"
+        alt: "Vở bài tập trên bàn - Homework on the table"
+        title: "Vở Bài Tập Của Thảo"
+
+      - type: audio
+        path: "../../tests/audios/test-audio.mp3"
+        title: "Nghe: Thảo nói về bài tập - Listen: Thảo talks about homework"
+
+  # ====================
+  # Chapter 3: The Cat - Using dialogcards for vocabulary
+  # ====================
+  - title: "Con Mèo - The Cat"
+    content:
+      - type: text
+        title: "Gặp Con Mèo"
+        text: |
+          Con mèo.
+          Đây là con mèo của tôi.
+          Con mèo đang ăn vở bài tập.
+
+      - type: dialogcards
+        title: "Từ Vựng Về Con Mèo - Cat Vocabulary"
+        cards:
+          - front: "con mèo"
+            back: "the cat - Con mèo là thú cưng của Thảo. (The cat is Thảo's pet.)"
+
+          - front: "vở bài tập"
+            back: "homework notebook - Thảo viết bài tập trong vở này. (Thảo writes homework in this notebook.)"
+
+          - front: "bàn"
+            back: "table/desk - Vở bài tập ở trên bàn. (The homework is on the table.)"
+
+          - front: "ăn"
+            back: "to eat - Con mèo đang ăn! (The cat is eating!)"
+
+          - front: "ngạc nhiên"
+            back: "surprised - Thảo rất ngạc nhiên! (Thảo is very surprised!)"
+
+  # ====================
+  # Chapter 4: FAQ Section - Using accordion (manual and AI)
+  # ====================
+  - title: "Câu Hỏi Thường Gặp - FAQ"
+    content:
+      - type: text
+        title: "Hỏi và Đáp"
+        text: |
+          Bạn có câu hỏi về câu chuyện?
+          Nhấp vào mỗi câu hỏi để xem câu trả lời!
+
+      - type: accordion
+        title: "Câu Hỏi Về Câu Chuyện"
+        panels:
+          - title: "Tên của cô gái là gì? - What is the girl's name?"
+            content: "Tên của cô ấy là Thảo. (Her name is Thảo.)"
+
+          - title: "Thảo đang làm gì? - What is Thảo doing?"
+            content: "Thảo đang làm bài tập về nhà. Cô ấy đang viết trong vở bài tập của mình. (Thảo is doing her homework. She is writing in her homework notebook.)"
+
+          - title: "Con mèo đã làm gì? - What did the cat do?"
+            content: "Con mèo đã ăn vở bài tập của Thảo! Thảo rất ngạc nhiên khi thấy điều này. (The cat ate Thảo's homework! Thảo was very surprised when she saw this.)"
+
+      - type: ai-accordion
+        title: "Ngữ Pháp Tiếng Việt - Vietnamese Grammar"
+        prompt: "Create a glossary of Vietnamese grammar concepts used in this story. Explain possessive pronouns (của tôi, của cô ấy), present continuous tense (đang + verb), and common sentence structures. Provide examples in Vietnamese with English translations."
+        panelCount: 5
+        style: "glossary"
+
+  # ====================
+  # Chapter 5: The Surprise - Using True/False (if implemented)
+  # ====================
+  - title: "Ngạc Nhiên! - The Surprise"
+    content:
+      - type: text
+        title: "Điều Gì Đã Xảy Ra?"
+        text: |
+          Tôi ngạc nhiên.
+          Con mèo đã ăn vở bài tập của tôi.
+          Con mèo đã ăn bài tập về nhà của tôi.
+
+      # Note: Add true/false content here when TrueFalseHandler is implemented
+      # - type: truefalse
+      #   title: "Đúng hay Sai? - True or False?"
+      #   statements:
+      #     - text: "Thảo đang làm bài tập về nhà."
+      #       correct: true
+
+  # ====================
+  # Chapter 6: Story Quiz - Using ai-quiz
+  # ====================
+  - title: "Kiểm Tra - Quiz"
+    content:
+      - type: text
+        title: "Thời Gian Kiểm Tra!"
+        text: |
+          Bạn đã hiểu câu chuyện chưa?
+          Hãy làm bài kiểm tra này!
+
+      - type: ai-quiz
+        title: "Bài Kiểm Tra Về Câu Chuyện"
+        sourceText: |
+          Xin chào mọi người. Tên của mình là Thảo.
+          Đây là vở bài tập của tôi. Tôi đang làm bài tập về nhà.
+          Vở bài tập ở trên bàn.
+
+          Con mèo. Đây là con mèo của tôi.
+          Con mèo đang ăn vở bài tập.
+
+          Tôi ngạc nhiên. Con mèo đã ăn bài tập về nhà của tôi.
+          Đó là câu chuyện hôm nay. Tạm biệt mọi người.
+        questionCount: 5
+
+  # ====================
+  # Chapter 7: Single Choice Questions - Using singlechoiceset (manual and AI)
+  # ====================
+  - title: "Câu Hỏi Trắc Nghiệm - Multiple Choice"
+    content:
+      - type: text
+        title: "Chọn Câu Trả Lời Đúng"
+        text: |
+          Mỗi câu hỏi chỉ có một câu trả lời đúng.
+          Hãy đọc kỹ và chọn câu trả lời đúng nhất!
+
+      - type: singlechoiceset
+        title: "Câu Hỏi Về Thảo và Con Mèo"
+        questions:
+          - question: "Tên của cô gái trong câu chuyện là gì? (What is the girl's name in the story?)"
+            correctAnswer: "Thảo"
+            distractors:
+              - "Lan"
+              - "Hương"
+              - "Mai"
+
+          - question: "Thảo đang làm gì? (What is Thảo doing?)"
+            correctAnswer: "Làm bài tập về nhà (Doing homework)"
+            distractors:
+              - "Chơi với mèo (Playing with the cat)"
+              - "Đọc sách (Reading a book)"
+
+          - question: "Vở bài tập ở đâu? (Where is the homework notebook?)"
+            correctAnswer: "Ở trên bàn (On the table)"
+            distractors:
+              - "Trong cặp (In the bag)"
+              - "Trên giường (On the bed)"
+              - "Dưới ghế (Under the chair)"
+
+          - question: "Con mèo đã làm gì? (What did the cat do?)"
+            correctAnswer: "Ăn vở bài tập (Ate the homework)"
+            distractors:
+              - "Ngủ trên bàn (Slept on the table)"
+              - "Chơi với bút (Played with the pen)"
+
+          - question: "Thảo cảm thấy thế nào? (How does Thảo feel?)"
+            correctAnswer: "Ngạc nhiên (Surprised)"
+            distractors:
+              - "Vui vẻ (Happy)"
+              - "Buồn ngủ (Sleepy)"
+              - "Đói bụng (Hungry)"
+
+      - type: ai-singlechoiceset
+        title: "AI: Câu Hỏi Về Từ Vựng Tiếng Việt"
+        prompt: "Create single-choice questions about Vietnamese vocabulary and grammar from this story: Thảo (name), vở bài tập (homework notebook), con mèo (cat), đang làm (is doing), ở trên bàn (on the table), ăn (eat), ngạc nhiên (surprised). Include questions about possessive pronouns (của tôi = my, của cô ấy = her), present continuous (đang + verb), and common nouns."
+        questionCount: 6
+        distractorsPerQuestion: 2
+        difficulty: "easy"
+        aiConfig:
+          tone: "educational"
+          customPrompt: "Make questions suitable for Vietnamese language learners at beginner level. Always include English translations in parentheses."
+
+  # ====================
+  # Chapter 8: Conclusion - Using ai-text and text
+  # ====================
+  - title: "Kết Thúc - Conclusion"
+    content:
+      - type: text
+        title: "Tạm Biệt!"
+        text: |
+          Đó là câu chuyện hôm nay.
+          Tạm biệt mọi người.
+
+          ---
+
+          That's today's story.
+          Goodbye everyone.
+
+      - type: ai-text
+        prompt: "Write a brief, encouraging conclusion in Vietnamese (with English translation) for Vietnamese language learners who just finished this story. Congratulate them on learning new vocabulary and grammar. Encourage them to practice more. Keep it to about 100 words total. Use plain text only - no markdown."
+        title: "Tiếp Tục Học Tiếng Việt!"
+
+      - type: text
+        title: "Bạn Đã Học Được Gì? - What Did You Learn?"
+        text: |
+          Chúc mừng! Bạn đã hoàn thành câu chuyện!
+          Congratulations! You completed the story!
+
+          Bạn đã học:
+          You learned:
+
+          ✓ Từ vựng mới (New vocabulary)
+          ✓ Ngữ pháp cơ bản (Basic grammar)
+          ✓ Câu chuyện vui (A fun story)
+          ✓ Văn hóa Việt Nam (Vietnamese culture)
+
+          Hãy tiếp tục học và luyện tập!
+          Keep learning and practicing!
