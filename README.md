@@ -369,6 +369,8 @@ chapters:
 | `ai-blanks` (or `ai-fill-in-the-blanks`) | AI-generated fill-in-the-blank exercises | `prompt` | `title`, `sentenceCount`, `blanksPerSentence`, `difficulty`, `aiConfig` |
 | `truefalse` (or `true-false`) | Simple true/false questions | `question`, `correct` (boolean) | `title`, `media`, `behaviour`, `labels` |
 | `ai-truefalse` (or `ai-true-false`) | AI-generated true/false questions | `prompt` | `title`, `questionCount`, `difficulty`, `aiConfig` |
+| `essay` | Essay questions with keyword-based automatic scoring | `taskDescription`, `keywords` (array) | `title`, `placeholderText`, `solution`, `media`, `behaviour`, `overallFeedback`, `labels` |
+| `ai-essay` | AI-generated essay questions | `prompt` | `title`, `keywordCount`, `includeAlternatives`, `includeSampleSolution`, `difficulty`, `minimumLength`, `maximumLength`, `aiConfig` |
 
 **TrueFalse Questions - YAML Examples:**
 
@@ -407,6 +409,232 @@ chapters:
 **Note about boolean-to-string conversion:** The TrueFalse handler automatically converts your boolean `correct` field (true/false) to the string format ("true"/"false") required by H5P.TrueFalse. You always use booleans in YAML, and the handler handles the conversion internally.
 
 **See Complete Example:** Check out [examples/yaml/truefalse-example.yaml](examples/yaml/truefalse-example.yaml) for comprehensive TrueFalse examples including media support, behaviour customization, label localization, and AI generation.
+
+
+#### Essay Questions
+
+Create essay questions that assess deeper understanding through written responses. The system automatically scores essays by checking for important keywords and can provide immediate feedback to students.
+
+**Key Features:**
+- **Keyword-Based Scoring** - Automatically score essays based on presence of important terms
+- **Wildcard Matching** - Use `*` for partial matching (e.g., `*photo*` matches "photograph", "photosynthesis")
+- **Keyword Alternatives** - Accept synonyms for fair scoring (e.g., "rocky" or "terrestrial")
+- **Per-Keyword Feedback** - Provide specific feedback when keywords are found or missed
+- **Sample Solutions** - Show example answers to help students learn
+- **Character Length Constraints** - Set minimum and maximum essay lengths
+- **Media Support** - Add images, videos, or audio for context
+- **AI Generation** - Automatically create essay questions with relevant keywords and sample solutions
+
+**Manual Essay Examples:**
+
+```yaml
+# Basic essay with keywords
+- type: essay
+  title: "The Sun's Importance"
+  taskDescription: "Write a short paragraph explaining why the Sun is important to Earth."
+  placeholderText: "The Sun is important because..."
+  keywords:
+    - keyword: "light"
+      points: 10
+      feedbackMissed: "Don't forget to mention how the Sun provides light."
+    - keyword: "heat"
+      points: 10
+    - keyword: "*photosyn*"
+      points: 15
+      feedbackIncluded: "Great! You mentioned photosynthesis."
+  behaviour:
+    minimumLength: 50
+    maximumLength: 300
+
+# Essay with keyword alternatives
+- type: essay
+  title: "Planet Classification"
+  taskDescription: "Explain the difference between inner planets and outer planets."
+  keywords:
+    - keyword: "rocky"
+      alternatives: ["terrestrial", "solid", "earth-like"]
+      points: 10
+      feedbackIncluded: "Excellent! You correctly identified the inner planets."
+    - keyword: "gas"
+      alternatives: ["gaseous", "gas giant"]
+      points: 10
+      feedbackIncluded: "Good! You mentioned the gaseous nature of outer planets."
+  behaviour:
+    minimumLength: 100
+    maximumLength: 400
+
+# Essay with sample solution
+- type: essay
+  title: "Describe Jupiter"
+  taskDescription: "Write a description of Jupiter, including its key characteristics."
+  keywords:
+    - keyword: "largest"
+      alternatives: ["biggest", "giant"]
+      points: 10
+    - keyword: "*Great Red Spot*"
+      points: 20
+      feedbackIncluded: "Excellent! You mentioned the Great Red Spot."
+    - keyword: "moon*"
+      points: 10
+  solution:
+    introduction: "A strong answer should include Jupiter's size, composition, distinctive features, and moons."
+    sample: "Jupiter is the largest planet in our solar system. It's a gas giant composed mainly of hydrogen and helium. Its most famous feature is the Great Red Spot, a massive storm that has been raging for centuries."
+  behaviour:
+    minimumLength: 80
+    maximumLength: 500
+
+# Essay with media
+- type: essay
+  title: "Saturn's Rings"
+  taskDescription: "Look at the image above and describe Saturn's ring system."
+  media:
+    path: "./images/saturn.jpg"
+    type: "image"
+    alt: "Saturn showing its ring system"
+  keywords:
+    - keyword: "ice"
+      points: 15
+      feedbackIncluded: "Correct! The rings contain ice particles."
+    - keyword: "rock"
+      alternatives: ["rocks", "particles", "debris"]
+      points: 10
+  behaviour:
+    minimumLength: 60
+    maximumLength: 300
+```
+
+**Keyword Features:**
+
+**Wildcards** - Use `*` for flexible matching:
+- `*photo*` matches "photograph", "photosynthesis", "photon"
+- `mitochondri*` matches "mitochondria", "mitochondrion", "mitochondrial"
+- `*respir*` matches "respiration", "respiratory", "respirate"
+
+**Alternatives** - Accept multiple ways to express the same concept:
+```yaml
+keywords:
+  - keyword: "evaporation"
+    alternatives: ["evaporate", "evaporates", "vaporization"]
+    points: 15
+  - keyword: "precipitation"
+    alternatives: ["rain", "rainfall", "snow", "hail"]
+    points: 15
+```
+
+**Per-Keyword Points and Occurrences:**
+```yaml
+keywords:
+  - keyword: "example"
+    alternatives: ["for example", "such as"]
+    points: 20
+    occurrences: 3  # Award points up to 3 times
+    feedbackMissed: "Try to provide examples for each point."
+```
+
+**Per-Keyword Feedback:**
+```yaml
+keywords:
+  - keyword: "greenhouse gas*"
+    alternatives: ["carbon dioxide", "CO2", "methane"]
+    points: 20
+    feedbackIncluded: "Excellent! You identified greenhouse gases."
+    feedbackMissed: "Remember to mention which gases cause the greenhouse effect."
+```
+
+**Sample Solutions:**
+```yaml
+solution:
+  introduction: "A good answer should explain the inputs, process, and outputs of photosynthesis."
+  sample: "Photosynthesis is the process by which plants convert light energy into chemical energy. Plants use sunlight, absorbed by chlorophyll in their leaves, along with carbon dioxide from the air and water from their roots..."
+```
+
+**Behavior Settings:**
+```yaml
+behaviour:
+  minimumLength: 100          # Minimum characters required
+  maximumLength: 500          # Maximum characters allowed
+  percentagePassing: 60       # Score needed to pass (0-100)
+  percentageMastering: 85     # Score needed to master (0-100)
+  enableRetry: true           # Allow retry after checking
+```
+
+**AI-Generated Essay Questions:**
+
+Generate essay questions automatically with relevant keywords, alternatives, and sample solutions:
+
+```yaml
+# AI essay - Medium difficulty (default)
+- type: ai-essay
+  title: "Photosynthesis Process"
+  prompt: "Create an essay question about the process of photosynthesis, including the inputs, outputs, and where it occurs"
+  keywordCount: 7
+  difficulty: "medium"
+  includeAlternatives: true
+  includeSampleSolution: true
+  minimumLength: 150
+  maximumLength: 500
+
+# AI essay - Easy difficulty
+- type: ai-essay
+  title: "Basic Biology"
+  prompt: "Create an essay question about the basic parts of a plant (roots, stem, leaves, flowers) and their functions"
+  keywordCount: 5
+  difficulty: "easy"
+  includeAlternatives: true
+  includeSampleSolution: true
+
+# AI essay - Hard difficulty
+- type: ai-essay
+  title: "Cellular Respiration"
+  prompt: "Create a challenging essay question about cellular respiration, including glycolysis, the Krebs cycle, and the electron transport chain"
+  keywordCount: 10
+  difficulty: "hard"
+  includeAlternatives: true
+  includeSampleSolution: true
+  minimumLength: 250
+  maximumLength: 800
+
+# AI essay with custom configuration
+- type: ai-essay
+  title: "DNA Structure"
+  prompt: "Create an essay question about DNA structure and function"
+  keywordCount: 8
+  difficulty: "hard"
+  minimumLength: 200
+  maximumLength: 700
+  aiConfig:
+    targetAudience: "high-school"
+    tone: "educational"
+    customization: "Use precise scientific terminology."
+```
+
+**AI Parameters:**
+- `prompt` (required) - Description of the essay topic
+- `keywordCount` (default: 5) - Number of keywords to generate (1-20)
+- `difficulty` - "easy", "medium", or "hard"
+- `includeAlternatives` (default: true) - Generate synonyms for keywords
+- `includeSampleSolution` (default: true) - Generate example answer
+- `minimumLength` / `maximumLength` - Override difficulty defaults
+- `aiConfig` - Control reading level and tone
+
+**Difficulty Levels:**
+- **Easy**: 3-5 keywords, 50-200 characters, simple vocabulary, common terms, basic sentences
+- **Medium**: 5-7 keywords, 100-500 characters, moderate vocabulary, subject-specific terms, analytical thinking
+- **Hard**: 7-10 keywords, 200-1000 characters, advanced vocabulary, technical terms, complex analysis
+
+**Complete Example:**
+
+See [examples/yaml/essay-example.yaml](examples/yaml/essay-example.yaml) for comprehensive examples including:
+- Basic essays with simple keywords
+- Essays with keyword alternatives
+- Essays with per-keyword points, occurrences, and feedback
+- Essays with sample solutions
+- Essays with media (images, videos, audio)
+- Essays with character length constraints
+- AI-generated essays at different difficulty levels
+- All features combined in complex examples
+
+
 
 **CLI Options:**
 - `--ai-provider <gemini|claude|auto>` - Choose AI provider (default: auto-detect)

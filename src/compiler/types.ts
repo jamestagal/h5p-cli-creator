@@ -264,6 +264,8 @@ export {
   AIQuizContent,
   FlashcardsContent,
   DialogCardsContent,
+  EssayContent,
+  AIEssayContent,
   TrueFalseContent,
   AITrueFalseContent
 } from "./YamlInputParser";

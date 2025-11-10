@@ -1,0 +1,76 @@
+title: "Essay Handler Test - AI Generated"
+language: en
+chapters:
+  - title: "AI Essay Tests - Basic"
+    content:
+      # Test 1: Basic AI essay with medium difficulty
+      - type: ai-essay
+        title: "Solar System Essay"
+        prompt: |
+          Create an essay question about the solar system.
+          Ask students to describe the major planets and their characteristics.
+          Target middle school students.
+        keywordCount: 6
+        includeAlternatives: true
+        includeSampleSolution: true
+        difficulty: medium
+        minimumLength: 150
+        maximumLength: 600
+
+  - title: "AI Essay Tests - Difficulty Levels"
+    content:
+      # Test 2: Easy difficulty
+      - type: ai-essay
+        title: "Favorite Season"
+        prompt: |
+          Create a simple essay question asking students to describe their
+          favorite season and why they like it. Use simple vocabulary suitable
+          for elementary students.
+        difficulty: easy
+        keywordCount: 4
+        includeAlternatives: true
+        includeSampleSolution: true
+
+      # Test 3: Hard difficulty
+      - type: ai-essay
+        title: "Climate Change Analysis"
+        prompt: |
+          Create a challenging essay question about the causes and effects of
+          climate change. Include scientific concepts and require critical
+          analysis. Target high school or college students.
+        difficulty: hard
+        keywordCount: 9
+        includeAlternatives: true
+        includeSampleSolution: true
+        minimumLength: 200
+        maximumLength: 1000
+
+  - title: "AI Essay Tests - Custom Configuration"
+    content:
+      # Test 4: With custom character limits
+      - type: ai-essay
+        title: "Water Cycle"
+        prompt: |
+          Create an essay question about the water cycle.
+          Include evaporation, condensation, and precipitation.
+        keywordCount: 5
+        difficulty: medium
+        minimumLength: 100
+        maximumLength: 400
+        includeAlternatives: true
+        includeSampleSolution: true
+
+      # Test 5: With AI config customization
+      - type: ai-essay
+        title: "Renewable Energy"
+        prompt: |
+          Create an essay question about renewable energy sources.
+          Ask students to compare solar, wind, and hydroelectric power.
+        keywordCount: 7
+        difficulty: medium
+        includeAlternatives: true
+        includeSampleSolution: true
+        aiConfig:
+          targetAudience: "high-school"
+          tone: "educational"
+          customization: "Focus on practical applications and real-world examples"

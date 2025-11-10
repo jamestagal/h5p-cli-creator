@@ -369,6 +369,146 @@ chapters:
         questionCount: 3
         difficulty: "easy"
 
+  - title: "Essay Questions"
+    content:
+      - type: text
+        title: "Written Response Assessment"
+        text: |
+          Essay questions allow you to assess deeper understanding by having students
+          write longer responses. The system can automatically score essays based on
+          keywords and provide immediate feedback.
+
+      # BASIC ESSAY - Simple keywords without alternatives
+      - type: essay
+        title: "The Sun's Importance"
+        taskDescription: "Write a short paragraph explaining why the Sun is important to Earth. Include at least 3 key concepts."
+        placeholderText: "The Sun is important because..."
+        keywords:
+          - keyword: "light"
+            points: 10
+            feedbackMissed: "Don't forget to mention how the Sun provides light."
+          - keyword: "heat"
+            points: 10
+            feedbackMissed: "Consider discussing the heat energy from the Sun."
+          - keyword: "*photosyn*"
+            points: 15
+            feedbackIncluded: "Great! You mentioned photosynthesis."
+        behaviour:
+          minimumLength: 50
+          maximumLength: 300
+
+      # ESSAY WITH ALTERNATIVES - Multiple ways to express the same concept
+      - type: essay
+        title: "Planet Classification"
+        taskDescription: "Explain the difference between inner planets and outer planets. Use at least 100 words."
+        keywords:
+          - keyword: "rocky"
+            alternatives: ["terrestrial", "solid", "earth-like"]
+            points: 10
+            feedbackIncluded: "Excellent! You correctly identified the inner planets as rocky."
+          - keyword: "gas"
+            alternatives: ["gaseous", "gas giant"]
+            points: 10
+            feedbackIncluded: "Good! You mentioned the gaseous nature of outer planets."
+          - keyword: "size"
+            alternatives: ["larger", "bigger", "massive"]
+            points: 5
+            feedbackMissed: "Try to discuss the size differences between inner and outer planets."
+        behaviour:
+          minimumLength: 100
+          maximumLength: 400
+
+      # ESSAY WITH SAMPLE SOLUTION
+      - type: essay
+        title: "Describe Jupiter"
+        taskDescription: "Write a description of Jupiter, including its key characteristics and features."
+        keywords:
+          - keyword: "largest"
+            alternatives: ["biggest", "giant"]
+            points: 10
+          - keyword: "*Great Red Spot*"
+            points: 20
+            feedbackIncluded: "Excellent! You mentioned the Great Red Spot."
+          - keyword: "moon*"
+            points: 10
+            feedbackIncluded: "Good! You discussed Jupiter's moons."
+          - keyword: "gas"
+            alternatives: ["gaseous", "hydrogen", "helium"]
+            points: 10
+        solution:
+          introduction: "A strong answer should include Jupiter's size, composition, distinctive features, and moons."
+          sample: "Jupiter is the largest planet in our solar system. It's a gas giant composed mainly of hydrogen and helium. Its most famous feature is the Great Red Spot, a massive storm that has been raging for centuries. Jupiter has at least 95 known moons, including the four large Galilean moons discovered by Galileo."
+        behaviour:
+          minimumLength: 80
+          maximumLength: 500
+
+      # ESSAY WITH MEDIA
+      - type: essay
+        title: "Saturn's Rings"
+        taskDescription: "Look at the image above and describe Saturn's ring system. What are the rings made of?"
+        media:
+          path: "../../tests/images/test-image.jpg"
+          type: "image"
+          alt: "Saturn showing its ring system"
+        keywords:
+          - keyword: "ice"
+            points: 15
+            feedbackIncluded: "Correct! The rings contain ice particles."
+          - keyword: "rock"
+            alternatives: ["rocks", "particles", "debris"]
+            points: 10
+          - keyword: "orbit*"
+            points: 10
+            feedbackMissed: "Consider how the ring particles orbit Saturn."
+        behaviour:
+          minimumLength: 60
+          maximumLength: 300
+
+      # ESSAY WITH CHARACTER CONSTRAINTS
+      - type: essay
+        title: "Quick Facts: Mars"
+        taskDescription: "In 2-3 sentences (100-200 characters), describe one interesting fact about Mars."
+        placeholderText: "Mars is known as..."
+        keywords:
+          - keyword: "red"
+            alternatives: ["Red Planet"]
+            points: 20
+          - keyword: "*iron*"
+            points: 20
+            feedbackIncluded: "Great! You explained the iron oxide on Mars' surface."
+          - keyword: "water"
+            alternatives: ["ice", "frozen"]
+            points: 10
+        behaviour:
+          minimumLength: 100
+          maximumLength: 200
+          percentagePassing: 40
+
+      # AI-GENERATED ESSAY - Medium Difficulty
+      - type: ai-essay
+        title: "AI Essay: Planetary Motion"
+        prompt: "Create an essay question about how planets orbit the Sun, including concepts like gravity, elliptical orbits, and orbital periods"
+        keywordCount: 6
+        difficulty: "medium"
+        includeAlternatives: true
+        includeSampleSolution: true
+        minimumLength: 150
+        maximumLength: 600
+
+      # AI-GENERATED ESSAY - Hard Difficulty with Sample Solution
+      - type: ai-essay
+        title: "AI Essay: Formation of the Solar System"
+        prompt: "Create a challenging essay question about how the solar system formed from a nebula, including concepts like accretion, protoplanetary disk, and differentiation"
+        keywordCount: 8
+        difficulty: "hard"
+        includeAlternatives: true
+        includeSampleSolution: true
+        minimumLength: 200
+        maximumLength: 800
+        aiConfig:
+          targetAudience: "high-school"
+          tone: "educational"
+
   - title: "Summary and Conclusion"
     content:
       - type: ai-text
