@@ -25,7 +25,7 @@ export interface DragTextContent {
   // OR alternative format: textField string (H5P native format)
   textField?: string;  // "Text with *answer* or *answer:tip* markers"
 
-  distractors?: string[];  // Incorrect answer options
+  distractors?: string[] | string;  // Incorrect answer options (array or H5P native format string)
 
   // Optional behavior settings
   behaviour?: {
@@ -266,8 +266,14 @@ export class DragTextHandler implements ContentHandler {
 
     // Build distractors string
     let distractorsField = "";
-    if (item.distractors && item.distractors.length > 0) {
-      distractorsField = item.distractors.map(d => `*${d}*`).join("\n");
+    if (item.distractors) {
+      if (typeof item.distractors === "string") {
+        // Native H5P format: already formatted with asterisks
+        distractorsField = item.distractors;
+      } else if (Array.isArray(item.distractors) && item.distractors.length > 0) {
+        // Simplified format: convert array to H5P format
+        distractorsField = item.distractors.map(d => `*${d}*`).join("\n");
+      }
     }
 
     // Escape HTML in taskDescription

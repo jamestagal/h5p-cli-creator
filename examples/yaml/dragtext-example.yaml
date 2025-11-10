@@ -159,7 +159,7 @@ chapters:
           - "niche"
 
       - type: image
-        path: https://via.placeholder.com/600x400.png?text=Ecosystem+Diagram
+        path: ../../tests/images/test-image.jpg
         alt: "Diagram showing ecosystem energy flow"
         title: "Ecosystem Energy Flow"
 
