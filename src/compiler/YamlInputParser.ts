@@ -6,7 +6,7 @@ import { AIConfiguration } from "./types";
 /**
  * Content directive types that can be specified in YAML
  */
-export type ContentType = "text" | "image" | "audio" | "ai-text" | "ai-quiz" | "flashcards" | "dialogcards" | "accordion" | "ai-accordion" | "singlechoiceset" | "single-choice-set" | "ai-singlechoiceset" | "ai-single-choice-set";
+export type ContentType = "text" | "image" | "audio" | "ai-text" | "ai-quiz" | "flashcards" | "dialogcards" | "accordion" | "ai-accordion" | "singlechoiceset" | "single-choice-set" | "ai-singlechoiceset" | "ai-single-choice-set" | "dragtext" | "drag-the-words" | "ai-dragtext" | "ai-drag-the-words";
 
 /**
  * Base content item interface
@@ -143,6 +143,10 @@ export { AIAccordionContent } from "../handlers/ai/AIAccordionHandler";
 export { SingleChoiceSetContent } from "../handlers/embedded/SingleChoiceSetHandler";
 export { AISingleChoiceSetContent } from "../handlers/ai/AISingleChoiceSetHandler";
 
+// Export drag text content types
+export { DragTextContent } from "../handlers/embedded/DragTextHandler";
+export { AIDragTextContent } from "../handlers/ai/AIDragTextHandler";
+
 /**
  * Union type for all content items
  */
@@ -157,7 +161,9 @@ export type AnyContentItem =
   | import("../handlers/embedded/AccordionHandler").AccordionContent
   | import("../handlers/ai/AIAccordionHandler").AIAccordionContent
   | import("../handlers/embedded/SingleChoiceSetHandler").SingleChoiceSetContent
-  | import("../handlers/ai/AISingleChoiceSetHandler").AISingleChoiceSetContent;
+  | import("../handlers/ai/AISingleChoiceSetHandler").AISingleChoiceSetContent
+  | import("../handlers/embedded/DragTextHandler").DragTextContent
+  | import("../handlers/ai/AIDragTextHandler").AIDragTextContent;
 
 /**
  * Chapter definition from YAML
@@ -258,8 +264,8 @@ export interface BookDefinition {
  * YamlInputParser parses YAML book definitions into structured BookDefinition objects.
  *
  * Supports:
- * - Multiple content types (text, image, audio, flashcards, dialog cards, accordion, single choice set)
- * - AI-generated content (ai-text, ai-quiz, ai-accordion, ai-singlechoiceset)
+ * - Multiple content types (text, image, audio, flashcards, dialog cards, accordion, single choice set, drag text)
+ * - AI-generated content (ai-text, ai-quiz, ai-accordion, ai-singlechoiceset, ai-dragtext)
  * - Book-level, chapter-level, and item-level AI configuration (Phase 5)
  * - Relative and absolute file paths
  * - Comprehensive validation
@@ -407,7 +413,7 @@ export class YamlInputParser {
       throw new Error(`${prefix} must have a 'type' field (string)`);
     }
 
-    const validTypes: ContentType[] = ["text", "image", "audio", "ai-text", "ai-quiz", "flashcards", "dialogcards", "accordion", "ai-accordion", "singlechoiceset", "single-choice-set", "ai-singlechoiceset", "ai-single-choice-set"];
+    const validTypes: ContentType[] = ["text", "image", "audio", "ai-text", "ai-quiz", "flashcards", "dialogcards", "accordion", "ai-accordion", "singlechoiceset", "single-choice-set", "ai-singlechoiceset", "ai-single-choice-set", "dragtext", "drag-the-words", "ai-dragtext", "ai-drag-the-words"];
     if (!validTypes.includes(item.type)) {
       throw new Error(
         `${prefix} has invalid type '${item.type}'. Valid types: ${validTypes.join(", ")}`
@@ -501,6 +507,26 @@ export class YamlInputParser {
       case "ai-single-choice-set":
         if (!item.prompt || typeof item.prompt !== "string") {
           throw new Error(`${prefix} (ai-singlechoiceset) must have a 'prompt' field (string)`);
+        }
+        break;
+
+      case "dragtext":
+      case "drag-the-words":
+        if (!item.sentences && !item.textField) {
+          throw new Error(`${prefix} (dragtext) must have either 'sentences' array or 'textField' string`);
+        }
+        if (item.sentences && !Array.isArray(item.sentences)) {
+          throw new Error(`${prefix} (dragtext) 'sentences' must be an array`);
+        }
+        if (item.sentences && item.sentences.length === 0) {
+          throw new Error(`${prefix} (dragtext) must have at least one sentence`);
+        }
+        break;
+
+      case "ai-dragtext":
+      case "ai-drag-the-words":
+        if (!item.prompt || typeof item.prompt !== "string") {
+          throw new Error(`${prefix} (ai-dragtext) must have a 'prompt' field (string)`);
         }
         break;
     }

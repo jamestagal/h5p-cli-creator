@@ -18,6 +18,8 @@ import { AccordionHandler } from "../../handlers/embedded/AccordionHandler";
 import { AIAccordionHandler } from "../../handlers/ai/AIAccordionHandler";
 import { SingleChoiceSetHandler } from "../../handlers/embedded/SingleChoiceSetHandler";
 import { AISingleChoiceSetHandler } from "../../handlers/ai/AISingleChoiceSetHandler";
+import { DragTextHandler } from "../../handlers/embedded/DragTextHandler";
+import { AIDragTextHandler } from "../../handlers/ai/AIDragTextHandler";
 import { H5pCompiler } from "../../compiler/H5pCompiler";
 
 // Load environment variables
@@ -111,6 +113,8 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
       handlerRegistry.register(new AIAccordionHandler());
       handlerRegistry.register(new SingleChoiceSetHandler(), ["single-choice-set"]);
       handlerRegistry.register(new AISingleChoiceSetHandler(), ["ai-single-choice-set"]);
+      handlerRegistry.register(new DragTextHandler(), ["drag-the-words"]);
+      handlerRegistry.register(new AIDragTextHandler(), ["ai-drag-the-words"]);
 
       // Override API key if provided
       if (apiKey) {

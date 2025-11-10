@@ -1,0 +1,210 @@
+title: "Drag the Words Examples"
+language: en
+
+aiConfig:
+  targetAudience: "grade-6"
+  tone: "educational"
+
+chapters:
+  - title: "Manual Drag Text Examples"
+    content:
+      # Example 1: Simplified format with single answers
+      - type: dragtext
+        title: "Solar System Basics"
+        taskDescription: "Fill in the blanks about our solar system"
+        sentences:
+          - text: "The Sun is the {blank} in our solar system."
+            blanks:
+              - answer: "star"
+
+          - text: "Earth is the {blank} planet from the Sun."
+            blanks:
+              - answer: "third"
+                tip: "Count from the Sun outward"
+
+          - text: "The largest planet is {blank}."
+            blanks:
+              - answer: "Jupiter"
+
+        distractors:
+          - "moon"
+          - "asteroid"
+          - "fourth"
+
+      # Example 2: Multiple correct answers per blank
+      - type: dragtext
+        title: "Berry Colors (Multiple Answers)"
+        taskDescription: "What colors are these berries?"
+        sentences:
+          - text: "Blueberries are {blank} when ripe."
+            blanks:
+              - answer: ["blue", "purple", "indigo"]
+                tip: "Think about the name!"
+
+          - text: "Strawberries are {blank} when ripe."
+            blanks:
+              - answer: ["red", "crimson"]
+
+          - text: "Bananas are {blank} when ripe."
+            blanks:
+              - answer: ["yellow", "golden"]
+
+        distractors:
+          - "green"
+          - "orange"
+          - "brown"
+
+      # Example 3: Multiple blanks per sentence
+      - type: dragtext
+        title: "Geography Fill-in"
+        taskDescription: "Complete these geography facts"
+        sentences:
+          - text: "The {blank} Ocean is between {blank} and Europe."
+            blanks:
+              - answer: "Atlantic"
+              - answer: ["Africa", "America"]
+
+          - text: "Mount {blank} is the tallest mountain in {blank}."
+            blanks:
+              - answer: "Everest"
+              - answer: "Asia"
+                tip: "It's in the Himalayas"
+
+        distractors:
+          - "Pacific"
+          - "Antarctica"
+          - "Kilimanjaro"
+
+      # Example 4: H5P native textField format (advanced)
+      - type: drag-the-words
+        title: "Native TextField Format"
+        taskDescription: "This example uses H5P's native asterisk format directly"
+        textField: |
+          Photosynthesis occurs in the *chloroplasts:These are green organelles in plant cells*.
+          Plants use *sunlight*, *water/H2O*, and *carbon dioxide/CO2* to produce glucose.
+          The process releases *oxygen/O2* as a byproduct.
+        distractors: "*nitrogen*\n*hydrogen*\n*mitochondria*"
+
+  - title: "AI-Generated Drag Text Examples"
+    content:
+      # Example 5: Easy difficulty
+      - type: ai-dragtext
+        title: "Simple Vocabulary (Easy)"
+        prompt: "Create fill-in-the-blank sentences about common animals and their habitats"
+        sentenceCount: 3
+        difficulty: "easy"
+        includeDistractors: true
+        distractorCount: 2
+
+      # Example 6: Medium difficulty
+      - type: ai-drag-the-words
+        title: "Photosynthesis Quiz (Medium)"
+        prompt: "Create fill-in-the-blank sentences about photosynthesis, chloroplasts, and plant biology"
+        sentenceCount: 5
+        blanksPerSentence: 2
+        difficulty: "medium"
+        includeDistractors: true
+        distractorCount: 3
+
+      # Example 7: Hard difficulty
+      - type: ai-dragtext
+        title: "Advanced Chemistry (Hard)"
+        prompt: "Create fill-in-the-blank sentences about chemical reactions, molecular structures, and periodic table elements"
+        sentenceCount: 4
+        blanksPerSentence: 3
+        difficulty: "hard"
+        includeDistractors: true
+        distractorCount: 5
+
+      # Example 8: Custom parameters
+      - type: ai-dragtext
+        title: "Custom Configuration"
+        prompt: "Create fill-in-the-blank sentences about the water cycle including evaporation, condensation, and precipitation"
+        sentenceCount: 6
+        blanksPerSentence: 2
+        difficulty: "medium"
+        includeDistractors: false
+        aiConfig:
+          targetAudience: "high-school"
+          tone: "educational"
+          customization: "Use scientific terminology. Include the role of temperature and energy."
+
+  - title: "Mixed Content with Drag Text"
+    content:
+      - type: text
+        text: |
+          <h2>Introduction to Ecosystems</h2>
+          <p>An ecosystem is a community of living organisms interacting with their environment. Let's test your knowledge!</p>
+
+      - type: dragtext
+        title: "Ecosystem Vocabulary"
+        taskDescription: "Fill in the key terms"
+        sentences:
+          - text: "A {blank} is an organism that makes its own food."
+            blanks:
+              - answer: ["producer", "autotroph"]
+                tip: "Think about plants"
+
+          - text: "A {blank} eats other organisms for energy."
+            blanks:
+              - answer: ["consumer", "heterotroph"]
+
+          - text: "Energy flows through an ecosystem via the {blank}."
+            blanks:
+              - answer: "food chain"
+
+        distractors:
+          - "decomposer"
+          - "habitat"
+          - "niche"
+
+      - type: image
+        path: https://via.placeholder.com/600x400.png?text=Ecosystem+Diagram
+        alt: "Diagram showing ecosystem energy flow"
+        title: "Ecosystem Energy Flow"
+
+      - type: ai-dragtext
+        title: "AI-Generated Ecosystem Quiz"
+        prompt: "Create fill-in-the-blank sentences about predator-prey relationships, food webs, and energy transfer in ecosystems"
+        sentenceCount: 4
+        difficulty: "medium"
+        includeDistractors: true
+
+  - title: "Configuration Examples"
+    content:
+      # Example showing custom behavior settings
+      - type: dragtext
+        title: "Custom Behavior Settings"
+        taskDescription: "This example has instant feedback enabled"
+        sentences:
+          - text: "Water freezes at {blank} degrees Celsius."
+            blanks:
+              - answer: ["0", "zero"]
+
+          - text: "Water boils at {blank} degrees Celsius."
+            blanks:
+              - answer: ["100", "one hundred"]
+
+        behaviour:
+          enableRetry: true
+          enableSolutionsButton: true
+          instantFeedback: true
+          enableCheckButton: true
+
+        labels:
+          checkAnswer: "Verify Answer"
+          tryAgain: "Try Once More"
+          showSolution: "Reveal Solution"
+          correctText: "That's right!"
+          incorrectText: "Not quite, try again."
+
+        feedback:
+          - from: 0
+            to: 49
+            feedback: "Keep trying! Review the material."
+          - from: 50
+            to: 99
+            feedback: "Good effort! Almost perfect."
+          - from: 100
+            to: 100
+            feedback: "Perfect! You've mastered this topic."
