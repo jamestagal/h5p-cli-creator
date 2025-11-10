@@ -150,7 +150,7 @@ export class DragTextHandler implements ContentHandler {
         for (let j = 0; j < sentence.blanks.length; j++) {
           const blank = sentence.blanks[j];
 
-          if (!blank.answer) {
+          if (blank.answer === undefined || blank.answer === null) {
             return {
               valid: false,
               error: `Sentence ${i + 1}, blank ${j + 1} missing 'answer' field`
