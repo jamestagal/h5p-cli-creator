@@ -2,10 +2,40 @@
 
 ## Overview
 
-The Smart Import API provides a powerful workflow for generating multiple H5P content types from a single source (PDF, text, URL) with universal AI configuration. This document establishes the foundation for Smart Import implementation in Phase 6.
+The Smart Import API provides a **4-step workflow** for effortlessly generating multiple H5P content types from source materials (PDF, audio, video, URL) with language-aware AI configuration and learning integrity. This document establishes the foundation for Smart Import implementation in Phase 6.
 
-**Phase 5 Status:** Architecture documented, types exported, foundation established
-**Phase 6 Status:** Full implementation (coming soon)
+**Phase 5 Status:** Architecture documented, types exported, foundation established ✅
+**Phase 6A Status:** 4-Step Workflow implementation (current focus) 🚧
+
+## The 4-Step Smart Import Workflow
+
+Smart Import transforms source materials into H5P content through a transparent, reviewable process:
+
+### **STEP 1: Upload Content**
+Upload content (PDF, audio, video) or paste a link (URL) for analysis. Optionally customize with learning objectives, difficulty level, target language, etc.
+- **Technology**: SourceExtractor service (pdf-parse, Whisper API, cheerio)
+- **CLI**: `extract-text ./sources/files/lecture.pdf`
+- **Output**: `/extracted/{source}/full-text.txt` + `metadata.json`
+
+### **STEP 2: Review Text**
+We transcode/scrape content and make a textual version for you to review. Edit the text to focus on key learning material before concept extraction.
+- **Technology**: Standard file editing (any text editor)
+- **Process**: User edits `/extracted/{source}/full-text.txt`
+- **Output**: Reviewed and edited text file
+
+### **STEP 3: Review Concepts**
+We analyze the reviewed text and extract concepts. The concepts chosen will be used to create interactive questions and more. Review and edit extracted concepts as needed.
+- **Technology**: ConceptExtractor service (AI-powered concept extraction)
+- **CLI**: `extract-concepts ./extracted/lecture/full-text.txt`
+- **Output**: `/extracted/{source}/concepts.json`
+
+### **STEP 4: Select Content Types**
+Choose content types (flashcards, quizzes, dialogcards, etc.) and we generate the content for you based on your chosen concepts with language-aware AI.
+- **Technology**: Handler integration with `context.concepts` + language-aware AIConfiguration
+- **CLI**: `generate-from-concepts ./extracted/lecture/concepts.json ./output.h5p --content-type quiz`
+- **Output**: `.h5p` package with generated content
+
+---
 
 ## TL;DR - Key Architectural Decision
 

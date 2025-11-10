@@ -2,13 +2,42 @@
 
 ## Goal
 
-Implement a concept extraction pipeline that extracts key learning concepts from source materials, and enhance the AI configuration system with language awareness to ensure AI-generated content consistently respects target language settings for multilingual educational content.
+Implement the foundation for the **Smart Import 4-Step Workflow** - a complete pipeline from source upload to H5P content generation with language awareness and learning integrity.
+
+## The 4-Step Smart Import Workflow
+
+This specification implements the complete 4-step workflow that makes content creation effortless:
+
+### **STEP 1: Upload Content**
+Upload content (PDF, audio, video) or paste a link (URL) for analysis. Optionally customize with learning objectives, difficulty level, target language, etc.
+- **CLI**: `extract-text` command
+- **Service**: SourceExtractor (PDF/audio/video/URL → text)
+- **Output**: `/extracted/{source}/full-text.txt`
+
+### **STEP 2: Review Text**
+Transcode/scrape content into a textual version for review. Edit the text to focus on key learning material before concept extraction.
+- **CLI**: Manual file editing
+- **Implementation**: User edits `/extracted/{source}/full-text.txt`
+- **Output**: Reviewed and edited text file
+
+### **STEP 3: Review Concepts**
+Analyze the reviewed text and extract concepts. The concepts chosen will be used to create interactive questions and more. Review and edit extracted concepts as needed.
+- **CLI**: `extract-concepts` command
+- **Service**: ConceptExtractor (text → structured concepts)
+- **Output**: `/extracted/{source}/concepts.json`
+
+### **STEP 4: Select Content Types**
+Choose content types (flashcards, quizzes, dialogcards, etc.) and generate content based on chosen concepts with language-aware AI.
+- **CLI**: `generate-from-concepts` command
+- **Implementation**: Handlers use `context.concepts` + language-aware AIConfiguration
+- **Output**: `.h5p` package with generated content
 
 ## User Stories
 
-- As an educator, I want to extract key concepts from Vietnamese story text so that I can generate vocabulary cards and quizzes from real learning materials instead of hallucinated content.
-- As a content creator, I want to specify a target language for AI generation so that Vietnamese content stays in Vietnamese without automatic translation to English.
-- As a language learning author, I want to optionally include translations in generated content so that learners can see both the target language and their native language.
+- As an educator, I want to **upload a Vietnamese audio lecture and generate vocabulary cards** from the actual concepts in the lecture, not AI hallucinations.
+- As a content creator, I want to **specify Vietnamese as my target language** so that all generated content stays in Vietnamese without automatic translation to English.
+- As a language learning author, I want to **include English translations** in my Vietnamese flashcards so learners can see both languages side-by-side.
+- As a teacher, I want to **extract concepts from a PDF textbook** and generate multiple content types (quiz, flashcards, accordion) from the same concepts for consistent learning.
 
 ## Specific Requirements
 
@@ -162,35 +191,68 @@ Implement a concept extraction pipeline that extracts key learning concepts from
 
 ## Smart Import Workflow Context
 
-This feature implements **Steps 1-3 of the Smart Import API workflow**:
+This specification implements the **complete 4-step Smart Import workflow** for Phase 6A:
 
-**Step 1: Source → Text Extraction** (IN SCOPE - Phase 6A)
-- Extract text from PDF files (using pdf-parse npm package)
-- Transcribe audio to text (using Whisper API via OpenAI)
-- Transcribe video to text (extract audio track → transcribe with Whisper)
-- Scrape text from URLs (using cheerio for HTML parsing)
-- Read plain text files (already working)
-- Output: `/extracted/{source}/full-text.txt`
+### **STEP 1: Upload Content** (IN SCOPE - Phase 6A)
+**Purpose**: Extract text from various source formats for educator review.
 
-**Step 2: Review Text** (Already supported via file editing)
-- Educator reviews extracted text at `/extracted/{source}/full-text.txt`
-- Can manually edit text before concept extraction
-- This step is manual file editing (no CLI command needed)
+**Supported Sources**:
+- PDF files (using pdf-parse npm package)
+- Audio files: mp3, wav, m4a (transcribed via Whisper API)
+- Video files: mp4, avi, mov (extract audio → transcribe via Whisper)
+- URLs (scraped with cheerio, main content only)
+- Plain text files (direct read)
 
-**Step 3: Text → Concepts Extraction** (IN SCOPE - Phase 6A, PRIMARY FOCUS)
-- Extract key concepts FROM reviewed text (language-agnostic)
-- English source → English concepts, Vietnamese source → Vietnamese concepts
-- Output: `/extracted/{source}/concepts.json`
-- This is the ConceptExtractor service implementation
+**Output**: `/extracted/{source}/full-text.txt` + `metadata.json`
+
+**CLI**: `extract-text ./sources/files/lecture.pdf`
+
+---
+
+### **STEP 2: Review Text** (Already Supported - Manual Editing)
+**Purpose**: Educator reviews and edits extracted text before concept extraction.
+
+**Process**:
+- User opens `/extracted/{source}/full-text.txt` in any text editor
+- Removes irrelevant content, fixes transcription errors, adds emphasis
+- Focuses text on key learning material
+
+**No CLI command needed** - standard file editing workflow
+
+---
+
+### **STEP 3: Review Concepts** (IN SCOPE - Phase 6A, PRIMARY FOCUS)
+**Purpose**: Extract structured concepts from reviewed text for content generation.
 
 **Key Principle: Language-Agnostic Extraction**
 - Source language determines concept language (not hardcoded to Vietnamese)
-- If source text is in English, concepts are extracted in English
-- If source text is in Vietnamese, concepts are extracted in Vietnamese
-- targetLanguage in AIConfiguration controls GENERATION language, not extraction language
-- Example workflow:
-  - English PDF → English text → English concepts → Vietnamese quiz (with targetLanguage=vi and includeTranslations=true)
-  - Vietnamese audio → Vietnamese text → Vietnamese concepts → Vietnamese flashcards (with targetLanguage=vi)
+- English text → English concepts
+- Vietnamese text → Vietnamese concepts
+- French text → French concepts
+- **Extraction language ≠ Generation language** (controlled separately in Step 4)
+
+**Output**: `/extracted/{source}/concepts.json` with structured concept data
+
+**CLI**: `extract-concepts ./extracted/lecture/full-text.txt ./extracted/lecture/concepts.json`
+
+**Example Workflows**:
+- English PDF → English text → English concepts → Vietnamese quiz (targetLanguage=vi, includeTranslations=true)
+- Vietnamese audio → Vietnamese text → Vietnamese concepts → Vietnamese flashcards (targetLanguage=vi)
+
+---
+
+### **STEP 4: Select Content Types** (IN SCOPE - Phase 6A)
+**Purpose**: Generate H5P content from extracted concepts with language-aware AI.
+
+**Process**:
+- User selects content types: flashcards, quiz, dialogcards, accordion, etc.
+- System uses `context.concepts` to generate content FROM source material
+- Language-aware AI ensures target language consistency
+- Multiple content types can be generated from same concepts
+
+**Output**: `.h5p` package with generated content
+
+**CLI**: `generate-from-concepts ./extracted/lecture/concepts.json ./output.h5p --content-type quiz --language vi --include-translations`
 
 ## Out of Scope
 
