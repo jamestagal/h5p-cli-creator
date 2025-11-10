@@ -354,6 +354,8 @@ chapters:
 | `dialogcards` | Dialog cards | `cards` (array) | `title`, `mode` |
 | `singlechoiceset` (or `single-choice-set`) | Single-choice quiz questions (only one correct answer) | `questions` (array) | `title`, `behaviour`, `labels`, `feedback` |
 | `ai-singlechoiceset` (or `ai-single-choice-set`) | AI-generated single-choice questions | `prompt` | `title`, `questionCount`, `distractorsPerQuestion`, `difficulty`, `aiConfig` |
+| `blanks` (or `fill-in-the-blanks`) | Fill-in-the-blank exercises with typed answers | `sentences` OR `questions` (array) | `title`, `taskDescription`, `media`, `behaviour`, `labels`, `feedback` |
+| `ai-blanks` (or `ai-fill-in-the-blanks`) | AI-generated fill-in-the-blank exercises | `prompt` | `title`, `sentenceCount`, `blanksPerSentence`, `difficulty`, `aiConfig` |
 
 **CLI Options:**
 - `--ai-provider <gemini|claude|auto>` - Choose AI provider (default: auto-detect)
@@ -424,6 +426,223 @@ chapters:
 
           Mitosis is essential for growth, repair, and asexual reproduction.
 ```
+
+#### Fill in the Blanks
+
+Create fill-in-the-blank exercises where students type answers into input fields. Supports both a simplified format with `{blank}` markers and native H5P syntax with `*answer*` markers.
+
+**Dual Format Support:**
+
+**Option 1: Simplified Format (Recommended)**
+
+Use `{blank}` placeholders in your text for easy authoring:
+
+```yaml
+- type: blanks
+  title: "Solar System Facts"
+  taskDescription: "Fill in the missing words"
+  sentences:
+    - text: "The Sun is a {blank}."
+      blanks:
+        - answer: "star"
+          tip: "Not a planet!"
+
+    - text: "Earth has {blank} moon(s)."
+      blanks:
+        - answer: ["one", "1"]  # Multiple correct answers
+
+    - text: "The largest planet is {blank}."
+      blanks:
+        - answer: "Jupiter"
+```
+
+**Option 2: Native H5P Format (Advanced)**
+
+Use H5P's native `*answer*` syntax for full control:
+
+```yaml
+- type: blanks
+  title: "Solar System Facts"
+  taskDescription: "Fill in the missing words"
+  questions:
+    - "The Sun is a *star:Not a planet!*."
+    - "Earth has *one/1* moon(s)."
+    - "The largest planet is *Jupiter*."
+```
+
+**Native Syntax Features:**
+- `*answer*` - Basic blank
+- `*answer1/answer2*` - Alternative correct answers
+- `*answer:tip text*` - Answer with hint
+- `*answer1/answer2:tip text*` - Combined alternatives and tip
+
+**When to Use Each Format:**
+- **Simplified Format**: Best for most users, easier to read and maintain, supports all features through structured YAML
+- **Native Format**: Advanced users who prefer H5P's syntax, useful when copying from existing H5P content
+
+**Alternative Answers:**
+
+Accept multiple correct answers for the same blank:
+
+```yaml
+- type: blanks
+  title: "Flexible Answers"
+  sentences:
+    - text: "Water freezes at {blank} degrees Celsius."
+      blanks:
+        - answer: ["zero", "0", "0.0"]
+
+    - text: "The color of the sky is {blank}."
+      blanks:
+        - answer: ["blue", "light blue", "azure"]
+```
+
+**Tips and Hints:**
+
+Provide helpful hints that appear when students click the hint icon:
+
+```yaml
+- type: blanks
+  title: "Science Quiz with Hints"
+  sentences:
+    - text: "Photosynthesis requires {blank}, water, and carbon dioxide."
+      blanks:
+        - answer: "sunlight"
+          tip: "Think about what plants need from above"
+
+    - text: "The speed of light is approximately {blank} km/s."
+      blanks:
+        - answer: "300000"
+          tip: "About 300 thousand kilometers per second"
+```
+
+**Multiple Blanks Per Sentence:**
+
+```yaml
+- type: blanks
+  title: "Complex Sentences"
+  sentences:
+    - text: "The {blank} is the {blank} planet from the Sun."
+      blanks:
+        - answer: "Earth"
+          tip: "Our home planet"
+        - answer: "third"
+          tip: "Count from the Sun outward"
+
+    - text: "{blank} is the capital of {blank}."
+      blanks:
+        - answer: "London"
+        - answer: ["England", "United Kingdom", "UK"]
+```
+
+**Behavior Settings:**
+
+Customize how the exercise behaves:
+
+```yaml
+- type: blanks
+  title: "Customized Blanks"
+  sentences:
+    - text: "The capital of France is {blank}."
+      blanks:
+        - answer: "Paris"
+  behaviour:
+    caseSensitive: false           # Accept "paris", "PARIS", "Paris"
+    acceptSpellingErrors: true     # Accept minor typos like "Parus"
+    enableRetry: true              # Allow retry after checking
+    enableSolutionsButton: true    # Show solution button
+    autoCheck: false               # Manual check (not automatic)
+    confirmRetryDialog: true       # Confirm before retry
+```
+
+**Key Settings:**
+- `caseSensitive` (default: `true`) - Whether answers must match case exactly
+- `acceptSpellingErrors` (default: `false`) - Allow minor spelling mistakes
+- `enableRetry` (default: `true`) - Let students retry after checking
+- `enableSolutionsButton` (default: `true`) - Show correct answers button
+- `autoCheck` (default: `false`) - Check answers automatically as typed
+
+**Media Support:**
+
+Add images, videos, or audio above the exercise:
+
+```yaml
+- type: blanks
+  title: "Visual Learning"
+  taskDescription: "Answer questions about the image above"
+  media:
+    path: "./images/solar-system.jpg"
+    type: "image"
+    alt: "Diagram of the solar system"
+  sentences:
+    - text: "The planet closest to the Sun is {blank}."
+      blanks:
+        - answer: "Mercury"
+```
+
+**AI-Generated Fill in the Blanks:**
+
+Generate exercises automatically from a prompt:
+
+```yaml
+- type: ai-blanks
+  title: "Solar System Quiz"
+  prompt: "Create fill-in-the-blank sentences about planets in our solar system"
+  sentenceCount: 8
+  blanksPerSentence: 1
+  difficulty: "medium"
+  aiConfig:
+    targetAudience: "grade-6"
+    tone: "educational"
+```
+
+**AI Parameters:**
+- `prompt` (required) - What content to generate
+- `sentenceCount` (default: 5) - Number of sentences to create
+- `blanksPerSentence` (default: 1) - Blanks per sentence (1-3)
+- `difficulty` - "easy", "medium", or "hard"
+- `aiConfig` - Control reading level and tone
+
+**Difficulty Levels:**
+- `"easy"` - Simple vocabulary, 1 blank per sentence, straightforward answers
+- `"medium"` - Moderate complexity, 1-2 blanks per sentence, requires thinking
+- `"hard"` - Complex sentences, 2-3 blanks per sentence, academic terminology
+
+**Example AI Blanks:**
+
+```yaml
+# Easy difficulty for elementary students
+- type: ai-blanks
+  title: "Animal Facts"
+  prompt: "Create simple fill-in-the-blank sentences about common animals like dogs, cats, birds, and fish"
+  sentenceCount: 5
+  blanksPerSentence: 1
+  difficulty: "easy"
+  aiConfig:
+    targetAudience: "elementary"
+    tone: "playful"
+
+# Hard difficulty for high school
+- type: ai-blanks
+  title: "Advanced Biology"
+  prompt: "Create challenging fill-in-the-blank sentences about photosynthesis, cellular respiration, and energy transfer"
+  sentenceCount: 6
+  blanksPerSentence: 2
+  difficulty: "hard"
+  aiConfig:
+    targetAudience: "high-school"
+    tone: "technical"
+```
+
+**Complete Example:**
+
+See [examples/yaml/blanks-example.yaml](examples/yaml/blanks-example.yaml) for comprehensive examples including:
+- Simplified format with single and multiple blanks
+- Native H5P format examples
+- Alternative answers and tips
+- Behavior customization
+- Media integration
+- AI-generated content at different difficulty levels
 
 **What Gets Generated:**
 - **2.2MB .h5p package** with 12 automatically bundled H5P libraries

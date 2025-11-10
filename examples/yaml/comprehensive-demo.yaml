@@ -236,6 +236,91 @@ chapters:
         difficulty: "easy"
         includeDistractors: true
 
+  - title: "Fill in the Blanks (Typed Answers)"
+    content:
+      - type: text
+        title: "Type Your Answers"
+        text: |
+          Similar to dragging words, but now you'll type your answers!
+          These fill-in-the-blank exercises test your knowledge by having you
+          type the correct words into input fields.
+
+      # MANUAL BLANKS - Simplified Format
+      - type: blanks
+        title: "Manual Blanks: Basic Planet Facts"
+        taskDescription: "Type the correct words to complete these sentences"
+        sentences:
+          - text: "The Sun is a {blank}."
+            blanks:
+              - answer: "star"
+                tip: "Not a planet!"
+
+          - text: "Earth has {blank} moon(s)."
+            blanks:
+              - answer: ["one", "1"]
+
+          - text: "The largest planet is {blank}."
+            blanks:
+              - answer: "Jupiter"
+                tip: "It's a gas giant"
+
+        behaviour:
+          caseSensitive: false
+          acceptSpellingErrors: true
+
+      # MANUAL BLANKS - Native Format
+      - type: blanks
+        title: "Manual Blanks: Advanced (Native Format)"
+        taskDescription: "Using H5P native syntax with tips and alternatives"
+        questions:
+          - "The Sun is a *star:Not a planet!*."
+          - "Earth has *one/1* moon(s)."
+          - "The largest planet is *Jupiter:It's a gas giant*."
+        behaviour:
+          caseSensitive: false
+
+      # MANUAL BLANKS - Multiple Blanks Per Sentence
+      - type: blanks
+        title: "Multiple Blanks Per Sentence"
+        taskDescription: "Fill in multiple words in each sentence"
+        sentences:
+          - text: "The {blank} is the {blank} planet from the Sun."
+            blanks:
+              - answer: "Earth"
+                tip: "Our home planet"
+              - answer: "third"
+                tip: "Count from the Sun"
+
+          - text: "{blank} has a {blank} that has been raging for centuries."
+            blanks:
+              - answer: "Jupiter"
+              - answer: ["Great Red Spot", "giant storm"]
+
+        behaviour:
+          caseSensitive: false
+          acceptSpellingErrors: true
+
+      # AI-GENERATED BLANKS
+      - type: ai-blanks
+        title: "AI-Generated: Solar System Quiz"
+        prompt: "Create fill-in-the-blank sentences about the planets, their moons, and unique features of our solar system"
+        sentenceCount: 6
+        blanksPerSentence: 1
+        difficulty: "medium"
+        aiConfig:
+          targetAudience: "grade-6"
+          tone: "educational"
+
+      - type: ai-blanks
+        title: "AI-Generated: Advanced Astronomy"
+        prompt: "Create challenging fill-in-the-blank sentences about planetary orbits, gravitational forces, and astronomical phenomena in our solar system"
+        sentenceCount: 5
+        blanksPerSentence: 2
+        difficulty: "hard"
+        aiConfig:
+          targetAudience: "high-school"
+          tone: "technical"
+
   - title: "Summary and Conclusion"
     content:
       - type: ai-text

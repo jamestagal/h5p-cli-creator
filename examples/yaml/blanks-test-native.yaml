@@ -1,0 +1,14 @@
+title: "Blanks Test - Native Format"
+language: en
+chapters:
+  - title: "Norwegian Berries"
+    content:
+      - type: fill-in-the-blanks
+        title: "Berry Fill-in-the-Blanks (Native)"
+        taskDescription: "Fill in the missing words"
+        questions:
+          - "Blueberries are *blue:Think about the name* colored berries."
+          - "*Cloudberries/Cloud berries* are orange berries."
+          - "Blackcurrant is related to *blackcurrant*."
+        behaviour:
+          caseSensitive: false

@@ -6,7 +6,7 @@ import { AIConfiguration } from "./types";
 /**
  * Content directive types that can be specified in YAML
  */
-export type ContentType = "text" | "image" | "audio" | "ai-text" | "ai-quiz" | "flashcards" | "dialogcards" | "accordion" | "ai-accordion" | "singlechoiceset" | "single-choice-set" | "ai-singlechoiceset" | "ai-single-choice-set" | "dragtext" | "drag-the-words" | "ai-dragtext" | "ai-drag-the-words";
+export type ContentType = "text" | "image" | "audio" | "ai-text" | "ai-quiz" | "flashcards" | "dialogcards" | "accordion" | "ai-accordion" | "singlechoiceset" | "single-choice-set" | "ai-singlechoiceset" | "ai-single-choice-set" | "dragtext" | "drag-the-words" | "ai-dragtext" | "ai-drag-the-words" | "blanks" | "fill-in-the-blanks" | "ai-blanks" | "ai-fill-in-the-blanks";
 
 /**
  * Base content item interface
@@ -147,6 +147,10 @@ export { AISingleChoiceSetContent } from "../handlers/ai/AISingleChoiceSetHandle
 export { DragTextContent } from "../handlers/embedded/DragTextHandler";
 export { AIDragTextContent } from "../handlers/ai/AIDragTextHandler";
 
+// Export blanks content types
+export { BlanksContent } from "../handlers/embedded/BlanksHandler";
+export { AIBlanksContent } from "../handlers/ai/AIBlanksHandler";
+
 /**
  * Union type for all content items
  */
@@ -163,7 +167,9 @@ export type AnyContentItem =
   | import("../handlers/embedded/SingleChoiceSetHandler").SingleChoiceSetContent
   | import("../handlers/ai/AISingleChoiceSetHandler").AISingleChoiceSetContent
   | import("../handlers/embedded/DragTextHandler").DragTextContent
-  | import("../handlers/ai/AIDragTextHandler").AIDragTextContent;
+  | import("../handlers/ai/AIDragTextHandler").AIDragTextContent
+  | import("../handlers/embedded/BlanksHandler").BlanksContent
+  | import("../handlers/ai/AIBlanksHandler").AIBlanksContent;
 
 /**
  * Chapter definition from YAML
@@ -264,8 +270,8 @@ export interface BookDefinition {
  * YamlInputParser parses YAML book definitions into structured BookDefinition objects.
  *
  * Supports:
- * - Multiple content types (text, image, audio, flashcards, dialog cards, accordion, single choice set, drag text)
- * - AI-generated content (ai-text, ai-quiz, ai-accordion, ai-singlechoiceset, ai-dragtext)
+ * - Multiple content types (text, image, audio, flashcards, dialog cards, accordion, single choice set, drag text, blanks)
+ * - AI-generated content (ai-text, ai-quiz, ai-accordion, ai-singlechoiceset, ai-dragtext, ai-blanks)
  * - Book-level, chapter-level, and item-level AI configuration (Phase 5)
  * - Relative and absolute file paths
  * - Comprehensive validation
@@ -413,7 +419,7 @@ export class YamlInputParser {
       throw new Error(`${prefix} must have a 'type' field (string)`);
     }
 
-    const validTypes: ContentType[] = ["text", "image", "audio", "ai-text", "ai-quiz", "flashcards", "dialogcards", "accordion", "ai-accordion", "singlechoiceset", "single-choice-set", "ai-singlechoiceset", "ai-single-choice-set", "dragtext", "drag-the-words", "ai-dragtext", "ai-drag-the-words"];
+    const validTypes: ContentType[] = ["text", "image", "audio", "ai-text", "ai-quiz", "flashcards", "dialogcards", "accordion", "ai-accordion", "singlechoiceset", "single-choice-set", "ai-singlechoiceset", "ai-single-choice-set", "dragtext", "drag-the-words", "ai-dragtext", "ai-drag-the-words", "blanks", "fill-in-the-blanks", "ai-blanks", "ai-fill-in-the-blanks"];
     if (!validTypes.includes(item.type)) {
       throw new Error(
         `${prefix} has invalid type '${item.type}'. Valid types: ${validTypes.join(", ")}`
@@ -527,6 +533,23 @@ export class YamlInputParser {
       case "ai-drag-the-words":
         if (!item.prompt || typeof item.prompt !== "string") {
           throw new Error(`${prefix} (ai-dragtext) must have a 'prompt' field (string)`);
+        }
+        break;
+
+      case "blanks":
+      case "fill-in-the-blanks":
+        if (!item.sentences && !item.questions) {
+          throw new Error(`${prefix} (blanks) must have either 'sentences' or 'questions' array`);
+        }
+        if (item.sentences && item.questions) {
+          throw new Error(`${prefix} (blanks) cannot have both 'sentences' and 'questions' - use one format only`);
+        }
+        break;
+
+      case "ai-blanks":
+      case "ai-fill-in-the-blanks":
+        if (!item.prompt || typeof item.prompt !== "string") {
+          throw new Error(`${prefix} (ai-blanks) must have a 'prompt' field (string)`);
         }
         break;
     }
