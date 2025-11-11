@@ -26,6 +26,8 @@ import { EssayHandler } from "../../handlers/embedded/EssayHandler";
 import { AIEssayHandler } from "../../handlers/ai/AIEssayHandler";
 import { TrueFalseHandler } from "../../handlers/embedded/TrueFalseHandler";
 import { AITrueFalseHandler } from "../../handlers/ai/AITrueFalseHandler";
+import { CrosswordHandler } from "../../handlers/embedded/CrosswordHandler";
+import { AICrosswordHandler } from "../../handlers/ai/AICrosswordHandler";
 import { H5pCompiler } from "../../compiler/H5pCompiler";
 
 // Load environment variables
@@ -127,6 +129,8 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
       handlerRegistry.register(new AIEssayHandler());
       handlerRegistry.register(new TrueFalseHandler(), ["true-false"]);
       handlerRegistry.register(new AITrueFalseHandler(), ["ai-true-false"]);
+      handlerRegistry.register(new CrosswordHandler());
+      handlerRegistry.register(new AICrosswordHandler());
 
       // Override API key if provided
       if (apiKey) {
