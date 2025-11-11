@@ -1,0 +1,390 @@
+title: "Crossword Puzzles - Comprehensive Examples"
+language: "en"
+description: "Demonstration of all Crossword handler features including manual crosswords with various configurations"
+
+# This example demonstrates the Crossword content type handler
+# Crosswords are automatically generated from word/clue pairs
+# H5P.Crossword handles grid layout client-side - no manual positioning needed
+
+chapters:
+  - title: "Example 1: Geography Quiz"
+    content:
+      - type: text
+        title: "World Geography Crossword"
+        text: |
+          Test your knowledge of world geography! This crossword features countries,
+          capitals, and famous landmarks from around the globe.
+
+      # EXAMPLE 1: Geography Quiz (10 words, countries/capitals)
+      - type: crossword
+        title: "World Geography Challenge"
+        taskDescription: "Famous landmarks and capitals around the world"
+        words:
+          - clue: "Statue of Liberty is located in?"
+            answer: "NewYork"
+
+          - clue: "Taj Mahal is located in which city?"
+            answer: "Agra"
+
+          - clue: "Eiffel Tower is located in?"
+            answer: "Paris"
+
+          - clue: "The Great Wall is in which country?"
+            answer: "China"
+
+          - clue: "Capital of Japan"
+            answer: "Tokyo"
+
+          - clue: "Capital of Italy, home to the Colosseum"
+            answer: "Rome"
+
+          - clue: "Big Ben is a landmark in this city"
+            answer: "London"
+
+          - clue: "Capital of Egypt, near the pyramids"
+            answer: "Cairo"
+
+          - clue: "Parthenon is located in this Greek city"
+            answer: "Athens"
+
+          - clue: "Opera House is a famous landmark in this Australian city"
+            answer: "Sydney"
+
+  - title: "Example 2: Science Vocabulary"
+    content:
+      - type: text
+        title: "Chemical Elements"
+        text: |
+          Learn about chemical elements from the periodic table with this
+          interactive crossword puzzle.
+
+      # EXAMPLE 2: Science Vocabulary (8 words, chemical elements)
+      - type: crossword
+        title: "Periodic Table Elements"
+        taskDescription: "Match the clues to the chemical elements"
+        words:
+          - clue: "The lightest element, symbol H"
+            answer: "Hydrogen"
+
+          - clue: "Noble gas used in balloons, symbol He"
+            answer: "Helium"
+
+          - clue: "Essential for breathing, symbol O"
+            answer: "Oxygen"
+
+          - clue: "Found in table salt, symbol Na"
+            answer: "Sodium"
+
+          - clue: "Precious metal, symbol Au"
+            answer: "Gold"
+
+          - clue: "Liquid metal at room temperature, symbol Hg"
+            answer: "Mercury"
+
+          - clue: "Conducts electricity, symbol Cu"
+            answer: "Copper"
+
+          - clue: "Strongest structural metal, symbol Fe"
+            answer: "Iron"
+
+  - title: "Example 3: History Timeline"
+    content:
+      - type: text
+        title: "Historical Events and Figures"
+        text: |
+          Journey through history with this crossword about important events,
+          periods, and historical figures.
+
+      # EXAMPLE 3: History Timeline (12 words, historical events)
+      - type: crossword
+        title: "World History Milestones"
+        taskDescription: "Important events and periods in world history"
+        words:
+          - clue: "Ancient civilization known for pyramids"
+            answer: "Egypt"
+
+          - clue: "Period of European cultural rebirth (14th-17th century)"
+            answer: "Renaissance"
+
+          - clue: "Roman general who crossed the Rubicon"
+            answer: "Caesar"
+
+          - clue: "Conflict from 1914-1918"
+            answer: "WorldWarOne"
+
+          - clue: "Ancient Greek philosopher, teacher of Plato"
+            answer: "Socrates"
+
+          - clue: "Empire that fell in 476 AD"
+            answer: "Roman"
+
+          - clue: "Medieval military expeditions to the Holy Land"
+            answer: "Crusades"
+
+          - clue: "Napoleon was exiled to this island"
+            answer: "Elba"
+
+          - clue: "Queen of England during the Spanish Armada"
+            answer: "Elizabeth"
+
+          - clue: "First President of the United States"
+            answer: "Washington"
+
+          - clue: "Wall that divided Berlin during the Cold War"
+            answer: "BerlinWall"
+
+          - clue: "Ancient wonder in Babylon"
+            answer: "HangingGardens"
+
+  - title: "Example 4: Extra Clues Demonstration"
+    content:
+      - type: text
+        title: "Using Extra Clues"
+        text: |
+          Extra clues provide additional hints to help students solve the puzzle.
+          Click the info icon next to a clue to see the extra hint.
+
+      # EXAMPLE 4: Extra clues demonstration (text hints for 5 words)
+      - type: crossword
+        title: "Solar System with Hints"
+        taskDescription: "Planets and celestial bodies in our solar system"
+        words:
+          - clue: "The red planet"
+            answer: "Mars"
+            extraClue:
+              type: text
+              content: "Fourth planet from the Sun, known for its rusty color caused by iron oxide on its surface."
+
+          - clue: "Largest planet in our solar system"
+            answer: "Jupiter"
+            extraClue:
+              type: text
+              content: "A gas giant with a Great Red Spot, which is actually a massive storm larger than Earth."
+
+          - clue: "Planet famous for its rings"
+            answer: "Saturn"
+            extraClue:
+              type: text
+              content: "The rings are made of billions of particles of ice and rock, ranging from tiny grains to house-sized chunks."
+
+          - clue: "Closest planet to the Sun"
+            answer: "Mercury"
+            extraClue:
+              type: text
+              content: "Named after the Roman messenger god, it orbits the Sun in just 88 Earth days."
+
+          - clue: "The blue planet, our home"
+            answer: "Earth"
+            extraClue:
+              type: text
+              content: "The only known planet with liquid water on its surface and the only one known to support life."
+
+  - title: "Example 5: Theme Customization"
+    content:
+      - type: text
+        title: "Custom Visual Theme"
+        text: |
+          Crosswords can be customized with different color themes to match
+          your branding or subject matter. This example uses a ocean theme.
+
+      # EXAMPLE 5: Theme customization (custom colors)
+      - type: crossword
+        title: "Ocean Life Crossword"
+        taskDescription: "Marine creatures and ocean features"
+        theme:
+          backgroundColor: "#0077BE"
+          gridColor: "#004080"
+          cellBackgroundColor: "#E0F7FF"
+          cellColor: "#003366"
+        words:
+          - clue: "Largest animal on Earth"
+            answer: "BlueWhale"
+
+          - clue: "Eight-armed sea creature"
+            answer: "Octopus"
+
+          - clue: "Gentle giant, sea cow"
+            answer: "Manatee"
+
+          - clue: "Predator with dorsal fin"
+            answer: "Shark"
+
+          - clue: "Colorful reef builders"
+            answer: "Coral"
+
+          - clue: "Fish that can inflate like a balloon"
+            answer: "Pufferfish"
+
+  - title: "Example 6: Behaviour Settings Showcase"
+    content:
+      - type: text
+        title: "Customized Behavior"
+        text: |
+          Configure how students interact with the crossword, including
+          instant feedback, scoring, penalties, and retry options.
+
+      # EXAMPLE 6: Behaviour settings showcase (scoring, penalties, retry)
+      - type: crossword
+        title: "Mathematics Terms"
+        taskDescription: "Complete this crossword about mathematical concepts"
+        behaviour:
+          enableInstantFeedback: true
+          scoreWords: true
+          applyPenalties: true
+          enableRetry: true
+          enableSolutionsButton: true
+        words:
+          - clue: "Result of addition"
+            answer: "Sum"
+
+          - clue: "Result of subtraction"
+            answer: "Difference"
+
+          - clue: "Result of multiplication"
+            answer: "Product"
+
+          - clue: "Result of division"
+            answer: "Quotient"
+
+          - clue: "A number that divides evenly into another"
+            answer: "Factor"
+
+          - clue: "The answer to a problem"
+            answer: "Solution"
+
+          - clue: "Lines that never meet"
+            answer: "Parallel"
+
+          - clue: "A four-sided polygon"
+            answer: "Quadrilateral"
+
+  - title: "Example 7: Overall Feedback Ranges"
+    content:
+      - type: text
+        title: "Score-Based Feedback"
+        text: |
+          Provide different feedback messages based on the student's score
+          percentage to encourage improvement and celebrate success.
+
+      # EXAMPLE 7: Overall feedback ranges (0-49%, 50-79%, 80-100%)
+      - type: crossword
+        title: "Literary Terms Quiz"
+        taskDescription: "Test your knowledge of literary terms and concepts"
+        overallFeedback:
+          - from: 0
+            to: 49
+            feedback: "Keep practicing! Review the terms and try again to improve your score."
+          - from: 50
+            to: 79
+            feedback: "Good job! You're getting the hang of literary terms. A bit more study will get you to mastery."
+          - from: 80
+            to: 100
+            feedback: "Excellent work! You've mastered these literary terms. Well done!"
+        words:
+          - clue: "The main character in a story"
+            answer: "Protagonist"
+
+          - clue: "A character who opposes the main character"
+            answer: "Antagonist"
+
+          - clue: "The sequence of events in a story"
+            answer: "Plot"
+
+          - clue: "Where and when a story takes place"
+            answer: "Setting"
+
+          - clue: "Central idea or message of a work"
+            answer: "Theme"
+
+          - clue: "The perspective from which a story is told"
+            answer: "PointOfView"
+
+          - clue: "Comparison using like or as"
+            answer: "Simile"
+
+          - clue: "Giving human qualities to non-human things"
+            answer: "Personification"
+
+          - clue: "A hint about future events in the story"
+            answer: "Foreshadowing"
+
+          - clue: "The turning point in the story"
+            answer: "Climax"
+
+  - title: "Advanced Example: All Features Combined"
+    content:
+      - type: text
+        title: "Complete Feature Set"
+        text: |
+          This example combines all features: extra clues, custom theme,
+          behavior settings, and overall feedback for a comprehensive learning experience.
+
+      - type: crossword
+        title: "Biology Fundamentals"
+        taskDescription: "Essential biological concepts and terminology"
+        theme:
+          backgroundColor: "#2D5016"
+          gridColor: "#1A3009"
+          cellBackgroundColor: "#E8F5E9"
+          cellColor: "#1B5E20"
+        behaviour:
+          enableInstantFeedback: false
+          scoreWords: true
+          applyPenalties: false
+          enableRetry: true
+          enableSolutionsButton: true
+        overallFeedback:
+          - from: 0
+            to: 59
+            feedback: "Review your biology notes and try again. You'll get better with practice!"
+          - from: 60
+            to: 89
+            feedback: "Well done! You have a solid understanding of these biology concepts."
+          - from: 90
+            to: 100
+            feedback: "Outstanding! You've mastered these fundamental biology terms!"
+        words:
+          - clue: "Basic unit of life"
+            answer: "Cell"
+            extraClue:
+              type: text
+              content: "The smallest structural and functional unit of an organism, discovered by Robert Hooke in 1665."
+
+          - clue: "Process plants use to make food"
+            answer: "Photosynthesis"
+            extraClue:
+              type: text
+              content: "Plants convert light energy, water, and carbon dioxide into glucose and oxygen."
+
+          - clue: "Powerhouse of the cell"
+            answer: "Mitochondria"
+            extraClue:
+              type: text
+              content: "Organelles that generate most of the cell's supply of ATP through cellular respiration."
+
+          - clue: "Molecule that carries genetic information"
+            answer: "DNA"
+            extraClue:
+              type: text
+              content: "Deoxyribonucleic acid, a double helix structure containing the instructions for building proteins."
+
+          - clue: "Green pigment in plants"
+            answer: "Chlorophyll"
+            extraClue:
+              type: text
+              content: "The molecule responsible for absorbing light energy during photosynthesis, giving plants their green color."
+
+          - clue: "Change in species over time"
+            answer: "Evolution"
+
+          - clue: "Organism's physical appearance"
+            answer: "Phenotype"
+
+          - clue: "Community of interacting organisms"
+            answer: "Ecosystem"
+
+          - clue: "Building blocks of proteins"
+            answer: "Amino-acids"
+
+          - clue: "Process of cell division"
+            answer: "Mitosis"

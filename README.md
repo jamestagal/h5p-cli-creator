@@ -636,6 +636,173 @@ See [examples/yaml/essay-example.yaml](examples/yaml/essay-example.yaml) for com
 
 
 
+#### Crossword Puzzles
+
+Create interactive crossword puzzles for vocabulary building, educational review, and language learning. H5P.Crossword automatically generates the puzzle grid layout from word/clue pairs - no manual positioning needed.
+
+**Key Features:**
+- **Automatic Grid Generation** - H5P library automatically places words in crossword grid
+- **Extra Clues** - Optional text hints displayed in modal overlay
+- **Theme Customization** - Customize colors for grid, cells, and backgrounds
+- **Behavior Settings** - Configure instant feedback, scoring, penalties, and retry options
+- **Overall Feedback** - Score-based messages to encourage learning
+- **AI Generation** - Automatically create crosswords from topic prompts
+
+**Manual Crossword Examples:**
+
+```yaml
+# Basic crossword
+- type: crossword
+  title: "Geography Quiz"
+  taskDescription: "Famous landmarks around the world"
+  words:
+    - clue: "Statue of Liberty is located in?"
+      answer: "NewYork"
+
+    - clue: "Taj Mahal is located in which city?"
+      answer: "Agra"
+
+    - clue: "Eiffel Tower is located in?"
+      answer: "Paris"
+
+# Crossword with extra clues (hints)
+- type: crossword
+  title: "Solar System"
+  taskDescription: "Planets and celestial bodies"
+  words:
+    - clue: "The red planet"
+      answer: "Mars"
+      extraClue:
+        type: text
+        content: "Fourth planet from the Sun, known for its rusty color caused by iron oxide."
+
+    - clue: "Largest planet in our solar system"
+      answer: "Jupiter"
+      extraClue:
+        type: text
+        content: "A gas giant with a Great Red Spot storm."
+
+# Crossword with custom theme
+- type: crossword
+  title: "Ocean Life"
+  taskDescription: "Marine creatures and ocean features"
+  theme:
+    backgroundColor: "#0077BE"
+    gridColor: "#004080"
+    cellBackgroundColor: "#E0F7FF"
+    cellColor: "#003366"
+  words:
+    - clue: "Largest animal on Earth"
+      answer: "BlueWhale"
+
+    - clue: "Eight-armed sea creature"
+      answer: "Octopus"
+
+# Crossword with behavior settings
+- type: crossword
+  title: "Mathematics Terms"
+  taskDescription: "Complete this crossword about mathematical concepts"
+  behaviour:
+    enableInstantFeedback: true
+    scoreWords: true
+    applyPenalties: true
+    enableRetry: true
+    enableSolutionsButton: true
+  words:
+    - clue: "Result of addition"
+      answer: "Sum"
+
+    - clue: "Result of subtraction"
+      answer: "Difference"
+
+# Crossword with overall feedback ranges
+- type: crossword
+  title: "Literary Terms"
+  taskDescription: "Test your knowledge of literary terms"
+  overallFeedback:
+    - from: 0
+      to: 49
+      feedback: "Keep practicing! Review the terms and try again."
+    - from: 50
+      to: 79
+      feedback: "Good job! A bit more study will get you to mastery."
+    - from: 80
+      to: 100
+      feedback: "Excellent work! You've mastered these terms!"
+  words:
+    - clue: "The main character in a story"
+      answer: "Protagonist"
+
+    - clue: "Central idea or message of a work"
+      answer: "Theme"
+```
+
+**AI-Generated Crosswords:**
+
+Generate complete crosswords from a single topic prompt:
+
+```yaml
+# Basic AI crossword
+- type: ai-crossword
+  title: "Solar System Crossword"
+  prompt: "Create a crossword puzzle about planets in our solar system"
+  wordCount: 8
+  difficulty: "medium"
+
+# AI crossword with extra clues
+- type: ai-crossword
+  title: "World Geography"
+  prompt: "Create a crossword about world geography including countries, capitals, and landmarks"
+  wordCount: 10
+  difficulty: "medium"
+  includeExtraClues: true
+
+# AI crossword with custom configuration
+- type: ai-crossword
+  title: "Simple Machines"
+  prompt: "Create a crossword about simple machines in physics"
+  wordCount: 8
+  difficulty: "easy"
+  aiConfig:
+    targetAudience: "grade-6"
+    tone: "educational"
+    customization: "Use clear, simple language with real-world examples"
+```
+
+**AI Parameters:**
+- `prompt` (required) - Topic for crossword generation
+- `wordCount` (default: 10) - Number of words to generate (2-20)
+- `difficulty` - "easy" (5-8 letters), "medium" (6-12 letters), or "hard" (8-15 letters)
+- `includeExtraClues` (default: false) - Generate hint text for each word
+- `aiConfig` - Control reading level and tone
+
+**Behavior Settings:**
+- `enableInstantFeedback` (default: false) - Show feedback immediately vs on submit
+- `scoreWords` (default: true) - Score by complete words vs individual characters
+- `applyPenalties` (default: false) - Deduct points for wrong answers
+- `enableRetry` (default: true) - Allow retry after submission
+- `enableSolutionsButton` (default: true) - Show solutions button
+
+**Theme Properties:**
+- `backgroundColor` - Background color (hex format: #RRGGBB)
+- `gridColor` - Grid border color
+- `cellBackgroundColor` - Cell background color
+- `cellColor` - Cell text color
+
+**Important Notes:**
+- **Single-word answers only** - Answers must be single words (no spaces). Hyphens are permitted.
+- **Minimum 2 words** - At least 2 words required for crossword generation
+- **Automatic grid layout** - H5P.Crossword automatically fits words into grid client-side
+- **Extra clues** - Text hints appear in modal overlay when clicking info icon
+
+**Complete Examples:**
+
+See example files for comprehensive demonstrations:
+- [examples/crossword-example.yaml](examples/crossword-example.yaml) - Manual crosswords with all features
+- [examples/crossword-ai-example.yaml](examples/crossword-ai-example.yaml) - AI-generated crosswords
+- [examples/crossword-production-demo.yaml](examples/crossword-production-demo.yaml) - Ready-to-upload demo
+
+
 **CLI Options:**
 - `--ai-provider <gemini|claude|auto>` - Choose AI provider (default: auto-detect)
 - `--api-key <key>` - Override API key from environment
