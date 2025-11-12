@@ -285,22 +285,112 @@ export interface BookDefinition {
 }
 
 /**
- * YamlInputParser parses YAML book definitions into structured BookDefinition objects.
+ * Standalone content definition (no Interactive Book wrapper)
  *
- * Supports:
+ * Used for content types that should be generated as standalone H5P packages
+ * rather than embedded in an Interactive Book. Some H5P content types (like Crossword)
+ * are not supported as sub-content in Interactive Book and must be standalone.
+ *
+ * @example Standalone Crossword:
+ * {
+ *   title: "World Geography Crossword",
+ *   language: "en",
+ *   description: "Test your geography knowledge",
+ *   content: {
+ *     type: "crossword",
+ *     words: [...]
+ *   }
+ * }
+ *
+ * @example Standalone AI Crossword:
+ * {
+ *   title: "Science Vocabulary Quiz",
+ *   content: {
+ *     type: "ai-crossword",
+ *     prompt: "Create a crossword about photosynthesis",
+ *     wordCount: 10
+ *   },
+ *   aiConfig: {
+ *     targetAudience: "grade-6",
+ *     tone: "educational"
+ *   }
+ * }
+ */
+export interface StandaloneDefinition {
+  /**
+   * Title of the standalone H5P content
+   */
+  title: string;
+
+  /**
+   * Language code (e.g., "en", "es", "fr")
+   * Defaults to "en" if not specified
+   */
+  language?: string;
+
+  /**
+   * Optional description/task description for the content
+   */
+  description?: string;
+
+  /**
+   * Single content item (e.g., crossword, essay, blanks, etc.)
+   */
+  content: AnyContentItem;
+
+  /**
+   * Optional AI configuration for AI-generated standalone content
+   * Only applies to AI content types (ai-crossword, ai-essay, etc.)
+   */
+  aiConfig?: AIConfiguration;
+}
+
+/**
+ * Union type for either Interactive Book or Standalone content
+ */
+export type H5PDefinition = BookDefinition | StandaloneDefinition;
+
+/**
+ * Type guard to check if definition is standalone
+ */
+export function isStandaloneDefinition(def: H5PDefinition): def is StandaloneDefinition {
+  return 'content' in def && !('chapters' in def);
+}
+
+/**
+ * Type guard to check if definition is Interactive Book
+ */
+export function isBookDefinition(def: H5PDefinition): def is BookDefinition {
+  return 'chapters' in def;
+}
+
+/**
+ * YamlInputParser parses YAML definitions into structured H5P content definitions.
+ *
+ * Supports two formats:
+ * 1. **Interactive Book** (with chapters) - Multiple content items organized in chapters
+ * 2. **Standalone Content** (no chapters) - Single content type as standalone H5P package
+ *
+ * Supported content types:
  * - Multiple content types (text, image, audio, flashcards, dialog cards, accordion, single choice set, drag text, blanks, essay, true/false, crossword)
  * - AI-generated content (ai-text, ai-quiz, ai-accordion, ai-singlechoiceset, ai-dragtext, ai-blanks, ai-essay, ai-truefalse, ai-crossword)
  * - Book-level, chapter-level, and item-level AI configuration (Phase 5)
  * - Relative and absolute file paths
  * - Comprehensive validation
+ *
+ * Detection logic:
+ * - If YAML has `chapters` field → Interactive Book (BookDefinition)
+ * - If YAML has `content` field (no chapters) → Standalone (StandaloneDefinition)
  */
 export class YamlInputParser {
   /**
-   * Parses a YAML file into a BookDefinition.
+   * Parses a YAML file into either a BookDefinition or StandaloneDefinition.
+   * Automatically detects format based on presence of 'chapters' vs 'content' field.
+   *
    * @param yamlFilePath Path to YAML file
-   * @returns Parsed and validated BookDefinition
+   * @returns Parsed and validated H5PDefinition (BookDefinition or StandaloneDefinition)
    */
-  public static parseYamlFile(yamlFilePath: string): BookDefinition {
+  public static parseYamlFile(yamlFilePath: string): H5PDefinition {
     if (!fsExtra.existsSync(yamlFilePath)) {
       throw new Error(`YAML file not found: ${yamlFilePath}`);
     }
@@ -312,12 +402,14 @@ export class YamlInputParser {
   }
 
   /**
-   * Parses YAML content string into a BookDefinition.
+   * Parses YAML content string into either a BookDefinition or StandaloneDefinition.
+   * Automatically detects format based on presence of 'chapters' vs 'content' field.
+   *
    * @param yamlContent YAML content as string
    * @param basePath Base directory for resolving relative paths (defaults to current directory)
-   * @returns Parsed and validated BookDefinition
+   * @returns Parsed and validated H5PDefinition (BookDefinition or StandaloneDefinition)
    */
-  public static parseYamlString(yamlContent: string, basePath: string = process.cwd()): BookDefinition {
+  public static parseYamlString(yamlContent: string, basePath: string = process.cwd()): H5PDefinition {
     let parsed: any;
 
     try {
@@ -330,13 +422,32 @@ export class YamlInputParser {
       throw new Error("YAML content must be a valid object");
     }
 
-    // Validate and construct BookDefinition
-    const bookDef = this.validateAndBuildBookDefinition(parsed);
+    // Detect format: Interactive Book (chapters) vs Standalone (content)
+    const hasChapters = 'chapters' in parsed;
+    const hasContent = 'content' in parsed;
+
+    if (hasChapters && hasContent) {
+      throw new Error("YAML cannot have both 'chapters' and 'content' fields. Use 'chapters' for Interactive Book or 'content' for standalone content.");
+    }
+
+    if (!hasChapters && !hasContent) {
+      throw new Error("YAML must have either 'chapters' (for Interactive Book) or 'content' (for standalone content).");
+    }
+
+    let definition: H5PDefinition;
+
+    if (hasChapters) {
+      // Interactive Book format
+      definition = this.validateAndBuildBookDefinition(parsed);
+    } else {
+      // Standalone content format
+      definition = this.validateAndBuildStandaloneDefinition(parsed);
+    }
 
     // Resolve relative file paths to absolute paths
-    this.resolveContentPaths(bookDef, basePath);
+    this.resolveContentPaths(definition, basePath);
 
-    return bookDef;
+    return definition;
   }
 
   /**
@@ -391,6 +502,60 @@ export class YamlInputParser {
     }
 
     return data as BookDefinition;
+  }
+
+  /**
+   * Validates parsed YAML and constructs a StandaloneDefinition.
+   * @param data Parsed YAML data
+   * @returns Validated StandaloneDefinition
+   */
+  private static validateAndBuildStandaloneDefinition(data: any): StandaloneDefinition {
+    // Validate standalone-level fields
+    if (!data.title || typeof data.title !== "string") {
+      throw new Error("Standalone content must have a 'title' field (string)");
+    }
+
+    if (!data.content || typeof data.content !== "object") {
+      throw new Error("Standalone content must have a 'content' field (object)");
+    }
+
+    // Validate content-level aiConfig if present
+    if (data.aiConfig) {
+      this.validateAIConfig(data.aiConfig, "Standalone content");
+    }
+
+    // Validate the single content item (use null for chapterNum/itemNum for clearer errors)
+    this.validateStandaloneContentItem(data.content);
+
+    return data as StandaloneDefinition;
+  }
+
+  /**
+   * Validates a standalone content item (no chapter context).
+   * @param item Content item to validate
+   */
+  private static validateStandaloneContentItem(item: any): void {
+    const prefix = "Standalone content";
+
+    if (!item.type || typeof item.type !== "string") {
+      throw new Error(`${prefix} must have a 'type' field (string)`);
+    }
+
+    const validTypes: ContentType[] = ["text", "image", "audio", "ai-text", "ai-quiz", "flashcards", "dialogcards", "accordion", "ai-accordion", "singlechoiceset", "single-choice-set", "ai-singlechoiceset", "ai-single-choice-set", "dragtext", "drag-the-words", "ai-dragtext", "ai-drag-the-words", "blanks", "fill-in-the-blanks", "ai-blanks", "ai-fill-in-the-blanks", "essay", "ai-essay", "truefalse", "true-false", "ai-truefalse", "ai-true-false", "crossword", "ai-crossword"];
+    if (!validTypes.includes(item.type)) {
+      throw new Error(
+        `${prefix} has invalid type '${item.type}'. Valid types: ${validTypes.join(", ")}`
+      );
+    }
+
+    // Validate item-level aiConfig if present
+    if (item.aiConfig) {
+      this.validateAIConfig(item.aiConfig, prefix);
+    }
+
+    // Reuse the same type-specific validation logic from validateContentItem
+    // Just call it with dummy chapter/item numbers
+    this.validateContentItem(item, 0, 0);
   }
 
   /**
@@ -625,59 +790,78 @@ export class YamlInputParser {
 
   /**
    * Resolves relative file paths in content items to absolute paths.
-   * @param bookDef Book definition with potentially relative paths
+   * Handles both BookDefinition (with chapters) and StandaloneDefinition (single content).
+   *
+   * @param definition Book or Standalone definition with potentially relative paths
    * @param basePath Base directory to resolve paths from
    */
-  private static resolveContentPaths(bookDef: any, basePath: string): void {
+  private static resolveContentPaths(definition: H5PDefinition, basePath: string): void {
+    // Handle standalone content
+    if (isStandaloneDefinition(definition)) {
+      this.resolveItemPaths(definition.content, basePath);
+      return;
+    }
+
+    // Handle Interactive Book (chapters)
+    const bookDef = definition as BookDefinition;
     for (const chapter of bookDef.chapters) {
       for (const item of chapter.content) {
-        // Resolve paths for image and audio content
-        if (item.type === "image" || item.type === "audio") {
-          if (!item.path.startsWith("http://") &&
-              !item.path.startsWith("https://") &&
-              !path.isAbsolute(item.path)) {
-            item.path = path.resolve(basePath, item.path);
-          }
-        }
-
-        // Resolve paths in flashcard images
-        if (item.type === "flashcards" && Array.isArray(item.cards)) {
-          for (const card of item.cards) {
-            if (card.image &&
-                !card.image.startsWith("http://") &&
-                !card.image.startsWith("https://") &&
-                !path.isAbsolute(card.image)) {
-              card.image = path.resolve(basePath, card.image);
-            }
-          }
-        }
-
-        // Resolve paths in dialog card images and audio
-        if (item.type === "dialogcards" && Array.isArray(item.cards)) {
-          for (const card of item.cards) {
-            if (card.image &&
-                !card.image.startsWith("http://") &&
-                !card.image.startsWith("https://") &&
-                !path.isAbsolute(card.image)) {
-              card.image = path.resolve(basePath, card.image);
-            }
-            if (card.audio &&
-                !card.audio.startsWith("http://") &&
-                !card.audio.startsWith("https://") &&
-                !path.isAbsolute(card.audio)) {
-              card.audio = path.resolve(basePath, card.audio);
-            }
-          }
-        }
+        this.resolveItemPaths(item, basePath);
       }
     }
 
-    // Resolve cover image path if present
+    // Resolve cover image path if present (books only)
     if (bookDef.coverImage &&
         !bookDef.coverImage.startsWith("http://") &&
         !bookDef.coverImage.startsWith("https://") &&
         !path.isAbsolute(bookDef.coverImage)) {
       bookDef.coverImage = path.resolve(basePath, bookDef.coverImage);
+    }
+  }
+
+  /**
+   * Resolves relative file paths in a single content item.
+   * @param item Content item with potentially relative paths
+   * @param basePath Base directory to resolve paths from
+   */
+  private static resolveItemPaths(item: any, basePath: string): void {
+    // Resolve paths for image and audio content
+    if (item.type === "image" || item.type === "audio") {
+      if (!item.path.startsWith("http://") &&
+          !item.path.startsWith("https://") &&
+          !path.isAbsolute(item.path)) {
+        item.path = path.resolve(basePath, item.path);
+      }
+    }
+
+    // Resolve paths in flashcard images
+    if (item.type === "flashcards" && Array.isArray(item.cards)) {
+      for (const card of item.cards) {
+        if (card.image &&
+            !card.image.startsWith("http://") &&
+            !card.image.startsWith("https://") &&
+            !path.isAbsolute(card.image)) {
+          card.image = path.resolve(basePath, card.image);
+        }
+      }
+    }
+
+    // Resolve paths in dialog card images and audio
+    if (item.type === "dialogcards" && Array.isArray(item.cards)) {
+      for (const card of item.cards) {
+        if (card.image &&
+            !card.image.startsWith("http://") &&
+            !card.image.startsWith("https://") &&
+            !path.isAbsolute(card.image)) {
+          card.image = path.resolve(basePath, card.image);
+        }
+        if (card.audio &&
+            !card.audio.startsWith("http://") &&
+            !card.audio.startsWith("https://") &&
+            !path.isAbsolute(card.audio)) {
+          card.audio = path.resolve(basePath, card.audio);
+        }
+      }
     }
   }
 }
