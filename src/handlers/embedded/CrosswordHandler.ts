@@ -625,33 +625,22 @@ export class CrosswordHandler implements ContentHandler {
       })
     );
 
-    // Build behaviour settings with sensible defaults
+    // Build behaviour settings with H5P defaults (match H5P.com structure)
     const behaviour: any = {
-      enableInstantFeedback: item.behaviour?.enableInstantFeedback !== undefined
-        ? item.behaviour.enableInstantFeedback
-        : false,
-      scoreWords: item.behaviour?.scoreWords !== undefined
-        ? item.behaviour.scoreWords
-        : true,
-      applyPenalties: item.behaviour?.applyPenalties !== undefined
-        ? item.behaviour.applyPenalties
-        : false,
-      enableRetry: item.behaviour?.enableRetry !== undefined
-        ? item.behaviour.enableRetry
-        : true,
-      enableSolutionsButton: item.behaviour?.enableSolutionsButton !== undefined
-        ? item.behaviour.enableSolutionsButton
-        : true,
-      keepCorrectAnswers: item.behaviour?.keepCorrectAnswers !== undefined
-        ? item.behaviour.keepCorrectAnswers
-        : false
+      enableInstantFeedback: item.behaviour?.enableInstantFeedback ?? false,
+      scoreWords: item.behaviour?.scoreWords ?? true,
+      applyPenalties: item.behaviour?.applyPenalties ?? false,
+      enableRetry: item.behaviour?.enableRetry ?? true,
+      enableSolutionsButton: item.behaviour?.enableSolutionsButton ?? true
     };
 
-    // Add poolSize if provided (0 = use all words)
+    // Add optional fields only if explicitly provided in YAML
     if (item.behaviour?.poolSize !== undefined) {
       behaviour.poolSize = item.behaviour.poolSize;
-    } else {
-      behaviour.poolSize = 0;
+    }
+
+    if (item.behaviour?.keepCorrectAnswers !== undefined) {
+      behaviour.keepCorrectAnswers = item.behaviour.keepCorrectAnswers;
     }
 
     // Build theme settings if provided
