@@ -151,11 +151,15 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
 
       // Step 1: Parse YAML input
       if (verbose) console.log("Step 1: Parsing YAML input...");
-      const bookDef = YamlInputParser.parseYamlFile(path.resolve(yamlFile));
+      const definition = YamlInputParser.parseYamlFile(path.resolve(yamlFile));
 
       if (verbose) {
-        console.log(`  - Parsed book: "${bookDef.title}" (${bookDef.language})`);
-        console.log(`  - Chapters: ${bookDef.chapters.length}`);
+        const contentType = 'chapters' in definition ? 'Interactive Book' : 'Standalone Content';
+        console.log(`  - Type: ${contentType}`);
+        console.log(`  - Title: "${definition.title}" (${definition.language || 'en'})`);
+        if ('chapters' in definition) {
+          console.log(`  - Chapters: ${definition.chapters.length}`);
+        }
         console.log();
       }
 
@@ -171,9 +175,9 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
         console.log();
       }
 
-      // Step 3: Compile book to .h5p buffer
-      if (verbose) console.log("Step 3: Compiling book to .h5p package...");
-      const h5pBuffer = await compiler.compile(bookDef, {
+      // Step 3: Compile to .h5p buffer
+      if (verbose) console.log("Step 3: Compiling to .h5p package...");
+      const h5pBuffer = await compiler.compile(definition, {
         verbose,
         aiProvider,
         basePath: path.dirname(path.resolve(yamlFile))
@@ -189,8 +193,12 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
       console.log();
       console.log("✅ Success!");
       console.log(`📦 Generated: ${outputPath}`);
-      console.log(`   - Title: ${bookDef.title}`);
-      console.log(`   - Chapters: ${bookDef.chapters.length}`);
+      console.log(`   - Title: ${definition.title}`);
+      if ('chapters' in definition) {
+        console.log(`   - Chapters: ${definition.chapters.length}`);
+      } else {
+        console.log(`   - Type: Standalone ${definition.content.type}`);
+      }
       console.log();
 
     } catch (error) {
