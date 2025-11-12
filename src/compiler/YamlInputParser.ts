@@ -5,8 +5,13 @@ import { AIConfiguration } from "./types";
 
 /**
  * Content directive types that can be specified in YAML
+ *
+ * Phase 1 (YouTube Story Extraction): Added "youtube-intro" and "youtube-page" types
+ * - youtube-intro: YouTube video embed + transcript accordion (first page)
+ * - youtube-page: Story page with audio segment + Vietnamese/English text (optional, can reuse "text" type)
+ * - video: H5P.Video content for YouTube embeds (using proper H5P.Video library)
  */
-export type ContentType = "text" | "image" | "audio" | "ai-text" | "ai-quiz" | "flashcards" | "dialogcards" | "accordion" | "ai-accordion" | "singlechoiceset" | "single-choice-set" | "ai-singlechoiceset" | "ai-single-choice-set" | "dragtext" | "drag-the-words" | "ai-dragtext" | "ai-drag-the-words" | "blanks" | "fill-in-the-blanks" | "ai-blanks" | "ai-fill-in-the-blanks" | "essay" | "ai-essay" | "truefalse" | "true-false" | "ai-truefalse" | "ai-true-false" | "crossword" | "ai-crossword";
+export type ContentType = "text" | "image" | "audio" | "video" | "ai-text" | "ai-quiz" | "flashcards" | "dialogcards" | "accordion" | "ai-accordion" | "singlechoiceset" | "single-choice-set" | "ai-singlechoiceset" | "ai-single-choice-set" | "dragtext" | "drag-the-words" | "ai-dragtext" | "ai-drag-the-words" | "blanks" | "fill-in-the-blanks" | "ai-blanks" | "ai-fill-in-the-blanks" | "essay" | "ai-essay" | "truefalse" | "true-false" | "ai-truefalse" | "ai-true-false" | "crossword" | "ai-crossword" | "youtube-intro" | "youtube-page";
 
 /**
  * Base content item interface
@@ -70,6 +75,15 @@ export interface ImageContent extends ContentItem {
 export interface AudioContent extends ContentItem {
   type: "audio";
   path: string;
+  title?: string;
+}
+
+/**
+ * Video content (YouTube)
+ */
+export interface VideoContent extends ContentItem {
+  type: "video";
+  url: string;
   title?: string;
 }
 
@@ -374,6 +388,7 @@ export function isBookDefinition(def: H5PDefinition): def is BookDefinition {
  * Supported content types:
  * - Multiple content types (text, image, audio, flashcards, dialog cards, accordion, single choice set, drag text, blanks, essay, true/false, crossword)
  * - AI-generated content (ai-text, ai-quiz, ai-accordion, ai-singlechoiceset, ai-dragtext, ai-blanks, ai-essay, ai-truefalse, ai-crossword)
+ * - YouTube story content (youtube-intro, youtube-page) - Phase 1
  * - Book-level, chapter-level, and item-level AI configuration (Phase 5)
  * - Relative and absolute file paths
  * - Comprehensive validation
@@ -541,7 +556,7 @@ export class YamlInputParser {
       throw new Error(`${prefix} must have a 'type' field (string)`);
     }
 
-    const validTypes: ContentType[] = ["text", "image", "audio", "ai-text", "ai-quiz", "flashcards", "dialogcards", "accordion", "ai-accordion", "singlechoiceset", "single-choice-set", "ai-singlechoiceset", "ai-single-choice-set", "dragtext", "drag-the-words", "ai-dragtext", "ai-drag-the-words", "blanks", "fill-in-the-blanks", "ai-blanks", "ai-fill-in-the-blanks", "essay", "ai-essay", "truefalse", "true-false", "ai-truefalse", "ai-true-false", "crossword", "ai-crossword"];
+    const validTypes: ContentType[] = ["text", "image", "audio", "video", "ai-text", "ai-quiz", "flashcards", "dialogcards", "accordion", "ai-accordion", "singlechoiceset", "single-choice-set", "ai-singlechoiceset", "ai-single-choice-set", "dragtext", "drag-the-words", "ai-dragtext", "ai-drag-the-words", "blanks", "fill-in-the-blanks", "ai-blanks", "ai-fill-in-the-blanks", "essay", "ai-essay", "truefalse", "true-false", "ai-truefalse", "ai-true-false", "crossword", "ai-crossword", "youtube-intro", "youtube-page"];
     if (!validTypes.includes(item.type)) {
       throw new Error(
         `${prefix} has invalid type '${item.type}'. Valid types: ${validTypes.join(", ")}`
@@ -602,7 +617,7 @@ export class YamlInputParser {
       throw new Error(`${prefix} must have a 'type' field (string)`);
     }
 
-    const validTypes: ContentType[] = ["text", "image", "audio", "ai-text", "ai-quiz", "flashcards", "dialogcards", "accordion", "ai-accordion", "singlechoiceset", "single-choice-set", "ai-singlechoiceset", "ai-single-choice-set", "dragtext", "drag-the-words", "ai-dragtext", "ai-drag-the-words", "blanks", "fill-in-the-blanks", "ai-blanks", "ai-fill-in-the-blanks", "essay", "ai-essay", "truefalse", "true-false", "ai-truefalse", "ai-true-false", "crossword", "ai-crossword"];
+    const validTypes: ContentType[] = ["text", "image", "audio", "video", "ai-text", "ai-quiz", "flashcards", "dialogcards", "accordion", "ai-accordion", "singlechoiceset", "single-choice-set", "ai-singlechoiceset", "ai-single-choice-set", "dragtext", "drag-the-words", "ai-dragtext", "ai-drag-the-words", "blanks", "fill-in-the-blanks", "ai-blanks", "ai-fill-in-the-blanks", "essay", "ai-essay", "truefalse", "true-false", "ai-truefalse", "ai-true-false", "crossword", "ai-crossword", "youtube-intro", "youtube-page"];
     if (!validTypes.includes(item.type)) {
       throw new Error(
         `${prefix} has invalid type '${item.type}'. Valid types: ${validTypes.join(", ")}`
@@ -640,6 +655,12 @@ export class YamlInputParser {
       case "audio":
         if (!item.path || typeof item.path !== "string") {
           throw new Error(`${prefix} (audio) must have a 'path' field (string)`);
+        }
+        break;
+
+      case "video":
+        if (!item.url || typeof item.url !== "string") {
+          throw new Error(`${prefix} (video) must have a 'url' field (string)`);
         }
         break;
 
@@ -784,6 +805,16 @@ export class YamlInputParser {
         if (!item.prompt || typeof item.prompt !== "string") {
           throw new Error(`${prefix} (ai-crossword) must have a 'prompt' field (string)`);
         }
+        break;
+
+      case "youtube-intro":
+        // YouTube intro page validation (Phase 1)
+        // No required fields beyond type - will be populated by YouTubeExtractor
+        break;
+
+      case "youtube-page":
+        // YouTube story page validation (Phase 1)
+        // No required fields beyond type - will be populated by YouTubeExtractor
         break;
     }
   }
