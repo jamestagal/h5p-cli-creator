@@ -26,12 +26,12 @@ chapters:
           99.86% of the total mass of the solar system!
 
       - type: image
-        path: "../../tests/images/test-image.jpg"
+        path: "../../../tests/images/test-image.jpg"
         alt: "The Sun showing solar flares and surface activity"
         title: "Our Sun"
 
       - type: audio
-        path: "../../tests/audios/test-audio.mp3"
+        path: "../../../tests/audios/test-audio.mp3"
         title: "Listen: Facts About the Sun"
 
   - title: "The Inner Planets"
@@ -346,7 +346,7 @@ chapters:
         question: "Saturn has beautiful rings made of ice and rock particles"
         correct: true
         media:
-          path: "../../tests/images/test-image.jpg"
+          path: "../../../tests/images/test-image.jpg"
           type: "image"
           alt: "Saturn and its spectacular ring system"
 
@@ -447,7 +447,7 @@ chapters:
         title: "Saturn's Rings"
         taskDescription: "Look at the image above and describe Saturn's ring system. What are the rings made of?"
         media:
-          path: "../../tests/images/test-image.jpg"
+          path: "../../../tests/images/test-image.jpg"
           type: "image"
           alt: "Saturn showing its ring system"
         keywords:
