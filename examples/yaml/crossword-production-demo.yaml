@@ -1,0 +1,140 @@
+title: "World Geography Crossword - Production Demo"
+language: "en"
+description: "Ready-to-upload demonstration crossword for H5P.com testing and validation"
+
+# PRODUCTION DEMO - Ready for H5P.com Upload
+# This file demonstrates a complete, ready-to-use crossword puzzle
+# No AI dependencies - all content is manually specified
+# Includes theme customization for visual appeal
+# Educational content suitable for middle school geography
+
+chapters:
+  - title: "World Geography Challenge"
+    content:
+      - type: text
+        title: "Introduction"
+        text: |
+          Welcome to the World Geography Crossword Challenge!
+
+          Test your knowledge of world geography by completing this interactive
+          crossword puzzle. You'll explore countries, capitals, landmarks, and
+          geographical features from around the globe.
+
+          Instructions:
+          - Click on a clue number to see the clue
+          - Type your answer directly into the grid
+          - Click "Check" to see if your answers are correct
+          - Click the info icon (if available) for additional hints
+          - Use "Retry" to try again if needed
+
+      - type: crossword
+        title: "World Geography Crossword"
+        taskDescription: |
+          Fill in the crossword puzzle with geographical terms, countries, capitals, and landmarks.
+          All answers are single words or hyphenated terms. Good luck!
+
+        # Custom theme with appealing colors
+        theme:
+          backgroundColor: "#1A5490"
+          gridColor: "#0D2D52"
+          cellBackgroundColor: "#E8F4F8"
+          cellColor: "#1A3A52"
+
+        # Behaviour settings for best user experience
+        behaviour:
+          enableInstantFeedback: false
+          scoreWords: true
+          applyPenalties: false
+          enableRetry: true
+          enableSolutionsButton: true
+
+        # Score-based feedback to encourage learning
+        overallFeedback:
+          - from: 0
+            to: 49
+            feedback: "Good start! Keep studying world geography and try again to improve your score."
+          - from: 50
+            to: 79
+            feedback: "Well done! You have a solid understanding of world geography. Review the missed items and you'll master it!"
+          - from: 80
+            to: 100
+            feedback: "Excellent work! You're a world geography expert! Outstanding performance!"
+
+        # 10 carefully selected geography terms with extra clues
+        words:
+          - clue: "Largest continent by land area"
+            answer: "Asia"
+            extraClue:
+              type: text
+              content: "Home to over 4.7 billion people, this continent includes countries like China, India, Russia, and Japan."
+
+          - clue: "Longest river in the world"
+            answer: "Nile"
+            extraClue:
+              type: text
+              content: "This river flows through northeastern Africa for about 6,650 kilometers, passing through Egypt and Sudan."
+
+          - clue: "Capital of France"
+            answer: "Paris"
+            extraClue:
+              type: text
+              content: "Known as the 'City of Light', this capital is home to the Eiffel Tower and the Louvre Museum."
+
+          - clue: "Largest ocean on Earth"
+            answer: "Pacific"
+            extraClue:
+              type: text
+              content: "Covering more than 63 million square miles, this ocean is larger than all of Earth's land area combined."
+
+          - clue: "Mountain range separating Europe and Asia"
+            answer: "Urals"
+            extraClue:
+              type: text
+              content: "This mountain range stretches about 2,500 kilometers from the Arctic Ocean to the Ural River in Russia."
+
+          - clue: "Island nation in the Mediterranean, south of Italy"
+            answer: "Malta"
+            extraClue:
+              type: text
+              content: "This small archipelago has a rich history dating back thousands of years and is known for its ancient temples."
+
+          - clue: "Desert in northern Africa"
+            answer: "Sahara"
+            extraClue:
+              type: text
+              content: "The world's largest hot desert, covering most of North Africa with an area of about 9 million square kilometers."
+
+          - clue: "Rainforest in South America"
+            answer: "Amazon"
+            extraClue:
+              type: text
+              content: "The world's largest tropical rainforest, producing 20% of Earth's oxygen and home to millions of species."
+
+          - clue: "Capital of Japan"
+            answer: "Tokyo"
+            extraClue:
+              type: text
+              content: "The world's most populous metropolitan area, known for its modern technology and ancient temples."
+
+          - clue: "Large island nation south of India"
+            answer: "SriLanka"
+            extraClue:
+              type: text
+              content: "Formerly known as Ceylon, this island nation is famous for its tea production and Buddhist heritage."
+
+  - title: "Additional Resources"
+    content:
+      - type: text
+        title: "Learning Tips"
+        text: |
+          Congratulations on completing the crossword!
+
+          To improve your geography knowledge:
+
+          - Study world maps regularly
+          - Learn about different cultures and their locations
+          - Memorize capital cities of major countries
+          - Explore geographical features like mountains, rivers, and deserts
+          - Use online geography games and quizzes for practice
+
+          Keep learning and exploring our wonderful world!
