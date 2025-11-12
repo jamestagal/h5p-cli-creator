@@ -53,6 +53,62 @@ export class PackageAssembler {
   }
 
   /**
+   * Assembles a standalone H5P package (not Interactive Book).
+   * Generates a package with a single content item as the main content.
+   *
+   * @param contentParams Content parameters from handler (direct content, not wrapped in chapters)
+   * @param mainLibrary Main library name (e.g., "H5P.Crossword")
+   * @param dependencies All required library metadata
+   * @param mediaFiles Media files to include
+   * @param title Package title
+   * @param language Language code
+   * @param description Optional package description
+   * @param registry Library registry for accessing cached packages
+   * @returns JSZip instance containing the complete standalone package
+   */
+  public async assembleStandalone(
+    contentParams: any,
+    mainLibrary: string,
+    dependencies: LibraryMetadata[],
+    mediaFiles: MediaFile[],
+    title: string,
+    language: string,
+    description: string | undefined,
+    registry: LibraryRegistry
+  ): Promise<jszip> {
+    const zip = new jszip();
+
+    // Bundle all library directories
+    const layoutLibraries = await this.bundleLibraries(zip, dependencies, registry);
+    const allDependencies = [...dependencies, ...layoutLibraries];
+
+    // Generate h5p.json for standalone content (different mainLibrary)
+    const h5pJson = {
+      title,
+      language,
+      mainLibrary,  // Use content-specific library (e.g., "H5P.Crossword")
+      embedTypes: ["div"],
+      license: "U",
+      defaultLanguage: language,
+      preloadedDependencies: allDependencies.map(lib => ({
+        machineName: lib.machineName,
+        majorVersion: lib.majorVersion,
+        minorVersion: lib.minorVersion
+      }))
+    };
+
+    zip.file("h5p.json", JSON.stringify(h5pJson, null, 2));
+
+    // Add content.json (direct content params, not wrapped in chapters)
+    zip.file("content/content.json", JSON.stringify(contentParams, null, 2));
+
+    // Add media files
+    this.addMediaFiles(zip, mediaFiles);
+
+    return zip;
+  }
+
+  /**
    * Generates h5p.json metadata file for the package.
    * @param content Book content structure
    * @param dependencies All library dependencies
