@@ -33,7 +33,7 @@ describe("Backward Compatibility", () => {
       expect(exists).toBe(true);
 
       // Parse should succeed
-      const bookDef = await parser.parse(yamlPath);
+      const bookDef = await parser.parseYamlFile(yamlPath);
       expect(bookDef).toBeDefined();
       expect(bookDef.title).toBe("Complete Handler Demo - Solar System");
 
@@ -49,7 +49,7 @@ describe("Backward Compatibility", () => {
       expect(exists).toBe(true);
 
       // Parse should succeed
-      const bookDef = await parser.parse(yamlPath);
+      const bookDef = await parser.parseYamlFile(yamlPath);
       expect(bookDef).toBeDefined();
       expect(bookDef.title).toBe("AI-Generated Biology Lesson");
 
@@ -72,7 +72,7 @@ chapters:
 `;
       await fsExtra.writeFile(yamlPath, yamlContent);
 
-      const bookDef = await parser.parse(yamlPath);
+      const bookDef = await parser.parseYamlFile(yamlPath);
 
       // No aiConfig at book level
       expect(bookDef.aiConfig).toBeUndefined();
@@ -99,7 +99,7 @@ chapters:
 `;
       await fsExtra.writeFile(yamlPath, yamlContent);
 
-      const bookDef = await parser.parse(yamlPath);
+      const bookDef = await parser.parseYamlFile(yamlPath);
 
       // Should have partial config
       expect(bookDef.aiConfig).toBeDefined();
@@ -129,7 +129,7 @@ chapters:
       await fsExtra.writeFile(yamlPath, yamlContent);
 
       // Should parse successfully
-      const bookDef = await parser.parse(yamlPath);
+      const bookDef = await parser.parseYamlFile(yamlPath);
       expect(bookDef).toBeDefined();
 
       const aiTextItem = bookDef.chapters[0].content[0];

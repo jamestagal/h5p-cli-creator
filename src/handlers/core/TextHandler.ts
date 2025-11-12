@@ -26,7 +26,16 @@ export class TextHandler implements ContentHandler {
       logger.log(`    - Adding text page: "${item.title || 'Untitled'}"`);
     }
 
-    chapterBuilder.addTextPage(item.title || "", item.text);
+    // Detect if text contains iframe or other HTML tags that should not be escaped
+    // (e.g., YouTube embeds, AI-generated HTML content)
+    const containsIframe = item.text.includes("<iframe");
+    const escapeHtml = !containsIframe;
+
+    if (options.verbose && !escapeHtml) {
+      logger.log(`      - Raw HTML detected (iframe), disabling HTML escaping`);
+    }
+
+    chapterBuilder.addTextPage(item.title || "", item.text, escapeHtml);
   }
 
   /**

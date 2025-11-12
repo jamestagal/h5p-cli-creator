@@ -171,6 +171,7 @@ chapters:
 `;
 
       const result = YamlInputParser.parseYamlString(yaml);
+      if (!('chapters' in result)) throw new Error('Expected BookDefinition');
       const essayItem: any = result.chapters[0].content[0];
 
       expect(essayItem.type).toBe("essay");
@@ -208,6 +209,7 @@ chapters:
 `;
 
       const result = YamlInputParser.parseYamlString(yaml);
+      if (!('chapters' in result)) throw new Error('Expected BookDefinition');
       const aiEssayItem: any = result.chapters[0].content[0];
 
       expect(aiEssayItem.type).toBe("ai-essay");

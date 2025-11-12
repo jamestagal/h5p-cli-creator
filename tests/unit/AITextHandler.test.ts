@@ -28,6 +28,7 @@ describe("AITextHandler", () => {
       chapterBuilder: mockChapterBuilder,
       libraryRegistry: {} as any,
       quizGenerator: {} as any,
+      aiPromptBuilder: {} as any,
       logger: mockLogger,
       mediaFiles: [],
       basePath: "/test",

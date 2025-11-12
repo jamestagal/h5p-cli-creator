@@ -8,7 +8,7 @@ describe("Documentation Examples Validation", () => {
     it("should validate comprehensive-demo.yaml structure", () => {
       const yamlPath = path.join(
         __dirname,
-        "../../examples/yaml/comprehensive-demo.yaml"
+        "../../examples/yaml/interactive-book/comprehensive-demo.yaml"
       );
       const yamlContent = fs.readFileSync(yamlPath, "utf-8");
       const parsed = yaml.load(yamlContent) as any;

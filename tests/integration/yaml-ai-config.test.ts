@@ -41,7 +41,7 @@ chapters:
 `;
       await fsExtra.writeFile(yamlPath, yamlContent);
 
-      const bookDef = await parser.parse(yamlPath);
+      const bookDef = await parser.parseYamlFile(yamlPath);
 
       expect(bookDef.aiConfig).toBeDefined();
       expect(bookDef.aiConfig?.targetAudience).toBe("grade-6");
@@ -69,7 +69,7 @@ chapters:
 `;
       await fsExtra.writeFile(yamlPath, yamlContent);
 
-      const bookDef = await parser.parse(yamlPath);
+      const bookDef = await parser.parseYamlFile(yamlPath);
 
       expect(bookDef.aiConfig?.customization).toBeDefined();
       expect(bookDef.aiConfig?.customization).toContain("Focus on visual learners.");
@@ -102,7 +102,7 @@ chapters:
 `;
       await fsExtra.writeFile(yamlPath, yamlContent);
 
-      const bookDef = await parser.parse(yamlPath);
+      const bookDef = await parser.parseYamlFile(yamlPath);
 
       expect(bookDef.aiConfig?.targetAudience).toBe("grade-6");
       expect(bookDef.chapters[0].aiConfig).toBeUndefined();
@@ -132,7 +132,7 @@ chapters:
 `;
       await fsExtra.writeFile(yamlPath, yamlContent);
 
-      const bookDef = await parser.parse(yamlPath);
+      const bookDef = await parser.parseYamlFile(yamlPath);
 
       expect(bookDef.aiConfig?.targetAudience).toBe("esl-intermediate");
       const aiTextItem = bookDef.chapters[0].content[0];
@@ -161,8 +161,8 @@ chapters:
 `;
       await fsExtra.writeFile(yamlPath, yamlContent);
 
-      await expect(parser.parse(yamlPath)).rejects.toThrow(/Invalid targetAudience/);
-      await expect(parser.parse(yamlPath)).rejects.toThrow(/elementary, grade-6, grade-9, high-school, college, professional, esl-beginner, esl-intermediate/);
+      await expect(parser.parseYamlFile(yamlPath)).rejects.toThrow(/Invalid targetAudience/);
+      await expect(parser.parseYamlFile(yamlPath)).rejects.toThrow(/elementary, grade-6, grade-9, high-school, college, professional, esl-beginner, esl-intermediate/);
     });
 
     it("should reject invalid tone in book-level aiConfig", async () => {
@@ -181,8 +181,8 @@ chapters:
 `;
       await fsExtra.writeFile(yamlPath, yamlContent);
 
-      await expect(parser.parse(yamlPath)).rejects.toThrow(/Invalid tone/);
-      await expect(parser.parse(yamlPath)).rejects.toThrow(/educational, professional, casual, academic/);
+      await expect(parser.parseYamlFile(yamlPath)).rejects.toThrow(/Invalid tone/);
+      await expect(parser.parseYamlFile(yamlPath)).rejects.toThrow(/educational, professional, casual, academic/);
     });
 
     it("should reject invalid reading level in chapter-level aiConfig", async () => {
@@ -200,7 +200,7 @@ chapters:
 `;
       await fsExtra.writeFile(yamlPath, yamlContent);
 
-      await expect(parser.parse(yamlPath)).rejects.toThrow(/Invalid targetAudience/);
+      await expect(parser.parseYamlFile(yamlPath)).rejects.toThrow(/Invalid targetAudience/);
     });
 
     it("should reject invalid aiConfig in item-level aiConfig", async () => {
@@ -218,7 +218,7 @@ chapters:
 `;
       await fsExtra.writeFile(yamlPath, yamlContent);
 
-      await expect(parser.parse(yamlPath)).rejects.toThrow(/Invalid tone/);
+      await expect(parser.parseYamlFile(yamlPath)).rejects.toThrow(/Invalid tone/);
     });
   });
 
@@ -239,7 +239,7 @@ chapters:
 `;
       await fsExtra.writeFile(yamlPath, yamlContent);
 
-      const bookDef = await parser.parse(yamlPath);
+      const bookDef = await parser.parseYamlFile(yamlPath);
 
       // Should parse successfully without aiConfig
       expect(bookDef.aiConfig).toBeUndefined();

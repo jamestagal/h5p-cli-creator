@@ -1,4 +1,4 @@
-import { AccordionHandler, AccordionContent, AIAccordionContent } from "../../src/handlers/embedded/AccordionHandler";
+import { AccordionHandler, AccordionContent } from "../../src/handlers/embedded/AccordionHandler";
 import { HandlerContext } from "../../src/handlers/HandlerContext";
 import { ChapterBuilder } from "../../src/compiler/ChapterBuilder";
 import { QuizGenerator } from "../../src/ai/QuizGenerator";
@@ -9,7 +9,7 @@ describe("AccordionHandler", () => {
   let mockContext: HandlerContext;
   let mockChapterBuilder: jest.Mocked<Partial<ChapterBuilder>>;
   let mockQuizGenerator: jest.Mocked<Partial<QuizGenerator>>;
-  let mockAIPromptBuilder: jest.Mocked<Partial<AIPromptBuilder>>;
+  let mockAIPromptBuilder: any;
 
   beforeEach(() => {
     handler = new AccordionHandler();
@@ -24,14 +24,21 @@ describe("AccordionHandler", () => {
 
     mockAIPromptBuilder = {
       buildPrompt: jest.fn().mockReturnValue("System prompt for accordion")
-    };
+    } as any;
 
     mockContext = {
       chapterBuilder: mockChapterBuilder as any,
-      logger: { log: jest.fn() },
+      logger: {
+        log: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn()
+      },
       options: { verbose: false },
       quizGenerator: mockQuizGenerator as any,
-      aiPromptBuilder: mockAIPromptBuilder as AIPromptBuilder
+      aiPromptBuilder: mockAIPromptBuilder as AIPromptBuilder,
+      libraryRegistry: {} as any,
+      mediaFiles: [],
+      basePath: "/test"
     };
   });
 
@@ -133,7 +140,7 @@ describe("AccordionHandler", () => {
 
   describe("validate - AI Accordion", () => {
     it("should accept valid ai-accordion content", () => {
-      const item: AIAccordionContent = {
+      const item: any = {
         type: "ai-accordion",
         prompt: "Create FAQ about photosynthesis"
       };
@@ -143,7 +150,7 @@ describe("AccordionHandler", () => {
     });
 
     it("should accept ai-accordion with optional fields", () => {
-      const item: AIAccordionContent = {
+      const item: any = {
         type: "ai-accordion",
         title: "FAQ",
         prompt: "Create FAQ",
@@ -281,7 +288,7 @@ describe("AccordionHandler", () => {
 
       (mockQuizGenerator.generateRawContent as jest.Mock).mockResolvedValue(mockAIResponse);
 
-      const item: AIAccordionContent = {
+      const item: any = {
         type: "ai-accordion",
         title: "Photosynthesis FAQ",
         prompt: "Create FAQ about photosynthesis basics",
@@ -328,7 +335,7 @@ describe("AccordionHandler", () => {
 
       (mockQuizGenerator.generateRawContent as jest.Mock).mockResolvedValue(mockAIResponse);
 
-      const item: AIAccordionContent = {
+      const item: any = {
         type: "ai-accordion",
         prompt: "Create FAQ"
       };
@@ -344,7 +351,7 @@ describe("AccordionHandler", () => {
     it("should handle AI generation failure with fallback panels", async () => {
       (mockQuizGenerator.generateRawContent as jest.Mock).mockRejectedValue(new Error("API error"));
 
-      const item: AIAccordionContent = {
+      const item: any = {
         type: "ai-accordion",
         prompt: "Create FAQ",
         panelCount: 3
@@ -370,7 +377,7 @@ describe("AccordionHandler", () => {
 
       (mockQuizGenerator.generateRawContent as jest.Mock).mockResolvedValue(mockAIResponse);
 
-      const item: AIAccordionContent = {
+      const item: any = {
         type: "ai-accordion",
         title: "Test",
         prompt: "Test prompt",

@@ -37,6 +37,7 @@ describe("QuizHandler", () => {
       chapterBuilder: mockChapterBuilder,
       libraryRegistry: {} as any,
       quizGenerator: mockQuizGenerator,
+      aiPromptBuilder: {} as any,
       logger: mockLogger,
       mediaFiles: [],
       basePath: "/test",

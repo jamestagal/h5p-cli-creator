@@ -1,0 +1,114 @@
+# Advanced Example: YouTube Story Extraction
+# Story with custom images and custom output paths
+#
+# This example demonstrates:
+# - Custom images for specific pages
+# - Mix of placeholder and custom images
+# - Custom descriptive page titles
+# - Advanced translation settings
+
+title: "Vietnamese Folk Tale: The Golden Star Fruit Tree"
+language: vi
+description: "An interactive bilingual storybook created from YouTube video"
+
+source:
+  type: youtube
+  url: "https://www.youtube.com/watch?v=Y8M9RJ_4C7E"
+
+translation:
+  enabled: true
+  targetLanguage: en
+  style: collapsible  # Use HTML <details> for expandable translations
+
+pages:
+  # Page 0: Video introduction
+  - title: "Watch the Full Story"
+    type: youtube-intro
+    includeTranscript: true
+
+  # Story pages with descriptive titles and custom images
+
+  - title: "Once Upon a Time"
+    startTime: "00:00"
+    endTime: "00:38"
+    # Note: Uncomment line below and provide actual image path
+    # image: "./images/folk-tale/opening-scene.jpg"
+    placeholder: true
+
+  - title: "The Two Brothers"
+    startTime: "00:38"
+    endTime: "01:06"
+    # image: "./images/folk-tale/two-brothers.jpg"
+    placeholder: true
+
+  - title: "The Magic Tree Appears"
+    startTime: "01:06"
+    endTime: "01:39"
+    # image: "./images/folk-tale/magic-tree.jpg"
+    placeholder: true
+
+  - title: "The Generous Brother"
+    startTime: "01:39"
+    endTime: "02:06"
+    # image: "./images/folk-tale/generous-brother.jpg"
+    placeholder: true
+
+  - title: "The Golden Star Fruits"
+    startTime: "02:06"
+    endTime: "02:43"
+    # image: "./images/folk-tale/star-fruits.jpg"
+    placeholder: true
+
+  - title: "The Raven's Gift"
+    startTime: "02:43"
+    endTime: "03:08"
+    # image: "./images/folk-tale/raven.jpg"
+    placeholder: true
+
+  - title: "Wealth and Happiness"
+    startTime: "03:08"
+    endTime: "03:34"
+    # image: "./images/folk-tale/wealth.jpg"
+    placeholder: true
+
+  - title: "The Greedy Brother"
+    startTime: "03:34"
+    endTime: "03:51"
+    # image: "./images/folk-tale/greedy-brother.jpg"
+    placeholder: true
+
+  - title: "Too Many Fruits"
+    startTime: "03:51"
+    endTime: "04:17"
+    # image: "./images/folk-tale/too-many-fruits.jpg"
+    placeholder: true
+
+  - title: "The Heavy Load"
+    startTime: "04:17"
+    endTime: "04:37"
+    # image: "./images/folk-tale/heavy-load.jpg"
+    placeholder: true
+
+  - title: "The Lesson Learned"
+    startTime: "04:37"
+    endTime: "05:14"
+    # image: "./images/folk-tale/lesson.jpg"
+    placeholder: true
+
+# Advanced workflow:
+# 1. Generate with placeholders first (fast iteration)
+# 2. Review audio segments and timestamps
+# 3. Create or source custom images
+# 4. Uncomment image paths and update with actual files
+# 5. Regenerate (uses cache, very fast)
+# 6. Compile to H5P and upload
+
+# To use this example:
+# 1. npm run build
+# 2. node ./dist/index.js youtube-extract examples/youtube-stories/advanced-example.yaml
+# 3. Review generated audio-segments/ and adjust timestamps if needed
+# 4. Add custom images to ./images/folk-tale/ directory
+# 5. Update image paths in this YAML (uncomment and modify)
+# 6. Regenerate: node ./dist/index.js youtube-extract examples/youtube-stories/advanced-example.yaml
+# 7. Compile: node ./dist/index.js yaml advanced-example.yaml advanced-example.h5p
+# 8. Upload to H5P platform

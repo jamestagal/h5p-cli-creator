@@ -32,7 +32,7 @@ export class ChapterBuilder {
   ) {
     this.localImageCounter = initialImageCounter;
     this.localAudioCounter = initialAudioCounter;
-    this.finalizeChapter();
+    // Don't finalize in constructor - let it be called explicitly after callback is registered
   }
 
   /**
@@ -188,6 +188,7 @@ export class ChapterBuilder {
    * @returns This builder for method chaining
    */
   public async addAudioPage(title: string, audioPath: string): Promise<this> {
+
     let ret: { extension: string; buffer: Buffer; audio: H5pAudio };
 
     // Detect URL vs local path
@@ -264,10 +265,11 @@ export class ChapterBuilder {
   }
 
   /**
-   * Finalizes the chapter and adds it to the parent chapters array.
-   * This is called automatically when the ChapterBuilder is created.
+   * Initializes the chapter by adding it to the parent chapters array.
+   * Must be called before adding content to ensure chapterContent reference is in place.
    */
-  private finalizeChapter(): void {
+  public initializeChapter(): void {
+
     // Add chapter to parent array immediately with reference to content array
     // This allows the chapter to be built up incrementally
     const chapterStructure = {
@@ -283,13 +285,19 @@ export class ChapterBuilder {
     };
 
     this.chaptersArray.push(chapterStructure);
+  }
 
-    // Set up cleanup when builder is done (on next tick)
-    process.nextTick(() => {
-      if (this.finalizeCallback) {
-        this.finalizeCallback(this.localImageCounter, this.localAudioCounter);
-      }
-    });
+  /**
+   * Finalizes the chapter by calling the callback with final counter values.
+   * Must be called AFTER all content has been added to the chapter.
+   */
+  public finalizeChapter(): void {
+
+    // Update parent counters synchronously so next chapter gets correct starting values
+    if (this.finalizeCallback) {
+      this.finalizeCallback(this.localImageCounter, this.localAudioCounter);
+    } else {
+    }
   }
 
   /**

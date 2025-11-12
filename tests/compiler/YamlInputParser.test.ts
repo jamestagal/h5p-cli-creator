@@ -93,8 +93,11 @@ chapters:
 `;
 
       const result = YamlInputParser.parseYamlString(yaml);
-      expect(result.chapters[0].content[0]).toHaveProperty("sentences");
-      expect(result.chapters[0].content[0]).not.toHaveProperty("questions");
+      expect('chapters' in result).toBe(true);
+      if ('chapters' in result) {
+        expect(result.chapters[0].content[0]).toHaveProperty("sentences");
+        expect(result.chapters[0].content[0]).not.toHaveProperty("questions");
+      }
     });
 
     it("should validate blanks with questions format", () => {
@@ -110,8 +113,11 @@ chapters:
 `;
 
       const result = YamlInputParser.parseYamlString(yaml);
-      expect(result.chapters[0].content[0]).toHaveProperty("questions");
-      expect(result.chapters[0].content[0]).not.toHaveProperty("sentences");
+      expect('chapters' in result).toBe(true);
+      if ('chapters' in result) {
+        expect(result.chapters[0].content[0]).toHaveProperty("questions");
+        expect(result.chapters[0].content[0]).not.toHaveProperty("sentences");
+      }
     });
 
     it("should throw error when blanks has neither sentences nor questions", () => {
@@ -211,6 +217,7 @@ chapters:
 `;
 
       const result = YamlInputParser.parseYamlString(yaml);
+      if (!('chapters' in result)) throw new Error('Expected BookDefinition');
       const blanksItem: any = result.chapters[0].content[0];
 
       expect(blanksItem.type).toBe("blanks");
@@ -243,6 +250,7 @@ chapters:
 `;
 
       const result = YamlInputParser.parseYamlString(yaml);
+      if (!('chapters' in result)) throw new Error('Expected BookDefinition');
       const aiBlanksItem: any = result.chapters[0].content[0];
 
       expect(aiBlanksItem.type).toBe("ai-blanks");

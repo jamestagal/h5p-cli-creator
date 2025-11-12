@@ -40,7 +40,7 @@ chapters:
       const bookDef = YamlInputParser.parseYamlFile(yamlPath);
 
       expect(bookDef).toBeDefined();
-      expect(bookDef.chapters[0].content[0].type).toBe("truefalse");
+      if (!("chapters" in bookDef)) throw new Error("Expected BookDefinition");      expect(bookDef.chapters[0].content[0].type).toBe("truefalse");
       const tfItem = bookDef.chapters[0].content[0] as any;
       expect(tfItem.question).toBe("Oslo is the capital of Norway");
       expect(tfItem.correct).toBe(true);
@@ -63,7 +63,7 @@ chapters:
       const bookDef = YamlInputParser.parseYamlFile(yamlPath);
 
       expect(bookDef).toBeDefined();
-      expect(bookDef.chapters[0].content[0].type).toBe("true-false");
+      if (!("chapters" in bookDef)) throw new Error("Expected BookDefinition");      expect(bookDef.chapters[0].content[0].type).toBe("true-false");
       const tfItem = bookDef.chapters[0].content[0] as any;
       expect(tfItem.question).toBe("The Earth is flat");
       expect(tfItem.correct).toBe(false);
@@ -137,7 +137,7 @@ chapters:
       const bookDef = YamlInputParser.parseYamlFile(yamlPath);
 
       expect(bookDef).toBeDefined();
-      expect(bookDef.chapters[0].content[0].type).toBe("ai-truefalse");
+      if (!("chapters" in bookDef)) throw new Error("Expected BookDefinition");      expect(bookDef.chapters[0].content[0].type).toBe("ai-truefalse");
       const aiTfItem = bookDef.chapters[0].content[0] as any;
       expect(aiTfItem.prompt).toBe("Create true/false questions about planets");
       expect(aiTfItem.questionCount).toBe(5);
@@ -159,7 +159,7 @@ chapters:
       const bookDef = YamlInputParser.parseYamlFile(yamlPath);
 
       expect(bookDef).toBeDefined();
-      expect(bookDef.chapters[0].content[0].type).toBe("ai-true-false");
+      if (!("chapters" in bookDef)) throw new Error("Expected BookDefinition");      expect(bookDef.chapters[0].content[0].type).toBe("ai-true-false");
       const aiTfItem = bookDef.chapters[0].content[0] as any;
       expect(aiTfItem.prompt).toBe("Create questions about the solar system");
     });

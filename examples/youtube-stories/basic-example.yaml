@@ -1,0 +1,89 @@
+# Basic Example: YouTube Story Extraction
+# Simple story with placeholder images
+#
+# This is the most straightforward configuration:
+# - Uses placeholder images (no custom images needed)
+# - Enables translation to English
+# - Uses test video with known good captions
+
+title: "Vietnamese Children's Story - Basic"
+language: vi
+
+source:
+  type: youtube
+  url: "https://www.youtube.com/watch?v=Y8M9RJ_4C7E"
+
+translation:
+  enabled: true
+  targetLanguage: en
+  style: collapsible
+
+pages:
+  # Page 0: YouTube video embed with full transcript accordion
+  - title: "Video introduction"
+    type: youtube-intro
+    includeTranscript: true
+
+  # Story pages with timestamps
+  # Each page uses placeholder image for quick generation
+
+  - title: "Page 1"
+    startTime: "00:00"
+    endTime: "00:38"
+    placeholder: true
+
+  - title: "Page 2"
+    startTime: "00:38"
+    endTime: "01:06"
+    placeholder: true
+
+  - title: "Page 3"
+    startTime: "01:06"
+    endTime: "01:39"
+    placeholder: true
+
+  - title: "Page 4"
+    startTime: "01:39"
+    endTime: "02:06"
+    placeholder: true
+
+  - title: "Page 5"
+    startTime: "02:06"
+    endTime: "02:43"
+    placeholder: true
+
+  - title: "Page 6"
+    startTime: "02:43"
+    endTime: "03:08"
+    placeholder: true
+
+  - title: "Page 7"
+    startTime: "03:08"
+    endTime: "03:34"
+    placeholder: true
+
+  - title: "Page 8"
+    startTime: "03:34"
+    endTime: "03:51"
+    placeholder: true
+
+  - title: "Page 9"
+    startTime: "03:51"
+    endTime: "04:17"
+    placeholder: true
+
+  - title: "Page 10"
+    startTime: "04:17"
+    endTime: "04:37"
+    placeholder: true
+
+  - title: "Page 11"
+    startTime: "04:37"
+    endTime: "05:14"
+    placeholder: true
+
+# To use this example:
+# 1. npm run build
+# 2. node ./dist/index.js youtube-extract examples/youtube-stories/basic-example.yaml
+# 3. node ./dist/index.js yaml basic-example.yaml basic-example.h5p
+# 4. Upload basic-example.h5p to your H5P platform

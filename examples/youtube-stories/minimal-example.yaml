@@ -1,0 +1,43 @@
+# Minimal Example: YouTube Story Extraction
+# Bare minimum configuration (no translation)
+#
+# This is the absolute minimum required:
+# - No translation (saves API costs)
+# - Just 3 pages for quick testing
+# - Placeholder images only
+
+title: "Vietnamese Story - Minimal"
+language: vi
+
+source:
+  type: youtube
+  url: "https://www.youtube.com/watch?v=Y8M9RJ_4C7E"
+
+# No translation section = translation disabled by default
+
+pages:
+  - title: "Video"
+    type: youtube-intro
+    includeTranscript: true
+
+  - title: "Beginning"
+    startTime: "00:00"
+    endTime: "01:00"
+    placeholder: true
+
+  - title: "Middle"
+    startTime: "01:00"
+    endTime: "02:00"
+    placeholder: true
+
+  - title: "End"
+    startTime: "02:00"
+    endTime: "03:00"
+    placeholder: true
+
+# To use this example (no API key required):
+# 1. npm run build
+# 2. node ./dist/index.js youtube-extract examples/youtube-stories/minimal-example.yaml
+# 3. node ./dist/index.js yaml minimal-example.yaml minimal-example.h5p
+#
+# Note: Generated content will be Vietnamese only (no English translation)

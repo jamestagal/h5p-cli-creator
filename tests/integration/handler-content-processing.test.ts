@@ -39,6 +39,7 @@ describe("Handler-Based Content Processing", () => {
       chapterBuilder: mockChapterBuilder,
       libraryRegistry: {} as LibraryRegistry,
       quizGenerator: {} as QuizGenerator,
+      aiPromptBuilder: {} as any,
       logger: {
         log: jest.fn(),
         warn: jest.fn(),

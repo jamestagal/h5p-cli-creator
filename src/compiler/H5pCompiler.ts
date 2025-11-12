@@ -187,6 +187,9 @@ export class H5pCompiler {
       for (const item of chapter.content) {
         await this.processItem(item, context, verbose);
       }
+
+      // Finalize chapter after all content has been added (updates parent counters)
+      chapterBuilder.finalizeChapter();
     }
 
     // Step 3: Assemble package

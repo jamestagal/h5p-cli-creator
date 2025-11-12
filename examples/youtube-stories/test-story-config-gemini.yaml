@@ -1,0 +1,83 @@
+# Test Story Configuration for YouTube Story Extraction
+# Video: Vietnamese Children's Story
+# URL: https://www.youtube.com/watch?v=Y8M9RJ_4C7E
+# Duration: ~5:14
+# Using Gemini 2.5 Pro transcript for accuracy
+
+title: "Vietnamese Children's Story"
+language: vi
+
+source:
+  type: youtube
+  url: "https://www.youtube.com/watch?v=Y8M9RJ_4C7E"
+
+# Manual transcript path (Gemini 2.5 Pro format)
+# More accurate than yt-dlp VTT parsing - avoids repetition
+manualTranscriptPath: "examples/youtube-stories/Y8M9RJ_4C7E-gemini-transcript.txt"
+
+translation:
+  enabled: true
+  targetLanguage: en
+  style: collapsible
+
+pages:
+  # Page 0: YouTube video embed with full transcript accordion
+  - title: "Video introduction"
+    type: youtube-intro
+    includeTranscript: true
+
+  # Story pages with precise timestamps from requirements.md
+  - title: "Page 1"
+    startTime: "00:00"
+    endTime: "00:39"
+    placeholder: true
+
+  - title: "Page 2"
+    startTime: "00:39"
+    endTime: "01:06"
+    placeholder: true
+
+  - title: "Page 3"
+    startTime: "01:06"
+    endTime: "01:39"
+    placeholder: true
+
+  - title: "Page 4"
+    startTime: "01:39"
+    endTime: "02:05"
+    placeholder: true
+
+  - title: "Page 5"
+    startTime: "02:05"
+    endTime: "02:44"
+    placeholder: true
+
+  - title: "Page 6"
+    startTime: "02:44"
+    endTime: "03:08"
+    placeholder: true
+
+  - title: "Page 7"
+    startTime: "03:10"
+    endTime: "03:34"
+    placeholder: true
+
+  - title: "Page 8"
+    startTime: "03:34"
+    endTime: "03:51"
+    placeholder: true
+
+  - title: "Page 9"
+    startTime: "03:51"
+    endTime: "04:17"
+    placeholder: true
+
+  - title: "Page 10"
+    startTime: "04:17"
+    endTime: "04:36"
+    placeholder: true
+
+  - title: "Page 11"
+    startTime: "04:37"
+    endTime: "05:14"
+    placeholder: true

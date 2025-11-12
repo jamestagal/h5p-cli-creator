@@ -69,6 +69,7 @@ export class ContentBuilder {
    * @returns ChapterBuilder for adding content to the chapter
    */
   public addChapter(chapterTitle: string): ChapterBuilder {
+
     const chapterBuilder = new ChapterBuilder(
       chapterTitle,
       this.chapters,
@@ -82,6 +83,9 @@ export class ContentBuilder {
       this.imageCounter = imageCount;
       this.audioCounter = audioCount;
     });
+
+    // Initialize the chapter structure (must be after callback is registered)
+    chapterBuilder.initializeChapter();
 
     return chapterBuilder;
   }

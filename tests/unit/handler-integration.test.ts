@@ -42,6 +42,7 @@ describe("AITextHandler Integration with AIConfiguration", () => {
       chapterConfig: undefined,
       libraryRegistry: {} as any,
       quizGenerator: {} as any,
+      aiPromptBuilder: {} as any,
       mediaFiles: [],
       basePath: "/test"
     };
@@ -248,6 +249,7 @@ describe("QuizHandler Integration with AIConfiguration", () => {
         addCustomContent: jest.fn()
       } as any,  // Use 'as any' to satisfy TypeScript without implementing all ChapterBuilder methods
       quizGenerator: mockQuizGenerator,
+      aiPromptBuilder: {} as any,
       logger: {
         log: jest.fn(),
         warn: jest.fn(),

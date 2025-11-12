@@ -212,6 +212,7 @@ describe("AIConfiguration Type System", () => {
       const context: HandlerContext = {
         chapterBuilder: {} as any,
         libraryRegistry: {} as any,
+      aiPromptBuilder: {} as any,
         quizGenerator: {} as any,
         logger: {
           log: jest.fn(),
@@ -231,6 +232,7 @@ describe("AIConfiguration Type System", () => {
       const context: HandlerContext = {
         chapterBuilder: {} as any,
         libraryRegistry: {} as any,
+      aiPromptBuilder: {} as any,
         quizGenerator: {} as any,
         logger: {
           log: jest.fn(),
@@ -255,6 +257,7 @@ describe("AIConfiguration Type System", () => {
       const context: HandlerContext = {
         chapterBuilder: {} as any,
         libraryRegistry: {} as any,
+      aiPromptBuilder: {} as any,
         quizGenerator: {} as any,
         logger: {
           log: jest.fn(),

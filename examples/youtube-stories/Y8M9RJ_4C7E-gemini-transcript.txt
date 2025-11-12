@@ -1,0 +1,25 @@
+Chào. Rất vui được gặp lại bạn ngày hôm nay. Hôm nay mình đã quay lại với một câu chuyện mới về Peter.
+
+Hôm nay Peter đã đi ra ngoài đường và nghe rất là nhiều những câu bắt đầu bằng "Trời ơi!". "Trời ơi". Bạn cùng nghe câu chuyện với mình nha.
+
+Một ngày đẹp trời, Peter đang đi dạo ở ngoài đường. Bỗng có một chú đi xe từ phía sau đi tới và hét lên, "Trời ơi! Coi chừng con gà!". Peter nhìn lại và thấy một con gà đang đi ở ngoài đường. Peter thấy rất là lạ, tại sao lại có con gà đi ở ngoài đường?
+
+Rồi Peter đi tiếp. Peter thấy một bà bán trái cây và một cô đang nói chuyện với nhau. Peter nghe thoang thoảng được là cô gái này nói, "Trời ơi, hôm nay trái cây mắc quá! Hôm nay trái cây mắc quá!". Peter đã nghe cô gái này phàn nàn hôm nay trái cây mắc quá.
+
+Rồi Peter đi tiếp tới một quán cà phê vỉa hè. Peter nói với nhân viên, "Em ơi, cho anh một ly cà phê sữa đá." Cô nhân viên vui vẻ nói, "Ok anh, đợi em một xíu." Peter thấy vui vì mình sắp được uống cà phê rồi.
+
+Nhưng Peter nhìn qua bên bàn bên kia, thấy hai chú, hai chú lớn tuổi đang uống bia. Một, hai, ba, dô! Hai chú đang uống bia nhưng cũng cãi nhau về một chuyện gì đó. Một chú nói, "Trời ơi, không phải như vậy đâu! Trời ơi, không phải như vậy." Peter thấy lạ quá. Sao ở Việt Nam mọi người nói "Trời ơi" nhiều quá vậy?
+
+Rồi Peter nhìn qua bên kia đường, thấy một chú đang coi video trên điện thoại rồi chú hét lên, "Trời ơi mắc cười quá! Trời ơi mắc cười quá!". Peter thấy lạ thêm một lần nữa. Ai cũng thích nói "Trời ơi" ở Việt Nam sao?
+
+Rồi khi cô nhân viên mang cà phê tới, cô nhân viên đã lỡ làm đổ cà phê. Cô nhân viên nói, "Trời ơi, em xin lỗi, em xin lỗi." Lại một lần nữa, Peter nghe tiếng nói "Trời ơi" từ người Việt Nam.
+
+Rồi Peter thấy một gia đình đang ngồi ăn cơm với nhau, rất là hạnh phúc. Cậu bé nhỏ này thì nói, "Trời ơi, đồ ăn hôm nay ngon quá!"
+
+Tiếp theo, một bà, một bà lão lớn tuổi nhìn thấy Peter. Bà tới gần và nói, "Trời ơi, con ốm quá. Ăn đi con, đồ ăn đây, ăn đi." Bà lão thấy Peter ốm nên muốn cho Peter ăn.
+
+Rồi Peter gọi, "Em ơi, tính tiền!" Peter thấy hôm nay là một ngày rất vui vì mình được cho đồ ăn và mình được nghe người Việt Nam nói "Trời ơi" rất là nhiều.
+
+Nhưng vừa tính tiền xong, trời đổ mưa. Peter không về nhà được. Peter nói, "Trời ơi, mưa lớn quá!" Vậy là Peter cũng đã nói "Trời ơi" giống như người Việt Nam rồi.
+
+Đó là câu chuyện của ngày hôm nay. Mình cảm ơn bạn đã lắng nghe câu chuyện của mình. Và mình hẹn gặp lại bạn vào những câu chuyện tiếp theo. Tạm biệt
