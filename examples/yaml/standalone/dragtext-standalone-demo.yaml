@@ -1,0 +1,19 @@
+title: "Drag the Words Exercise"
+language: "en"
+description: "Standalone drag-the-words activity - NOT embedded in Interactive Book"
+
+# STANDALONE DRAGTEXT - This creates a pure H5P.DragText package
+# without the Interactive Book wrapper.
+
+content:
+  type: dragtext
+  title: "Complete the Sentences"
+  taskDescription: "Drag the words to complete the sentences correctly"
+
+  # Use *word* to mark draggable words
+  textField: "The *cat* sits on the *mat*. It is very *happy* and *comfortable*. The *sun* is shining through the *window*."
+
+  behaviour:
+    enableRetry: true
+    enableSolutionsButton: true
+    instantFeedback: false

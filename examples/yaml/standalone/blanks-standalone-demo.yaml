@@ -1,0 +1,32 @@
+title: "Grammar Fill-in-the-Blanks"
+language: "en"
+description: "Standalone fill-in-the-blank exercise - NOT embedded in Interactive Book"
+
+# STANDALONE BLANKS - This creates a pure H5P.Blanks package
+# without the Interactive Book wrapper.
+
+content:
+  type: blanks
+  title: "Simple Grammar Test"
+  taskDescription: "Fill in the missing words to complete the sentences"
+
+  sentences:
+    - text: "The {blank} sits on the mat."
+      blanks:
+        - answer: "cat"
+          tip: "A common pet that meows"
+
+    - text: "It is very {blank}."
+      blanks:
+        - answer: "comfortable"
+          tip: "A feeling of being relaxed"
+
+    - text: "The {blank} is shining brightly today."
+      blanks:
+        - answer: "sun"
+          tip: "The star at the center of our solar system"
+
+  behaviour:
+    caseSensitive: false
+    enableRetry: true
+    enableSolutionsButton: true

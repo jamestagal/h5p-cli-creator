@@ -1,0 +1,29 @@
+title: "Reflective Writing Exercise"
+language: "en"
+description: "Standalone essay activity - NOT embedded in Interactive Book"
+
+# STANDALONE ESSAY - This creates a pure H5P.Essay package
+# without the Interactive Book wrapper.
+
+content:
+  type: essay
+  title: "Personal Reflection"
+  taskDescription: "Write a short reflection on what you learned today. Include specific examples and explain how you can apply this knowledge."
+
+  placeholderText: "Type your answer here..."
+
+  keywords:
+    - keyword: "learning"
+      variations: ["learn", "learned", "learnt"]
+      points: 1
+
+    - keyword: "reflection"
+      variations: ["reflect", "reflected"]
+      points: 1
+
+    - keyword: "example"
+      variations: ["examples", "instance"]
+      points: 2
+
+  minimumLength: 50
+  maximumLength: 500

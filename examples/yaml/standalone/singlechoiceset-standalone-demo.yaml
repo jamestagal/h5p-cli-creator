@@ -1,0 +1,28 @@
+title: "Science Quiz"
+language: "en"
+description: "Standalone single choice set quiz - NOT embedded in Interactive Book"
+
+# STANDALONE SINGLE CHOICE SET - This creates a pure H5P.SingleChoiceSet package
+# without the Interactive Book wrapper.
+
+content:
+  type: singlechoiceset
+  title: "Basic Science Knowledge"
+
+  questions:
+    - question: "What is the largest planet in our solar system?"
+      correctAnswer: "Jupiter"
+      distractors: ["Earth", "Mars", "Saturn"]
+
+    - question: "What is the chemical formula for water?"
+      correctAnswer: "H2O"
+      distractors: ["O2", "H2", "CO2"]
+
+    - question: "What is the speed of light?"
+      correctAnswer: "299,792 km/s"
+      distractors: ["150,000 km/s", "500,000 km/s", "100,000 km/s"]
+
+  behaviour:
+    enableRetry: true
+    enableSolutionsButton: true
+    autoContinue: false
