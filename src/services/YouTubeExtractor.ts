@@ -99,7 +99,7 @@ export class YouTubeExtractor {
   public async isCached(videoId: string): Promise<boolean> {
     const cacheDir = this.getCacheDirectory(videoId);
     const audioPath = path.join(cacheDir, "audio.mp3");
-    const transcriptPath = path.join(cacheDir, "transcript.json");
+    const transcriptPath = path.join(cacheDir, "whisper-transcript.json");
 
     return fsExtra.existsSync(audioPath) && fsExtra.existsSync(transcriptPath);
   }
@@ -168,11 +168,11 @@ export class YouTubeExtractor {
     const cacheDir = this.getCacheDirectory(videoId);
     await fsExtra.ensureDir(cacheDir);
 
-    const transcriptPath = path.join(cacheDir, "transcript.json");
+    const transcriptPath = path.join(cacheDir, "whisper-transcript.json");
 
     // Check if already cached
     if (fsExtra.existsSync(transcriptPath)) {
-      console.log(chalk.blue("Using cached transcript"));
+      console.log(chalk.blue("Using cached Whisper transcript"));
       const cached = await fsExtra.readJson(transcriptPath, { encoding: "utf-8" });
       return cached as TranscriptSegment[];
     }
@@ -372,7 +372,7 @@ export class YouTubeExtractor {
       console.log(chalk.blue("Using cached data for video:"), videoId);
       const cacheDir = this.getCacheDirectory(videoId);
       audioPath = path.join(cacheDir, "audio.mp3");
-      transcript = await fsExtra.readJson(path.join(cacheDir, "transcript.json"), {
+      transcript = await fsExtra.readJson(path.join(cacheDir, "whisper-transcript.json"), {
         encoding: "utf-8"
       });
 
@@ -409,7 +409,7 @@ export class YouTubeExtractor {
       await this.saveCacheMetadata(videoId, {
         videoId,
         audioPath,
-        transcriptPath: path.join(this.getCacheDirectory(videoId), "transcript.json"),
+        transcriptPath: path.join(this.getCacheDirectory(videoId), "whisper-transcript.json"),
         downloadDate: new Date().toISOString(),
         duration: metadata.duration,
         title: metadata.title,
