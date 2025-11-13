@@ -8,6 +8,7 @@
  * - Cache metadata for reusing downloads
  *
  * Phase 1: YouTube Story Extraction for Interactive Books
+ * Phase 2: Whisper API Transcription Integration
  */
 
 /**
@@ -84,6 +85,44 @@ export interface AudioSegment {
 }
 
 /**
+ * Transcription metadata for Whisper API
+ *
+ * Tracks transcription provider, model, language, and costs.
+ * Used for cache validation and cost transparency.
+ */
+export interface TranscriptionMetadata {
+  /**
+   * Transcription provider (always "whisper-api" for Whisper API)
+   */
+  provider: "whisper-api";
+
+  /**
+   * Whisper model used (always "whisper-1")
+   */
+  model: "whisper-1";
+
+  /**
+   * Language code (e.g., "vi" for Vietnamese, "en" for English)
+   */
+  language: string;
+
+  /**
+   * Transcription timestamp (ISO 8601 format)
+   */
+  timestamp: string;
+
+  /**
+   * Transcription cost in USD
+   */
+  cost: number;
+
+  /**
+   * Audio duration in seconds
+   */
+  duration: number;
+}
+
+/**
  * Cache metadata for YouTube downloads
  *
  * Stored in .youtube-cache/VIDEO_ID/cache-metadata.json
@@ -119,4 +158,12 @@ export interface CacheMetadata {
    * Video title
    */
   title?: string;
+
+  /**
+   * Transcription metadata (Whisper API)
+   *
+   * Optional field for backward compatibility with existing cache files.
+   * Present when transcript was generated using Whisper API.
+   */
+  transcription?: TranscriptionMetadata;
 }

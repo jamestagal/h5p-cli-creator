@@ -4,19 +4,21 @@
  * Responsibilities:
  * - Extract video ID from YouTube URLs (multiple formats)
  * - Download audio using yt-dlp system command
- * - Extract transcript with timestamps using youtube-transcript library
+ * - Extract transcript with timestamps using Whisper API
  * - Manage caching in .youtube-cache/VIDEO_ID/ directory
  * - Preserve Vietnamese diacritics (UTF-8 encoding)
  *
  * Phase 1: YouTube Story Extraction for Interactive Books
+ * Phase 2: Whisper API Transcription Integration
  */
 
 import * as fsExtra from "fs-extra";
 import * as path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
+import chalk from "chalk";
 import { VideoMetadata, TranscriptSegment, CacheMetadata } from "./types/YouTubeExtractorTypes";
-import { YoutubeTranscript } from "youtube-transcript";
+import { WhisperTranscriptionService } from "./transcription/WhisperTranscriptionService";
 
 const execAsync = promisify(exec);
 
@@ -26,19 +28,23 @@ const execAsync = promisify(exec);
  * Features:
  * - Multiple URL format support (watch?v=, youtu.be/, embed/)
  * - Audio download as MP3 using yt-dlp
- * - Transcript extraction with timestamps
+ * - Transcript extraction using Whisper API
  * - Caching strategy for fast iteration
  * - Vietnamese character encoding preservation
+ * - Cost transparency for transcription
  */
 export class YouTubeExtractor {
   private cacheBasePath: string;
+  private whisperService: WhisperTranscriptionService;
 
   /**
    * Creates a new YouTubeExtractor instance.
    * @param cacheBasePath Base directory for cache (defaults to .youtube-cache in current directory)
+   * @param whisperService WhisperTranscriptionService instance (defaults to new instance)
    */
-  constructor(cacheBasePath?: string) {
+  constructor(cacheBasePath?: string, whisperService?: WhisperTranscriptionService) {
     this.cacheBasePath = cacheBasePath || path.join(process.cwd(), ".youtube-cache");
+    this.whisperService = whisperService || new WhisperTranscriptionService();
   }
 
   /**
@@ -123,14 +129,18 @@ export class YouTubeExtractor {
 
     // Check if already downloaded
     if (fsExtra.existsSync(outputPath)) {
+      console.log(chalk.blue("Audio cached:"), outputPath);
       return outputPath;
     }
+
+    console.log(chalk.blue("Downloading audio from YouTube..."));
 
     // Download using yt-dlp
     const command = `yt-dlp -x --audio-format mp3 -o "${outputPath}" "${url}"`;
 
     try {
       await execAsync(command);
+      console.log(chalk.green("Audio download complete:"), outputPath);
       return outputPath;
     } catch (error: any) {
       throw new Error(`Failed to download audio: ${error.message}`);
@@ -138,17 +148,23 @@ export class YouTubeExtractor {
   }
 
   /**
-   * Extracts transcript from YouTube video with timestamps.
+   * Extracts transcript from YouTube video with timestamps using Whisper API.
    *
-   * Uses youtube-transcript library to fetch caption data.
+   * Uses WhisperTranscriptionService for high-quality transcription.
    * Preserves Vietnamese diacritics with UTF-8 encoding.
-   * Supports both auto-generated and manual captions.
+   * Displays cost estimate and progress messages.
    *
    * @param videoId YouTube video ID
+   * @param audioPath Path to audio file
+   * @param language Language code (e.g., "vi" for Vietnamese, "en" for English)
    * @returns Array of transcript segments with timestamps
-   * @throws Error if video has no captions
+   * @throws Error if transcription fails
    */
-  public async extractTranscript(videoId: string): Promise<TranscriptSegment[]> {
+  public async extractTranscript(
+    videoId: string,
+    audioPath: string,
+    language: string = "vi"
+  ): Promise<TranscriptSegment[]> {
     const cacheDir = this.getCacheDirectory(videoId);
     await fsExtra.ensureDir(cacheDir);
 
@@ -156,13 +172,26 @@ export class YouTubeExtractor {
 
     // Check if already cached
     if (fsExtra.existsSync(transcriptPath)) {
+      console.log(chalk.blue("Using cached transcript"));
       const cached = await fsExtra.readJson(transcriptPath, { encoding: "utf-8" });
       return cached as TranscriptSegment[];
     }
 
+    // Display progress message
+    console.log(chalk.blue("Transcribing with Whisper API..."));
+    console.log(chalk.gray(`Language: ${this.getLanguageName(language)} (${language})`));
+
     try {
-      // Use yt-dlp as primary method (more reliable than youtube-transcript library)
-      const segments = await this.extractTranscriptWithYtDlp(videoId);
+      // Calculate duration and estimated cost before API call
+      const duration = await this.getAudioDuration(audioPath);
+      const durationMinutes = duration / 60;
+      const estimatedCost = durationMinutes * 0.006;
+
+      console.log(chalk.gray(`Duration: ${durationMinutes.toFixed(1)} minutes`));
+      console.log(chalk.gray(`Estimated cost: $${estimatedCost.toFixed(2)}`));
+
+      // Use Whisper API for transcription
+      const segments = await this.whisperService.transcribe(audioPath, language, videoId);
 
       // Cache the transcript with UTF-8 encoding
       await fsExtra.writeJson(transcriptPath, segments, {
@@ -170,106 +199,13 @@ export class YouTubeExtractor {
         spaces: 2
       });
 
-      return segments;
-    } catch (error: any) {
-      throw new Error(
-        `Failed to extract transcript: ${error.message}. ` +
-        `Video may not have captions. Please enable captions or provide manual transcript.`
-      );
-    }
-  }
-
-  /**
-   * Extracts transcript using yt-dlp (primary method).
-   *
-   * Downloads VTT subtitle file and parses it into transcript segments.
-   * More reliable than youtube-transcript library.
-   *
-   * @param videoId YouTube video ID
-   * @returns Array of transcript segments
-   * @throws Error if subtitle extraction fails
-   */
-  private async extractTranscriptWithYtDlp(videoId: string): Promise<TranscriptSegment[]> {
-    await this.checkYtDlpInstalled();
-
-    const cacheDir = this.getCacheDirectory(videoId);
-    const vttPath = path.join(cacheDir, "subtitles.vtt");
-
-    // Download subtitles using yt-dlp
-    const command = `yt-dlp --write-auto-sub --sub-lang vi --skip-download -o "${path.join(cacheDir, "temp")}" "https://www.youtube.com/watch?v=${videoId}"`;
-
-    try {
-      await execAsync(command);
-
-      // Find the generated VTT file
-      const files = await fsExtra.readdir(cacheDir);
-      const vttFile = files.find(f => f.endsWith('.vtt'));
-
-      if (!vttFile) {
-        throw new Error("No subtitle file generated");
-      }
-
-      const actualVttPath = path.join(cacheDir, vttFile);
-      const vttContent = await fsExtra.readFile(actualVttPath, 'utf-8');
-
-      // Parse VTT format
-      const segments: TranscriptSegment[] = [];
-      const lines = vttContent.split('\n');
-
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-
-        // Match timestamp line (00:00:10.500 --> 00:00:13.200)
-        const timestampMatch = line.match(/(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})/);
-
-        if (timestampMatch) {
-          const startTime =
-            parseInt(timestampMatch[1]) * 3600 +
-            parseInt(timestampMatch[2]) * 60 +
-            parseInt(timestampMatch[3]) +
-            parseInt(timestampMatch[4]) / 1000;
-
-          const endTime =
-            parseInt(timestampMatch[5]) * 3600 +
-            parseInt(timestampMatch[6]) * 60 +
-            parseInt(timestampMatch[7]) +
-            parseInt(timestampMatch[8]) / 1000;
-
-          // Next line(s) contain the text
-          let text = '';
-          let j = i + 1;
-          while (j < lines.length && lines[j].trim() !== '' && !lines[j].includes('-->')) {
-            text += lines[j].trim() + ' ';
-            j++;
-          }
-
-          if (text.trim()) {
-            // Clean up VTT tags: remove <c>, <00:00:00.000>, and other HTML-like tags
-            const cleanText = text
-              .replace(/<\d{2}:\d{2}:\d{2}\.\s*\d{3}>/g, '') // Remove timestamps
-              .replace(/<c>/g, '') // Remove <c> tags
-              .replace(/<\/c>/g, '') // Remove </c> tags
-              .replace(/<[^>]+>/g, '') // Remove any other HTML tags
-              .replace(/\s+/g, ' ') // Normalize whitespace
-              .trim();
-
-            if (cleanText) {
-              segments.push({
-                startTime,
-                endTime,
-                text: cleanText
-              });
-            }
-          }
-        }
-      }
-
-      // Clean up VTT file
-      await fsExtra.remove(actualVttPath);
+      console.log(chalk.green("Transcription complete!"));
+      console.log(chalk.gray(`Actual cost: $${estimatedCost.toFixed(2)}`));
+      console.log(chalk.gray(`Cached: ${transcriptPath}`));
 
       return segments;
     } catch (error: any) {
-      throw new Error(`yt-dlp subtitle extraction failed: ${error.message}`);
+      throw new Error(`Failed to extract transcript: ${error.message}`);
     }
   }
 
@@ -366,19 +302,57 @@ export class YouTubeExtractor {
   }
 
   /**
+   * Gets audio duration from file metadata.
+   *
+   * Uses file size heuristic for estimation.
+   * Average MP3 bitrate: 128 kbps = 16 KB/s
+   *
+   * @param audioPath Path to audio file
+   * @returns Duration in seconds
+   */
+  private async getAudioDuration(audioPath: string): Promise<number> {
+    const stats = await fsExtra.stat(audioPath);
+    const estimatedDuration = stats.size / (16 * 1024); // seconds
+    return estimatedDuration;
+  }
+
+  /**
+   * Gets language name from language code.
+   * @param code Language code (e.g., "vi", "en")
+   * @returns Language name
+   */
+  private getLanguageName(code: string): string {
+    const languages: { [key: string]: string } = {
+      vi: "Vietnamese",
+      en: "English",
+      zh: "Chinese",
+      es: "Spanish",
+      fr: "French",
+      de: "German",
+      ja: "Japanese",
+      ko: "Korean"
+    };
+    return languages[code] || code;
+  }
+
+  /**
    * Complete extraction workflow for a YouTube video.
    *
    * Steps:
    * 1. Extract video ID from URL
    * 2. Check cache (skip download if cached)
    * 3. Download audio as MP3
-   * 4. Extract transcript with timestamps
-   * 5. Save cache metadata
+   * 4. Extract transcript with Whisper API
+   * 5. Save cache metadata with transcription details
    *
    * @param url YouTube video URL
+   * @param language Language code for transcription (default: "vi")
    * @returns Object with video metadata, audio path, and transcript segments
    */
-  public async extract(url: string): Promise<{
+  public async extract(
+    url: string,
+    language: string = "vi"
+  ): Promise<{
     metadata: VideoMetadata;
     audioPath: string;
     transcript: TranscriptSegment[];
@@ -395,6 +369,7 @@ export class YouTubeExtractor {
 
     if (cached) {
       // Load from cache
+      console.log(chalk.blue("Using cached data for video:"), videoId);
       const cacheDir = this.getCacheDirectory(videoId);
       audioPath = path.join(cacheDir, "audio.mp3");
       transcript = await fsExtra.readJson(path.join(cacheDir, "transcript.json"), {
@@ -413,20 +388,39 @@ export class YouTubeExtractor {
       } else {
         metadata = await this.getVideoMetadata(url);
       }
+
+      // Display cached transcription info
+      if (cachedMetadata?.transcription) {
+        console.log(chalk.gray(`Cached transcription: ${cachedMetadata.transcription.language} (${cachedMetadata.transcription.provider})`));
+        console.log(chalk.gray(`Previous cost: $${cachedMetadata.transcription.cost.toFixed(2)}`));
+      }
     } else {
       // Download fresh data
       metadata = await this.getVideoMetadata(url);
       audioPath = await this.downloadAudio(videoId, url);
-      transcript = await this.extractTranscript(videoId);
+      transcript = await this.extractTranscript(videoId, audioPath, language);
 
-      // Save cache metadata
+      // Calculate transcription cost
+      const duration = await this.getAudioDuration(audioPath);
+      const durationMinutes = duration / 60;
+      const cost = durationMinutes * 0.006;
+
+      // Save cache metadata with transcription details
       await this.saveCacheMetadata(videoId, {
         videoId,
         audioPath,
         transcriptPath: path.join(this.getCacheDirectory(videoId), "transcript.json"),
         downloadDate: new Date().toISOString(),
         duration: metadata.duration,
-        title: metadata.title
+        title: metadata.title,
+        transcription: {
+          provider: "whisper-api",
+          model: "whisper-1",
+          language: language,
+          timestamp: new Date().toISOString(),
+          cost: cost,
+          duration: duration
+        }
       });
     }
 
