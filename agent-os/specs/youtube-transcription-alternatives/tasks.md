@@ -666,6 +666,51 @@ node -e "const yaml = require('js-yaml'); const fs = require('fs'); console.log(
 - `docs/user-guides/youtube-story-extraction.md` - Document Whisper usage and benefits
 
 ### No Changes Required
-- `src/services/TranscriptMatcher.ts` - Already compatible with TranscriptSegment format
 - `src/services/AudioSplitter.ts` - Works with existing audio files
 - CSV parsing and Interactive Book generation - Unchanged
+
+### Post-Launch Bug Fixes
+
+#### Fix: TranscriptMatcher Duplicate Text Across Page Boundaries
+**Date:** 2025-11-14
+**Issue:** Whisper segments spanning page boundaries were included in BOTH pages, causing duplicate sentences.
+
+**Problem Examples:**
+- Page 4→5 boundary (125s): Segment 120-126 included in both pages
+- Page 5→6 boundary (164s): Segment 161-165 included in both pages
+- Page 8→9 boundary (231s): Segment 230-237 split across pages
+
+**Root Cause:**
+TranscriptMatcher.ts line 64 used overlapping boundary logic:
+```typescript
+// OLD (BUGGY): Include segment if ANY overlap exists
+return segment.startTime < rangeEnd && segment.endTime > rangeStart;
+```
+
+**Solution Implemented:**
+Smart Segment Assignment Strategy in [TranscriptMatcher.ts:58-82](src/services/TranscriptMatcher.ts#L58-L82):
+```typescript
+// NEW: Assign overlapping segments to page containing >50% of duration
+const segmentDuration = segmentEnd - segmentStart;
+const overlapStart = Math.max(segmentStart, rangeStart);
+const overlapEnd = Math.min(segmentEnd, rangeEnd);
+const overlapDuration = Math.max(0, overlapEnd - overlapStart);
+const overlapPercentage = overlapDuration / segmentDuration;
+
+return overlapPercentage > 0.5;
+```
+
+**Benefits:**
+- No duplicate text across pages
+- No lost text (all segments assigned to exactly one page)
+- Works perfectly with adjacent timestamp ranges (end of page N = start of page N+1)
+- Ideal for future UI where educators select timestamp ranges
+
+**Verification:**
+Tested with Vietnamese video Y8M9RJ_4C7E:
+- Page 4 ends: "Peter thấy vui vì mình sắp được uống cà phê rồi."
+- Page 5 starts: "Nhưng Peter nhìn qua bên bàn bên kia..." (NEW sentence, no duplicate!)
+- All 4 problematic boundaries fixed (4→5, 5→6, 8→9, 9→10)
+
+**Files Modified:**
+- `src/services/TranscriptMatcher.ts` - Updated findSegmentsInRange() with smart assignment logic

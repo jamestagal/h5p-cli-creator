@@ -41,12 +41,14 @@ export class TranscriptMatcher {
   /**
    * Finds transcript segments within a timestamp range.
    *
-   * Boundary logic:
-   * - Inclusive start: segment overlaps if segment.startTime < rangeEnd
-   * - Exclusive end: segment overlaps if segment.endTime > rangeStart
-   * - A segment is included if: segment.startTime < rangeEnd AND segment.endTime > rangeStart
+   * Smart Segment Assignment Strategy:
+   * - Segments fully contained within range are always included
+   * - Segments spanning boundaries are assigned to page containing >50% of duration
+   * - This prevents duplicate text across pages while preserving all content
    *
-   * This allows for graceful handling of overlapping timestamps.
+   * Examples:
+   * - Segment 120-126 at Page 4→5 boundary (125s): 5s in P4, 1s in P5 → assign to P4
+   * - Segment 230-237 at Page 8→9 boundary (231s): 1s in P8, 6s in P9 → assign to P9
    *
    * @param transcript Array of transcript segments
    * @param rangeStart Start time in seconds
@@ -59,9 +61,23 @@ export class TranscriptMatcher {
     rangeEnd: number
   ): TranscriptSegment[] {
     return transcript.filter((segment) => {
-      // Include segment if it overlaps with the range
-      // Segment overlaps if: segment starts before range ends AND segment ends after range starts
-      return segment.startTime < rangeEnd && segment.endTime > rangeStart;
+      const segmentStart = segment.startTime;
+      const segmentEnd = segment.endTime;
+      const segmentDuration = segmentEnd - segmentStart;
+
+      // Case 1: Segment fully within range
+      if (segmentStart >= rangeStart && segmentEnd <= rangeEnd) {
+        return true;
+      }
+
+      // Case 2: Segment spans boundaries - calculate overlap percentage
+      const overlapStart = Math.max(segmentStart, rangeStart);
+      const overlapEnd = Math.min(segmentEnd, rangeEnd);
+      const overlapDuration = Math.max(0, overlapEnd - overlapStart);
+      const overlapPercentage = overlapDuration / segmentDuration;
+
+      // Assign to this page if >50% of segment duration overlaps
+      return overlapPercentage > 0.5;
     });
   }
 
