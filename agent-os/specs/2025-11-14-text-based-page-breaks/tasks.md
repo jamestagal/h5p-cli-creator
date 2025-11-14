@@ -17,13 +17,13 @@
 **Estimated Effort:** 30 minutes
 **Critical Path:** Yes
 
-- [ ] 1.0 Complete foundational types and config extensions
-  - [ ] 1.1 Create type definitions for text-based workflow
+- [x] 1.0 Complete foundational types and config extensions
+  - [x] 1.1 Create type definitions for text-based workflow
     - Create `PageDefinition` interface in `src/types/YouTubeExtractorTypes.ts`
     - Properties: `pageNumber: number`, `title: string`, `text: string`
     - Create `MatchedSegment` interface with `pageNumber`, `segments: TranscriptSegment[]`
     - Create `DerivedTimestamp` interface with `pageNumber`, `startTime`, `endTime`, `duration`
-  - [ ] 1.2 Extend StoryConfig model
+  - [x] 1.2 Extend StoryConfig model
     - Add `transcriptSource?: string` field to `StoryConfig` interface in `src/models/StoryConfig.ts`
     - Add `matchingMode?: "strict" | "tolerant" | "fuzzy"` field (defaults to "tolerant")
     - Document field purposes:
@@ -31,7 +31,7 @@
       - `matchingMode`: "Text matching algorithm: strict (exact), tolerant (85%+), fuzzy (60%+)"
     - Add validation logic: Error if both `transcriptSource` and `pages[].startTime` present
     - Maintain backward compatibility (make fields optional)
-  - [ ] 1.3 Create test fixtures directory structure
+  - [x] 1.3 Create test fixtures directory structure
     - Create `tests/fixtures/transcripts/` directory
     - Create sample transcript files for testing:
       - `full-transcript-simple.txt` - 3 pages, basic case
@@ -55,35 +55,35 @@
 **Estimated Effort:** 1.5-2 hours
 **Critical Path:** Yes
 
-- [ ] 2.0 Complete transcript file parser implementation
-  - [ ] 2.1 Write 2-5 focused tests for TranscriptFileParser
+- [x] 2.0 Complete transcript file parser implementation
+  - [x] 2.1 Write 2-5 focused tests for TranscriptFileParser
     - Test parsing valid markdown with `---` delimiters
     - Test extracting page titles from `# Page N:` headings
     - Test auto-numbering pages when headings missing
     - Test whitespace normalization (multiple spaces → single space)
     - Test error detection (empty pages, missing delimiters)
-  - [ ] 2.2 Create TranscriptFileParser service class
+  - [x] 2.2 Create TranscriptFileParser service class
     - File: `src/services/transcription/TranscriptFileParser.ts`
     - Constructor accepts file path
     - Implement `parse()` method returning `PageDefinition[]`
-  - [ ] 2.3 Implement markdown parsing logic
+  - [x] 2.3 Implement markdown parsing logic
     - Split file content on `---` (triple dash) delimiters
     - Parse `# Page N: Title` format using regex: `/^#\s+Page\s+(\d+):\s*(.+)$/`
     - Extract page number and title from heading
     - Extract text content (everything after heading, before next delimiter)
     - Auto-number pages sequentially if heading format not used
-  - [ ] 2.4 Implement whitespace normalization
+  - [x] 2.4 Implement whitespace normalization
     - Trim leading/trailing whitespace from page text
     - Collapse multiple spaces to single space
     - Collapse multiple newlines to single newline (preserve paragraph breaks)
     - Pattern from GeminiTranscriptParser: `text.replace(/\s+/g, ' ').trim()`
-  - [ ] 2.5 Add validation and error handling
+  - [x] 2.5 Add validation and error handling
     - Error if file not found or unreadable
     - Error if no page breaks found (no `---` delimiters)
     - Error if page has empty text content
     - Warning if page text is very short (<10 characters)
     - Provide actionable error messages with page numbers
-  - [ ] 2.6 Ensure TranscriptFileParser tests pass
+  - [x] 2.6 Ensure TranscriptFileParser tests pass
     - Run ONLY the 2-5 tests written in 2.1
     - Verify parsing works for valid transcripts
     - Verify error detection works correctly
@@ -105,36 +105,36 @@
 **Estimated Effort:** 2.5-3 hours
 **Critical Path:** Yes
 
-- [ ] 3.0 Complete segment matching implementation with three matching modes
-  - [ ] 3.1 Write 3-6 focused tests for SegmentMatcher
+- [x] 3.0 Complete segment matching implementation with three matching modes
+  - [x] 3.1 Write 3-6 focused tests for SegmentMatcher
     - Test sequential matching (prevents duplicate segment assignment)
     - Test repetition drills (1st "Bonjour" → 2nd "Bonjour" → 3rd "Bonjour" get unique segments)
     - Test multi-segment page matching (page text spans 3-4 segments)
     - Test single-segment page matching
     - Test tolerant mode (85% similarity threshold)
     - Test fuzzy mode (60% similarity threshold with warnings)
-  - [ ] 3.2 Create SegmentMatcher service class
+  - [x] 3.2 Create SegmentMatcher service class
     - File: `src/services/transcription/SegmentMatcher.ts`
     - Constructor accepts `whisperSegments: TranscriptSegment[]`, `matchingMode: "strict" | "tolerant" | "fuzzy"`
     - Implement `matchPageToSegments(pageText: string): TranscriptSegment[]` method
     - Add `private currentSegmentIndex: number` for sequential matching pointer
-  - [ ] 3.3 Implement sequential matching algorithm
+  - [x] 3.3 Implement sequential matching algorithm
     - Maintain pointer `currentSegmentIndex` in Whisper segment stream
     - Only search segments AFTER last matched segment (prevents duplicates)
     - After matching, advance pointer: `currentSegmentIndex += matched.length`
     - Critical for language learning repetition drills (preserves chronological order)
-  - [ ] 3.4 Implement text normalization utilities
+  - [x] 3.4 Implement text normalization utilities
     - Reuse utilities from TranscriptMatcher: `preserveFormatting()`, `concatenateSegments()`
     - Create `normalizeText()` method: lowercase, trim whitespace, collapse multiple spaces
     - Preserve UTF-8 encoding (Vietnamese diacritics, French accents)
     - Apply normalization consistently to page text and segment text
-  - [ ] 3.5 Implement Jaccard similarity calculator for tolerant/fuzzy modes
+  - [x] 3.5 Implement Jaccard similarity calculator for tolerant/fuzzy modes
     - Create `calculateJaccardSimilarity(text1: string, text2: string): number` method
     - Tokenize text: `text.split(/\s+/)` to get word array
     - Calculate intersection and union of token sets
     - Return: `intersection.size / union.size` (0.0 to 1.0)
     - Use for tolerant mode (85%+ threshold) and fuzzy mode (60%+ threshold)
-  - [ ] 3.6 Implement sliding window search with similarity matching
+  - [x] 3.6 Implement sliding window search with similarity matching
     - Search remaining segments (from currentSegmentIndex forward)
     - Try window size 1, then 2, then 3... segments
     - For each window, concatenate segments and calculate similarity
@@ -142,7 +142,7 @@
     - **Tolerant mode**: Require ≥85% Jaccard similarity (default, recommended)
     - **Fuzzy mode**: Require ≥60% Jaccard similarity (generates warnings)
     - Return first window that meets threshold
-  - [ ] 3.7 Add helpful diff output for non-100% matches
+  - [x] 3.7 Add helpful diff output for non-100% matches
     - When similarity < 100%, generate side-by-side comparison:
       ```
       Whisper:  "Je me réveille sans réveil."
@@ -152,13 +152,13 @@
       ```
     - Show character-level or word-level diff
     - Help educators understand what changed
-  - [ ] 3.8 Add match confidence reporting
+  - [x] 3.8 Add match confidence reporting
     - Return `MatchedSegment` with `confidence: number` field
     - Store similarity score (0.0-1.0) for each matched page
     - Display in validation and generation output
     - Warning if any page < 90% in tolerant mode
     - Warning if any page < 80% in fuzzy mode
-  - [ ] 3.9 Ensure SegmentMatcher tests pass
+  - [x] 3.9 Ensure SegmentMatcher tests pass
     - Run ONLY the 3-6 tests written in 3.1
     - Verify sequential matching prevents duplicates
     - Verify repetition drills work correctly
@@ -182,29 +182,29 @@
 **Estimated Effort:** 1 hour
 **Critical Path:** Yes
 
-- [ ] 4.0 Complete timestamp derivation implementation
-  - [ ] 4.1 Write 2-4 focused tests for TimestampDeriver
+- [x] 4.0 Complete timestamp derivation implementation
+  - [x] 4.1 Write 2-4 focused tests for TimestampDeriver
     - Test deriving timestamps from single-segment page
     - Test deriving timestamps from multi-segment page
     - Test decimal precision preservation (9.4s, 17.6s)
     - Test duration calculation (endTime - startTime)
-  - [ ] 4.2 Create TimestampDeriver service class
+  - [x] 4.2 Create TimestampDeriver service class
     - File: `src/services/transcription/TimestampDeriver.ts`
     - Static method: `deriveTimestamps(matchedSegments: MatchedSegment[]): TimestampSegment[]`
     - No constructor needed (stateless service)
-  - [ ] 4.3 Implement timestamp derivation logic
+  - [x] 4.3 Implement timestamp derivation logic
     - For each page's matched segments array:
       - startTime = first segment's startTime
       - endTime = last segment's endTime
       - duration = endTime - startTime
     - Preserve decimal precision from Whisper (9.4s, 17.6s, 24.1s)
     - Return `TimestampSegment` objects for AudioSplitter consumption
-  - [ ] 4.4 Add validation
+  - [x] 4.4 Add validation
     - Error if segments array is empty
     - Error if segments not in chronological order
     - Warning if page duration > 120 seconds (2 minutes)
     - Warning if page duration < 3 seconds
-  - [ ] 4.5 Ensure TimestampDeriver tests pass
+  - [x] 4.5 Ensure TimestampDeriver tests pass
     - Run ONLY the 2-4 tests written in 4.1
     - Verify timestamps derived correctly
     - Verify decimal precision preserved
@@ -225,34 +225,34 @@
 **Estimated Effort:** 1 hour
 **Critical Path:** Yes
 
-- [ ] 5.0 Complete youtube-extract-transcript command
-  - [ ] 5.1 Create CLI command module
-    - File: `src/cli/commands/youtube-extract-transcript.ts`
+- [x] 5.0 Complete youtube-extract-transcript command
+  - [x] 5.1 Create CLI command module
+    - File: `src/modules/youtube/youtube-extract-transcript-module.ts`
     - Command: `youtube-extract-transcript <config-file>`
     - Description: "Extract transcript from YouTube video for review and page break marking"
-  - [ ] 5.2 Implement command handler
+  - [x] 5.2 Implement command handler
     - Load config YAML using existing config parser
     - Extract video ID from YouTube URL
     - Create cache directory: `.youtube-cache/{VIDEO_ID}/`
     - Check for cached `whisper-transcript.json`
-  - [ ] 5.3 Integrate WhisperTranscriptionService
+  - [x] 5.3 Integrate WhisperTranscriptionService
     - Reuse existing WhisperTranscriptionService for API calls
     - Pass language from config: `config.source.language` or detect from video
     - Handle time range trimming: `config.source.startTime`, `config.source.endTime`
     - Cache raw Whisper output to `whisper-transcript.json`
-  - [ ] 5.4 Format transcript for human readability
+  - [x] 5.4 Format transcript for human readability
     - Convert `TranscriptSegment[]` to readable text format
     - Separate each segment with blank line (double newline)
     - Preserve paragraph breaks from Whisper punctuation
     - UTF-8 encoding preservation
     - Output to `.youtube-cache/{VIDEO_ID}/full-transcript.txt`
-  - [ ] 5.5 Add progress messages
+  - [x] 5.5 Add progress messages
     - "Extracting audio from YouTube video..."
     - "Transcribing audio with Whisper API... (estimated cost: $X.XX)"
     - "Using cached transcript"
     - "Transcript saved to: .youtube-cache/{VIDEO_ID}/full-transcript.txt"
     - "Next step: Edit transcript and insert page breaks using ---"
-  - [ ] 5.6 Register command in CLI entry point
+  - [x] 5.6 Register command in CLI entry point
     - Add to `src/index.ts` command registry
     - Test command help: `youtube-extract-transcript --help`
 
@@ -270,19 +270,19 @@
 **Estimated Effort:** 1-1.5 hours
 **Critical Path:** No
 
-- [ ] 6.0 Complete youtube-validate-transcript command for format checking
-  - [ ] 6.1 Create CLI command module
-    - File: `src/cli/commands/youtube-validate-transcript.ts`
+- [x] 6.0 Complete youtube-validate-transcript command for format checking
+  - [x] 6.1 Create CLI command module
+    - File: `src/modules/youtube/youtube-validate-transcript-module.ts`
     - Command: `youtube-validate-transcript <config-file>`
     - Description: "Validate transcript format and show page structure preview (no generation)"
-  - [ ] 6.2 Implement validation workflow (dry run)
+  - [x] 6.2 Implement validation workflow (dry run)
     - Load config YAML using existing config parser
     - Load edited transcript file from `config.transcriptSource` path
     - Parse transcript using TranscriptFileParser (validates format)
     - Load cached Whisper segments from `.youtube-cache/{VIDEO_ID}/whisper-transcript.json`
     - Match pages to segments using SegmentMatcher (dry run, no audio splitting)
     - Derive timestamps using TimestampDeriver
-  - [ ] 6.3 Generate validation report output
+  - [x] 6.3 Generate validation report output
     - Format validation results:
       ```
       ✅ Format valid: 12 pages found
@@ -301,19 +301,19 @@
 
       Total duration: 3:05 (185 seconds)
       ```
-  - [ ] 6.4 Add warnings for edge cases
+  - [x] 6.4 Add warnings for edge cases
     - Warning if page duration < 5 seconds (very short)
     - Warning if page duration > 120 seconds (very long, >2 minutes)
     - Warning if match confidence < 90% in tolerant mode
     - Warning if match confidence < 80% in fuzzy mode
     - Info message if all pages 100% match (unedited transcript)
-  - [ ] 6.5 Add actionable error messages
+  - [x] 6.5 Add actionable error messages
     - Error if transcript file not found: "Transcript file not found: {path}. Run youtube-extract-transcript first."
     - Error if Whisper cache not found: "Whisper transcript cache not found. Run youtube-extract-transcript first."
     - Error if page breaks missing: "No page breaks (---) found in transcript."
     - Error if empty pages: "Page {N} has no content between delimiters."
     - Error if text matching fails: "Page {N} text not found in Whisper segments. Similarity: {X}%. Consider using matchingMode: 'fuzzy'"
-  - [ ] 6.6 Register command in CLI entry point
+  - [x] 6.6 Register command in CLI entry point
     - Add to `src/index.ts` command registry
     - Test command help: `youtube-validate-transcript --help`
     - Document usage: "Run before youtube-generate to catch format errors early"
@@ -334,26 +334,26 @@
 **Estimated Effort:** 1.5 hours
 **Critical Path:** Yes
 
-- [ ] 7.0 Complete youtube-generate command text-based mode
-  - [ ] 7.1 Update youtube-generate command to support dual modes
-    - File: `src/cli/commands/youtube-generate.ts` (update existing)
+- [x] 7.0 Complete youtube-generate command text-based mode
+  - [x] 7.1 Update youtube-generate command to support dual modes
+    - File: `src/modules/youtube/youtube-extract-module.ts` (update existing)
     - Detect mode: Check for `config.transcriptSource` field
     - If `transcriptSource` present → text-based mode
     - If `pages[].startTime` present → legacy timestamp mode
     - Error if both present
-  - [ ] 7.2 Implement text-based mode workflow
+  - [x] 7.2 Implement text-based mode workflow
     - Load edited transcript file from `config.transcriptSource` path
     - Parse transcript using TranscriptFileParser
     - Load cached Whisper segments from `.youtube-cache/{VIDEO_ID}/whisper-transcript.json`
     - Match pages to segments using SegmentMatcher (with config.matchingMode)
     - Derive timestamps using TimestampDeriver
     - Pass `TimestampSegment[]` to existing AudioSplitter
-  - [ ] 7.3 Integrate with existing story generation pipeline
+  - [x] 7.3 Integrate with existing story generation pipeline
     - Reuse existing AudioSplitter (no changes needed)
     - Reuse existing AITranslationService for translations
     - Reuse existing InteractiveBookCreator for H5P generation
     - Pass derived timestamps instead of config timestamps
-  - [ ] 7.4 Add progress messages for text-based mode
+  - [x] 7.4 Add progress messages for text-based mode
     - "Using text-based page breaks from: {transcriptSource}"
     - "Matching mode: {strict|tolerant|fuzzy}"
     - "Parsing transcript... found {N} pages"
@@ -363,14 +363,14 @@
     - "Splitting audio into page segments..."
     - "Generating translations..."
     - "Creating Interactive Book H5P package..."
-  - [ ] 7.5 Add validation and error handling
+  - [x] 7.5 Add validation and error handling
     - Error if `transcriptSource` file not found
     - Error if Whisper cache not found (run youtube-extract-transcript first)
     - Error if text matching fails (show unmatched pages/text with diff)
     - Display match confidence for each page
     - Warning if any page has low confidence (<90% tolerant, <80% fuzzy)
     - Suggest running youtube-validate-transcript first if errors occur
-  - [ ] 7.6 Test end-to-end workflow
+  - [x] 7.6 Test end-to-end workflow
     - Manual test: Extract transcript → Edit → Validate → Generate story
     - Verify audio/text alignment in generated H5P package
     - Test with French story (current problem case)
@@ -395,20 +395,20 @@
 **Estimated Effort:** 1-1.5 hours
 **Critical Path:** No
 
-- [ ] 8.0 Complete integration testing for text-based workflow
-  - [ ] 8.1 Review existing tests from Task Groups 2-4
+- [x] 8.0 Complete integration testing for text-based workflow
+  - [x] 8. Review existing tests from Task Groups 2-4
     - Review 2-5 tests from TranscriptFileParser (Task 2.1)
     - Review 3-6 tests from SegmentMatcher (Task 3.1)
     - Review 2-4 tests from TimestampDeriver (Task 4.1)
     - Total existing tests: approximately 7-15 tests
-  - [ ] 8.2 Analyze test coverage gaps for THIS feature only
+  - [x] 8. Analyze test coverage gaps for THIS feature only
     - Identify critical end-to-end workflows lacking coverage
     - Focus ONLY on text-based page breaks feature workflows
     - Prioritize integration points between services
     - Test all three matching modes (strict, tolerant, fuzzy)
     - Test sequential matching for repetition drills
     - Do NOT assess entire application test coverage
-  - [ ] 8.3 Write up to 10 additional strategic tests maximum
+  - [x] 8. Write up to 10 additional strategic tests maximum
     - Integration test: Full workflow (extract → parse → match → derive → generate)
     - Integration test: French story case (audio/text alignment fix)
     - Integration test: Vietnamese story regression test
@@ -419,7 +419,7 @@
     - Integration test: Config validation (dual-mode detection, matchingMode)
     - Edge case: Empty page detection
     - Edge case: Unmatched text handling with helpful diff
-  - [ ] 8.4 Run feature-specific tests only
+  - [x] 8. Run feature-specific tests only
     - Run ONLY tests related to text-based page breaks feature
     - Expected total: approximately 17-25 tests maximum
     - Do NOT run entire application test suite
@@ -445,8 +445,8 @@
 **Estimated Effort:** 45-60 minutes
 **Critical Path:** No
 
-- [ ] 9.0 Complete documentation for text-based workflow
-  - [ ] 9.1 Update CLAUDE.md with text-based workflow
+- [x] 9.0 Complete documentation for text-based workflow
+  - [x] 9. Update CLAUDE.md with text-based workflow
     - Add "Text-Based Page Breaks Workflow" section
     - Document CLI commands: `youtube-extract-transcript`, `youtube-validate-transcript`, `youtube-generate`
     - Explain markdown page break format (`---`, `# Page N:`)
@@ -456,26 +456,26 @@
     - Document sequential matching for repetition drills
     - Add troubleshooting section (common errors, solutions)
     - Add best practices: trimming intro/outro, validation before generation
-  - [ ] 9.2 Create example config files
+  - [x] 9. Create example config files
     - File: `examples/youtube-stories/text-based-example.yaml`
     - Include `transcriptSource` field
     - Include `matchingMode: "tolerant"` with comment explaining options
     - Include comments explaining dual-mode support
     - Reference French story as working example
     - Add example showing repetition drill use case
-  - [ ] 9.3 Create example transcript files
+  - [x] 9. Create example transcript files
     - File: `examples/youtube-stories/full-transcript-example.txt`
     - Show markdown page break format
     - Show page title format: `# Page 1: Introduction`
     - Include 5-6 example pages with varied content
     - Include example of repetition drill (same phrase 3 times)
     - Add comments explaining format and best practices
-  - [ ] 9.4 Update main README.md if needed
+  - [x] 9. Update main README.md if needed
     - Add brief mention of text-based workflow
     - Link to CLAUDE.md for detailed docs
     - Add to features list
     - Mention Descript-style transcript-based editing paradigm
-  - [ ] 9.5 Create migration guide for timestamp configs
+  - [x] 9. Create migration guide for timestamp configs
     - File: `docs/text-based-page-breaks-migration.md`
     - Explain differences between modes (timestamp vs text-based)
     - Show side-by-side config comparison

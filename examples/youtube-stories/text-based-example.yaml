@@ -1,0 +1,56 @@
+# Example configuration for text-based page breaks workflow
+#
+# This config demonstrates the text-based workflow where educators mark page breaks
+# directly in the transcript instead of manually calculating timestamps.
+#
+# Workflow:
+# 1. Run: youtube-extract-transcript config.yaml
+# 2. Edit: .youtube-cache/{VIDEO_ID}/full-transcript.txt → add page breaks (---)
+# 3. Run: youtube-validate-transcript config.yaml (optional, recommended)
+# 4. Run: youtube-extract config.yaml --output story.yaml
+
+title: "Ma Journée Parfaite - A Day in French"
+language: fr
+
+source:
+  type: youtube
+  url: "https://www.youtube.com/watch?v=abc123"
+
+  # Optional: Trim intro/outro BEFORE extracting transcript
+  # Text-based pages work on trimmed audio only
+  startTime: "00:18"  # Skip 18-second intro music
+  endTime: "03:23"    # Stop at 3:23, skip outro/end screen
+
+# TEXT-BASED MODE: Path to edited transcript with page break markers
+# After running youtube-extract-transcript, edit this file to add:
+# - Page breaks using --- (triple dash)
+# - Page titles using # Page N: Title format
+transcriptSource: ".youtube-cache/abc123/full-transcript-edited.txt"
+
+# MATCHING MODE: How strictly to match edited text to Whisper segments
+# - "strict": Exact match only (100%), use for unedited transcripts
+# - "tolerant": 85%+ similarity (DEFAULT, handles typo fixes, minor edits)
+# - "fuzzy": 60%+ similarity (handles significant rewrites)
+matchingMode: "tolerant"
+
+translation:
+  enabled: true
+  targetLanguage: en
+  style: collapsible
+
+# IMPORTANT: Do NOT include "pages" array with timestamps in text-based mode
+# The system will derive timestamps automatically from matched Whisper segments
+#
+# If you include both transcriptSource AND pages with timestamps, you'll get:
+# "Error: Cannot use both transcriptSource (text-based) and pages.startTime (timestamp-based)"
+
+# Example output structure after generation:
+# .youtube-cache/abc123/
+#   ├── audio.mp3                      # Downloaded audio (trimmed 00:18-03:23)
+#   ├── whisper-transcript.json        # Raw Whisper API response
+#   ├── full-transcript.txt            # Initial transcript (Step 1 output)
+#   ├── full-transcript-edited.txt    # Your edited version with page breaks
+#   └── audio-segments/
+#       ├── page1.mp3                  # Generated audio for each page
+#       ├── page2.mp3
+#       └── ...

@@ -1,0 +1,22 @@
+[
+  {
+    "startTime": 0,
+    "endTime": 2.5,
+    "text": "Bonjour"
+  },
+  {
+    "startTime": 2.5,
+    "endTime": 5.0,
+    "text": "Bonjour"
+  },
+  {
+    "startTime": 5.0,
+    "endTime": 7.5,
+    "text": "Bonjour"
+  },
+  {
+    "startTime": 7.5,
+    "endTime": 10.0,
+    "text": "Au revoir"
+  }
+]

@@ -6,10 +6,12 @@
  * - Transcript segments with timestamps
  * - Audio segments with file paths
  * - Cache metadata for reusing downloads
+ * - Text-based page definitions for page break workflow
  *
  * Phase 1: YouTube Story Extraction for Interactive Books
  * Phase 2: Whisper API Transcription Integration
  * Phase 3: YouTube Extraction Improvements - Time Range Specification
+ * Phase 4: Text-Based Page Breaks for Interactive Book Stories
  */
 
 /**
@@ -212,4 +214,92 @@ export interface CacheMetadata {
    * ```
    */
   extractionRange?: ExtractionRange;
+}
+
+/**
+ * Page definition extracted from text-based transcript with page breaks.
+ *
+ * Used in text-based workflow where educators mark page breaks in transcript.
+ * Contains page structure before timestamp derivation.
+ *
+ * Phase 4: Text-Based Page Breaks for Interactive Book Stories
+ */
+export interface PageDefinition {
+  /**
+   * Page number (1-based, sequential)
+   */
+  pageNumber: number;
+
+  /**
+   * Page title (extracted from markdown heading or auto-generated)
+   */
+  title: string;
+
+  /**
+   * Page content text (between page break delimiters)
+   * Whitespace normalized for matching (multiple spaces → single space)
+   */
+  text: string;
+}
+
+/**
+ * Matched transcript segments for a page.
+ *
+ * Result of matching page text to Whisper segments using SegmentMatcher.
+ * Includes confidence score from similarity matching.
+ *
+ * Phase 4: Text-Based Page Breaks for Interactive Book Stories
+ */
+export interface MatchedSegment {
+  /**
+   * Page number (1-based)
+   */
+  pageNumber: number;
+
+  /**
+   * Matched Whisper segments for this page
+   * Can include multiple segments for pages spanning segment boundaries
+   */
+  segments: TranscriptSegment[];
+
+  /**
+   * Match confidence score (0.0-1.0)
+   * 1.0 = exact match after normalization
+   * 0.85-0.99 = tolerant mode match (minor edits detected)
+   * 0.60-0.84 = fuzzy mode match (significant edits detected)
+   */
+  confidence: number;
+}
+
+/**
+ * Derived timestamp for a page based on matched segments.
+ *
+ * Calculated from matched Whisper segment boundaries.
+ * Used by AudioSplitter to generate audio segments.
+ *
+ * Phase 4: Text-Based Page Breaks for Interactive Book Stories
+ */
+export interface DerivedTimestamp {
+  /**
+   * Page number (1-based)
+   */
+  pageNumber: number;
+
+  /**
+   * Derived start time in seconds (from first matched segment)
+   * Preserves Whisper's decimal precision (e.g., 9.4, 17.6)
+   */
+  startTime: number;
+
+  /**
+   * Derived end time in seconds (from last matched segment)
+   * Preserves Whisper's decimal precision (e.g., 24.1, 35.8)
+   */
+  endTime: number;
+
+  /**
+   * Page duration in seconds (endTime - startTime)
+   * Calculated field for validation and display
+   */
+  duration: number;
 }

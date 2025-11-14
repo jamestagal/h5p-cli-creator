@@ -6,6 +6,7 @@
  *
  * Phase 1: YouTube Story Extraction for Interactive Books
  * Phase 2: YouTube Extraction Improvements - Time Range Specification
+ * Phase 4: Text-Based Page Breaks for Interactive Book Stories
  */
 
 /**
@@ -175,6 +176,24 @@ export type PageConfig = YouTubeIntroPage | StoryPage;
  *     startTime: "00:00"  # Relative to trimmed audio (= 01:30 in original video)
  *     endTime: "00:45"
  * ```
+ *
+ * @example Text-based configuration (Phase 4):
+ * ```yaml
+ * title: "French Story with Text-Based Pages"
+ * language: fr
+ *
+ * source:
+ *   type: youtube
+ *   url: "https://www.youtube.com/watch?v=abc123"
+ *
+ * transcriptSource: ".youtube-cache/abc123/full-transcript-edited.txt"
+ * matchingMode: "tolerant"  # or "strict", "fuzzy"
+ *
+ * translation:
+ *   enabled: true
+ *   targetLanguage: en
+ *   style: collapsible
+ * ```
  */
 export interface StoryConfig {
   /**
@@ -199,6 +218,14 @@ export interface StoryConfig {
 
   /**
    * Array of page configurations (intro page + story pages)
+   *
+   * LEGACY MODE: Used when transcriptSource is NOT specified.
+   * Each page must include startTime and endTime timestamps.
+   *
+   * TEXT-BASED MODE: Not used when transcriptSource is specified.
+   * Page structure comes from marked transcript file instead.
+   *
+   * NOTE: Cannot use both transcriptSource and pages with timestamps.
    */
   pages: PageConfig[];
 
@@ -215,6 +242,58 @@ export interface StoryConfig {
    * More accurate than yt-dlp VTT parsing (avoids repetition and artifacts)
    */
   manualTranscriptPath?: string;
+
+  /**
+   * Optional path to edited transcript file with page break markers.
+   *
+   * TEXT-BASED MODE (Phase 4): When specified, uses text-based page breaks workflow:
+   * - Educator marks page breaks using `---` delimiters in transcript
+   * - System matches text to Whisper segments
+   * - Timestamps derived automatically from matched segments
+   * - Perfect audio/text alignment guaranteed
+   *
+   * Format: Markdown with page breaks
+   * - `---` (triple dash) = page break delimiter
+   * - `# Page N: Title` = page heading (optional)
+   * - Text between delimiters = page content
+   *
+   * Example:
+   * ```markdown
+   * # Page 1: Introduction
+   * Ma journée parfaite. Je m'appelle Liam.
+   * ---
+   * # Page 2: Morning routine
+   * Je me réveille sans réveil.
+   * ---
+   * ```
+   *
+   * IMPORTANT: Cannot use both transcriptSource and pages with timestamps.
+   * When transcriptSource is present, pages array is ignored.
+   *
+   * @example ".youtube-cache/abc123/full-transcript-edited.txt"
+   */
+  transcriptSource?: string;
+
+  /**
+   * Optional text matching mode for text-based workflow.
+   *
+   * Controls how strictly page text must match Whisper transcript:
+   * - "strict": Exact match after normalization (whitespace/punctuation only)
+   * - "tolerant": Token-based similarity ≥85% (default, handles minor edits)
+   * - "fuzzy": Relaxed matching ≥60% (handles significant edits, generates warnings)
+   *
+   * Default: "tolerant" (recommended for most use cases)
+   *
+   * GUIDANCE:
+   * - Use "strict" when transcript is unedited or only whitespace/punctuation fixes
+   * - Use "tolerant" when fixing typos, merging sentences, minor pedagogical edits
+   * - Use "fuzzy" when heavily editing text while preserving meaning
+   *
+   * Only applies when transcriptSource is specified.
+   *
+   * @example "tolerant"
+   */
+  matchingMode?: "strict" | "tolerant" | "fuzzy";
 }
 
 /**
@@ -229,4 +308,25 @@ export function isYouTubeIntroPage(page: PageConfig): page is YouTubeIntroPage {
  */
 export function isStoryPage(page: PageConfig): page is StoryPage {
   return "startTime" in page && "endTime" in page;
+}
+
+/**
+ * Validates that config doesn't mix text-based and timestamp-based modes.
+ *
+ * @param config Story configuration to validate
+ * @throws Error if both transcriptSource and timestamp-based pages are present
+ */
+export function validateConfigMode(config: StoryConfig): void {
+  const hasTranscriptSource = !!config.transcriptSource;
+  const hasTimestampPages = config.pages.some(isStoryPage);
+
+  if (hasTranscriptSource && hasTimestampPages) {
+    throw new Error(
+      "Config validation error: Cannot use both transcriptSource (text-based mode) " +
+      "and pages with startTime/endTime (timestamp-based mode) in same config. " +
+      "Choose one approach:\n" +
+      "  - Text-based mode: Use transcriptSource field, remove timestamps from pages\n" +
+      "  - Timestamp-based mode: Remove transcriptSource field, keep timestamps in pages"
+    );
+  }
 }

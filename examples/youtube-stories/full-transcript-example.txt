@@ -1,0 +1,68 @@
+# Example edited transcript with page break markers
+#
+# This file demonstrates the markdown format for text-based page breaks.
+# After running youtube-extract-transcript, edit the generated transcript
+# to add page breaks (---) and page titles (# Page N: Title).
+#
+# Format rules:
+# - Use --- (triple dash) on its own line as page break
+# - Use # Page N: Title format for page headings (optional, auto-numbered if omitted)
+# - Text between delimiters becomes page content
+# - Multiple paragraphs within a page are preserved (separated by blank lines)
+# - UTF-8 encoding preserves diacritics (Vietnamese, French accents, etc.)
+
+# Page 1: Introduction
+Ma journée parfaite. Je m'appelle Liam.
+---
+# Page 2: Waking Up
+Je me réveille sans réveil.
+---
+# Page 3: Morning Routine
+Je prends une douche chaude puis je prépare le petit déjeuner.
+
+Je mange des crêpes avec du miel et bois du jus d'orange frais.
+---
+# Page 4: Going Out
+Délicieux! Après le petit déjeuner, je sors.
+---
+# Page 5: At School
+Je vais à l'école à pied. J'aime marcher le matin.
+---
+# Page 6: End of Day
+Après l'école, je rentre à la maison. C'était une belle journée.
+---
+
+# EXAMPLE: Repetition Drill (Language Learning)
+# For videos with repeated phrases, sequential matching ensures each repetition
+# gets its own unique Whisper segment chronologically:
+
+# # Page 1: First Repetition
+# Bonjour
+# ---
+# # Page 2: Second Repetition
+# Bonjour
+# ---
+# # Page 3: Third Repetition
+# Bonjour
+# ---
+# # Page 4: Student Turn
+# Répétez: Bonjour
+# ---
+
+# EXAMPLE: Multi-Segment Page
+# Pages can span multiple Whisper segments automatically:
+
+# # Page 1: Long Morning Routine
+# Je me réveille très tôt le matin. Je prends une longue douche chaude.
+#
+# Ensuite, je prépare un petit déjeuner copieux avec des crêpes, du miel,
+# et du jus d'orange frais pressé.
+#
+# J'aime prendre mon temps pour bien commencer la journée!
+# ---
+
+# NOTES:
+# - Each "Bonjour" in repetition drill maps to a different Whisper segment
+# - Multi-segment pages automatically derive timestamps from first segment start to last segment end
+# - Blank lines between paragraphs within a page are preserved
+# - Decimal precision from Whisper (9.4s, 17.6s) is preserved in derived timestamps

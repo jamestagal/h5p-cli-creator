@@ -4,12 +4,16 @@
  * This module orchestrates the complete YouTube story extraction pipeline:
  * 1. Parse config YAML and validate structure
  * 2. Extract audio and transcript from YouTube (YouTubeExtractor)
- * 3. Split audio at timestamps (AudioSplitter)
- * 4. Match transcript to pages (TranscriptMatcher)
- * 5. Translate pages (StoryTranslator)
- * 6. Generate Interactive Book YAML (InteractiveBookYamlGenerator)
+ * 3. DUAL-MODE SUPPORT:
+ *    - TEXT-BASED MODE: Parse edited transcript, match to segments, derive timestamps
+ *    - TIMESTAMP MODE: Use config timestamps directly (legacy, backward compatible)
+ * 4. Split audio at timestamps (AudioSplitter)
+ * 5. Match transcript to pages (TranscriptMatcher)
+ * 6. Translate pages (StoryTranslator)
+ * 7. Generate Interactive Book YAML (InteractiveBookYamlGenerator)
  *
  * Phase 3: YouTube Story Extraction for Interactive Books
+ * Phase 4: Text-Based Page Breaks for Interactive Book Stories
  */
 
 import * as path from "path";
@@ -17,15 +21,21 @@ import * as yargs from "yargs";
 import * as fsExtra from "fs-extra";
 import * as yaml from "js-yaml";
 
-import { StoryConfig, isYouTubeIntroPage, isStoryPage } from "../../models/StoryConfig";
+import { StoryConfig, isYouTubeIntroPage, isStoryPage, validateConfigMode } from "../../models/StoryConfig";
 import { YouTubeExtractor } from "../../services/YouTubeExtractor";
 import { AudioSplitter, TimestampSegment } from "../../services/AudioSplitter";
 import { TranscriptMatcher, PageDefinition } from "../../services/TranscriptMatcher";
 import { StoryTranslator } from "../../services/StoryTranslator";
 import { InteractiveBookYamlGenerator } from "../../services/InteractiveBookYamlGenerator";
 import { GeminiTranscriptParser } from "../../services/GeminiTranscriptParser";
-import { TranscriptSegment } from "../../services/types/YouTubeExtractorTypes";
+import { TranscriptSegment, MatchedSegment, DerivedTimestamp } from "../../services/types/YouTubeExtractorTypes";
 import { validateTimeRange, validatePageTimestamps, parseTimeToSeconds } from "../../utils/timeRangeValidation";
+
+// Text-based mode services
+import { TranscriptFileParser } from "../../services/transcription/TranscriptFileParser";
+import { SegmentMatcher } from "../../services/transcription/SegmentMatcher";
+import { TimestampDeriver } from "../../services/transcription/TimestampDeriver";
+import { PageDefinition as TextPageDefinition } from "../../services/types/YouTubeExtractorTypes";
 
 /**
  * YouTubeExtractModule is the CLI command handler for youtube-extract.
@@ -39,12 +49,13 @@ export class YouTubeExtractModule implements yargs.CommandModule {
   public command = "youtube-extract <config>";
   public describe =
     "Extracts audio, transcript, and translations from YouTube video to generate Interactive Book YAML. \
+    Supports both text-based (transcriptSource) and timestamp-based (pages) workflows. \
     Requires ffmpeg and yt-dlp system dependencies. Requires OPENAI_API_KEY environment variable for translation.";
 
   public builder = (y: yargs.Argv) =>
     y
       .positional("config", {
-        describe: "YAML config file defining story structure and timestamps",
+        describe: "YAML config file defining story structure (text-based or timestamp-based)",
         type: "string",
       })
       .option("output", {
@@ -98,6 +109,19 @@ export class YouTubeExtractModule implements yargs.CommandModule {
       if (verbose) console.log("Step 1: Parsing config YAML...");
       const config = await this.parseAndValidateConfig(configPath);
 
+      // Validate config mode (text-based vs timestamp-based)
+      validateConfigMode(config);
+
+      // Detect mode
+      const isTextBasedMode = !!config.transcriptSource;
+      const mode = isTextBasedMode ? "text-based" : "timestamp-based";
+
+      console.log(`Mode: ${mode}`);
+      if (isTextBasedMode) {
+        console.log(`  - Transcript: ${config.transcriptSource}`);
+        console.log(`  - Matching Mode: ${config.matchingMode || "tolerant"}`);
+      }
+
       if (verbose) {
         console.log(`  - Title: "${config.title}"`);
         console.log(`  - Language: ${config.language}`);
@@ -105,7 +129,9 @@ export class YouTubeExtractModule implements yargs.CommandModule {
         if (config.source.startTime && config.source.endTime) {
           console.log(`  - Time Range: ${config.source.startTime} - ${config.source.endTime}`);
         }
-        console.log(`  - Pages: ${config.pages.length}`);
+        if (!isTextBasedMode) {
+          console.log(`  - Pages: ${config.pages.length}`);
+        }
         console.log();
       }
 
@@ -208,7 +234,7 @@ export class YouTubeExtractModule implements yargs.CommandModule {
         console.log();
       }
 
-      // Calculate trimmed duration for page timestamp validation
+      // Calculate trimmed duration for validation
       let trimmedDuration: number;
       if (config.source.startTime && config.source.endTime) {
         const startSeconds = parseTimeToSeconds(config.source.startTime);
@@ -223,28 +249,141 @@ export class YouTubeExtractModule implements yargs.CommandModule {
         trimmedDuration = metadata.duration;
       }
 
-      // Validate page timestamps against trimmed duration
-      if (verbose) console.log("  - Validating page timestamps...");
-      const storyPages = config.pages.filter(isStoryPage);
-      for (let i = 0; i < storyPages.length; i++) {
-        const page = storyPages[i];
-        const pageNumber = i + 1;
+      // DUAL-MODE WORKFLOW BRANCHING
+      let timestampSegments: TimestampSegment[];
+      let textBasedPages: TextPageDefinition[] | undefined;
 
-        try {
-          validatePageTimestamps(page.startTime, page.endTime, trimmedDuration, pageNumber);
-        } catch (error: any) {
+      if (isTextBasedMode) {
+        // TEXT-BASED MODE WORKFLOW
+        console.log("\n=== Text-Based Mode Workflow ===\n");
+
+        // Step 3a: Load and parse edited transcript
+        console.log("Step 3: Parsing edited transcript...");
+        const transcriptPath = path.resolve(config.transcriptSource!);
+
+        if (!await fsExtra.pathExists(transcriptPath)) {
           throw new Error(
-            `Page timestamp validation failed: ${error.message}\n` +
-            `Note: Page timestamps are relative to trimmed audio start (00:00), not original video.`
+            `Transcript file not found: ${config.transcriptSource}\n\n` +
+            "Make sure you've created and edited the transcript file.\n" +
+            "Run youtube-extract-transcript first to generate the initial transcript."
           );
         }
+
+        const parser = new TranscriptFileParser(transcriptPath);
+        const pages = await parser.parse();
+
+        console.log(`  ✓ Found ${pages.length} pages with page breaks`);
+        if (verbose) {
+          pages.forEach((page) => {
+            const textPreview = page.text.substring(0, 50).replace(/\n/g, " ");
+            console.log(`    - Page ${page.pageNumber}: ${page.title} - ${textPreview}...`);
+          });
+          console.log();
+        }
+
+        // Store for later use in transcript matching
+        textBasedPages = pages;
+
+        // Step 4a: Load cached Whisper segments
+        console.log("Step 4: Loading Whisper segments...");
+        const cacheDir = extractor.getCacheDirectory(videoId);
+        const whisperCachePath = path.join(cacheDir, "whisper-transcript.json");
+
+        if (!await fsExtra.pathExists(whisperCachePath)) {
+          throw new Error(
+            `Whisper transcript cache not found: ${whisperCachePath}\n\n` +
+            "Run youtube-extract-transcript first to generate the Whisper transcript."
+          );
+        }
+
+        const whisperSegments: TranscriptSegment[] = await fsExtra.readJson(whisperCachePath, { encoding: "utf-8" });
+        console.log(`  ✓ Loaded ${whisperSegments.length} Whisper segments`);
+        if (verbose) console.log();
+
+        // Step 5a: Match pages to segments
+        console.log("Step 5: Matching text to Whisper segments...");
+        const matchingMode = config.matchingMode || "tolerant";
+        console.log(`  - Using ${matchingMode} matching mode`);
+
+        const matcher = new SegmentMatcher(whisperSegments, matchingMode);
+        const matchedSegments: MatchedSegment[] = pages.map((page) => {
+          const matched = matcher.matchPageToSegments(page.text);
+          // Override pageNumber (SegmentMatcher sets it to 0)
+          return {
+            ...matched,
+            pageNumber: page.pageNumber
+          };
+        });
+
+        console.log(`  ✓ Matched ${matchedSegments.length} pages to segments`);
+
+        // Show confidence scores
+        matchedSegments.forEach((matched) => {
+          const confidence = (matched.confidence * 100).toFixed(0);
+          const segmentCount = matched.segments.length;
+          const status = matched.confidence === 1.0 ? "✅" : matched.confidence >= 0.9 ? "⚠️" : "❗";
+          console.log(`    ${status} Page ${matched.pageNumber}: ${segmentCount} segment(s), ${confidence}% confidence`);
+        });
+        if (verbose) console.log();
+
+        // Step 6a: Derive timestamps from matched segments
+        console.log("Step 6: Deriving timestamps from matched segments...");
+        const derivedTimestamps: DerivedTimestamp[] = TimestampDeriver.deriveTimestamps(matchedSegments);
+
+        console.log(`  ✓ Derived timestamps for ${derivedTimestamps.length} pages`);
+        if (verbose) {
+          derivedTimestamps.forEach((ts) => {
+            console.log(
+              `    - Page ${ts.pageNumber}: ${ts.startTime.toFixed(1)}s - ${ts.endTime.toFixed(1)}s (${ts.duration.toFixed(1)}s)`
+            );
+          });
+          console.log();
+        }
+
+        // Convert DerivedTimestamp[] to TimestampSegment[] for AudioSplitter
+        timestampSegments = derivedTimestamps.map((ts) => ({
+          pageNumber: ts.pageNumber,
+          startTime: ts.startTime,
+          endTime: ts.endTime
+        }));
+
+      } else {
+        // TIMESTAMP MODE WORKFLOW (Legacy, backward compatible)
+        console.log("\n=== Timestamp Mode Workflow (Legacy) ===\n");
+
+        // Validate page timestamps against trimmed duration
+        if (verbose) console.log("Step 3: Validating page timestamps...");
+        const storyPages = config.pages.filter(isStoryPage);
+        for (let i = 0; i < storyPages.length; i++) {
+          const page = storyPages[i];
+          const pageNumber = i + 1;
+
+          try {
+            validatePageTimestamps(page.startTime, page.endTime, trimmedDuration, pageNumber);
+          } catch (error: any) {
+            throw new Error(
+              `Page timestamp validation failed: ${error.message}\n` +
+              `Note: Page timestamps are relative to trimmed audio start (00:00), not original video.`
+            );
+          }
+        }
+
+        if (verbose) console.log("  ✓ All page timestamps valid");
+        if (verbose) console.log();
+
+        // Build timestamp segments from story pages (skip intro page)
+        timestampSegments = storyPages.map((page, index) => ({
+          pageNumber: index + 1,
+          startTime: this.parseTimestamp(page.startTime),
+          endTime: this.parseTimestamp(page.endTime)
+        }));
       }
 
-      if (verbose) console.log("  ✓ All page timestamps valid");
-      if (verbose) console.log();
+      // COMMON WORKFLOW (both modes converge here)
+      console.log("\n=== Common Processing Steps ===\n");
 
-      // Step 3: Split audio at timestamps
-      console.log("Step 3: Splitting audio into segments...");
+      // Step 7 (or 3b): Split audio at timestamps
+      console.log(`Step ${isTextBasedMode ? '7' : '3'}: Splitting audio into segments...`);
 
       // Construct video-specific cache directory path for audio segments
       const audioSegmentsDir = path.join(extractor.getCacheDirectory(videoId), "audio-segments");
@@ -255,34 +394,48 @@ export class YouTubeExtractModule implements yargs.CommandModule {
       // Pass video-specific path to AudioSplitter constructor
       const splitter = new AudioSplitter(audioSegmentsDir);
 
-      // Build timestamp segments from story pages (skip intro page)
-      const timestampSegments: TimestampSegment[] = storyPages.map((page, index) => ({
-        pageNumber: index + 1,
-        startTime: this.parseTimestamp(page.startTime),
-        endTime: this.parseTimestamp(page.endTime)
-      }));
-
       const audioSegments = await splitter.splitAudio(audioPath, timestampSegments, trimmedDuration);
       console.log(`  ✓ Created ${audioSegments.length} audio segments`);
       if (verbose) console.log();
 
-      // Step 4: Match transcript to pages
-      console.log("Step 4: Matching transcript to pages...");
+      // Step 8 (or 4b): Match transcript to pages
+      console.log(`Step ${isTextBasedMode ? '8' : '4'}: Matching transcript to pages...`);
       const matcher = new TranscriptMatcher();
 
       // Build page definitions for matcher
-      const pageDefinitions: PageDefinition[] = storyPages.map((page, index) => {
-        const audioSegment = audioSegments[index];
-        return {
-          pageNumber: index + 1,
-          title: page.title,
-          startTime: this.parseTimestamp(page.startTime),
-          endTime: this.parseTimestamp(page.endTime),
-          audioPath: path.relative(process.cwd(), audioSegment.filePath),
-          imagePath: page.image || "placeholder.png",
-          isPlaceholder: page.placeholder !== false // Default to true
-        };
-      });
+      let pageDefinitions: PageDefinition[];
+
+      if (isTextBasedMode && textBasedPages) {
+        // Text-based mode: Use pages from transcript parser
+        pageDefinitions = textBasedPages.map((page, index) => {
+          const audioSegment = audioSegments[index];
+          const ts = timestampSegments[index];
+          return {
+            pageNumber: page.pageNumber,
+            title: page.title,
+            startTime: ts.startTime,
+            endTime: ts.endTime,
+            audioPath: path.relative(process.cwd(), audioSegment.filePath),
+            imagePath: "placeholder.png",
+            isPlaceholder: true
+          };
+        });
+      } else {
+        // Timestamp mode: Use pages from config
+        const storyPages = config.pages.filter(isStoryPage);
+        pageDefinitions = storyPages.map((page, index) => {
+          const audioSegment = audioSegments[index];
+          return {
+            pageNumber: index + 1,
+            title: page.title,
+            startTime: this.parseTimestamp(page.startTime),
+            endTime: this.parseTimestamp(page.endTime),
+            audioPath: path.relative(process.cwd(), audioSegment.filePath),
+            imagePath: page.image || "placeholder.png",
+            isPlaceholder: page.placeholder !== false // Default to true
+          };
+        });
+      }
 
       const pageData = matcher.matchToPages(transcript, pageDefinitions);
       console.log(`  ✓ Matched transcript to ${pageData.length} pages`);
@@ -295,10 +448,10 @@ export class YouTubeExtractModule implements yargs.CommandModule {
         console.log();
       }
 
-      // Step 5: Translate pages (if enabled)
+      // Step 9 (or 5b): Translate pages (if enabled)
       let translatedPageData = pageData;
       if (config.translation.enabled && !skipTranslation) {
-        console.log("Step 5: Translating to English...");
+        console.log(`Step ${isTextBasedMode ? '9' : '5'}: Translating to English...`);
 
         if (!process.env.OPENAI_API_KEY) {
           console.warn("  ⚠ Warning: OPENAI_API_KEY not found. Skipping translation.");
@@ -318,13 +471,13 @@ export class YouTubeExtractModule implements yargs.CommandModule {
         }
       } else {
         if (verbose) {
-          console.log("Step 5: Skipping translation (--skip-translation flag or disabled in config)");
+          console.log(`Step ${isTextBasedMode ? '9' : '5'}: Skipping translation (--skip-translation flag or disabled in config)`);
           console.log();
         }
       }
 
-      // Step 6: Generate Interactive Book YAML
-      console.log("Step 6: Generating Interactive Book YAML...");
+      // Step 10 (or 6b): Generate Interactive Book YAML
+      console.log(`Step ${isTextBasedMode ? '10' : '6'}: Generating Interactive Book YAML...`);
       const generator = new InteractiveBookYamlGenerator();
 
       // Build full transcript for accordion
@@ -388,6 +541,16 @@ export class YouTubeExtractModule implements yargs.CommandModule {
         } else if (error.message.includes("Time range validation failed") || error.message.includes("Page timestamp validation failed")) {
           // Clear, actionable error message for time range issues
           console.error(`  ${error.message}`);
+        } else if (error.message.includes("Config validation error")) {
+          // Config mode validation error
+          console.error(`  ${error.message}`);
+        } else if (error.message.includes("Page text not found") || error.message.includes("not found in Whisper segments")) {
+          // Text matching error
+          console.error(`  ${error.message}`);
+          console.error("\n  Suggestions:");
+          console.error("    - Check that edited text matches Whisper transcript closely");
+          console.error("    - Try using matchingMode: 'fuzzy' in config");
+          console.error("    - Run youtube-validate-transcript first to preview matching");
         } else {
           console.error(`  ${error.message}`);
           if (verbose && error.stack) {
@@ -429,8 +592,16 @@ export class YouTubeExtractModule implements yargs.CommandModule {
     if (!config.source || !config.source.url) {
       throw new Error("Missing required field: source.url");
     }
-    if (!config.pages || config.pages.length === 0) {
-      throw new Error("Missing required field: pages (must have at least one page)");
+
+    // Text-based mode: transcriptSource required, pages optional
+    // Timestamp mode: pages required
+    const hasTranscriptSource = !!config.transcriptSource;
+    const hasPages = config.pages && config.pages.length > 0;
+
+    if (!hasTranscriptSource && !hasPages) {
+      throw new Error(
+        "Missing required field: either transcriptSource (text-based mode) or pages (timestamp mode) must be specified"
+      );
     }
 
     // Validate time range format (if specified)
@@ -453,25 +624,27 @@ export class YouTubeExtractModule implements yargs.CommandModule {
       );
     }
 
-    // Validate timestamp format for story pages
-    const storyPages = config.pages.filter(isStoryPage);
-    for (const page of storyPages) {
-      if (!this.isValidTimestamp(page.startTime)) {
-        throw new Error(`Invalid timestamp format: ${page.startTime}. Expected MM:SS format.`);
-      }
-      if (!this.isValidTimestamp(page.endTime)) {
-        throw new Error(`Invalid timestamp format: ${page.endTime}. Expected MM:SS format.`);
-      }
+    // Validate timestamp format for story pages (timestamp mode only)
+    if (!hasTranscriptSource && hasPages) {
+      const storyPages = config.pages.filter(isStoryPage);
+      for (const page of storyPages) {
+        if (!this.isValidTimestamp(page.startTime)) {
+          throw new Error(`Invalid timestamp format: ${page.startTime}. Expected MM:SS format.`);
+        }
+        if (!this.isValidTimestamp(page.endTime)) {
+          throw new Error(`Invalid timestamp format: ${page.endTime}. Expected MM:SS format.`);
+        }
 
-      // Validate timestamp ranges
-      const startSeconds = this.parseTimestamp(page.startTime);
-      const endSeconds = this.parseTimestamp(page.endTime);
+        // Validate timestamp ranges
+        const startSeconds = this.parseTimestamp(page.startTime);
+        const endSeconds = this.parseTimestamp(page.endTime);
 
-      if (startSeconds < 0) {
-        throw new Error(`Invalid start time: ${page.startTime} (cannot be negative)`);
-      }
-      if (endSeconds <= startSeconds) {
-        throw new Error(`Invalid time range: ${page.startTime} - ${page.endTime} (end must be after start)`);
+        if (startSeconds < 0) {
+          throw new Error(`Invalid start time: ${page.startTime} (cannot be negative)`);
+        }
+        if (endSeconds <= startSeconds) {
+          throw new Error(`Invalid time range: ${page.startTime} - ${page.endTime} (end must be after start)`);
+        }
       }
     }
 

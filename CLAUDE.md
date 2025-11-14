@@ -55,6 +55,308 @@ Currently there is no automated test suite. Testing is done manually:
 
 When adding new content types, create corresponding test CSV files in the tests/ directory.
 
+## Text-Based Page Breaks Workflow for YouTube Stories
+
+h5p-cli-creator supports extracting Interactive Book stories from YouTube videos using a text-based workflow that ensures perfect audio/text alignment. Instead of manually calculating timestamps, educators mark page breaks directly in the transcript.
+
+### Why Text-Based Mode?
+
+**Problems with Timestamp-Based Approach:**
+- Audio/text misalignment due to >50% segment assignment rule
+- Decimal second limitations (Whisper uses 9.4s, 17.6s but config accepts MM:SS)
+- Difficult for continuous speech with minimal pauses
+- Manual timestamp calculation is tedious and error-prone
+
+**Benefits of Text-Based Mode:**
+- Perfect audio/text alignment (same source segments)
+- Natural workflow: review text → mark pages → generate
+- No timestamp calculations required
+- Supports decimal precision from Whisper
+- Easy to edit transcripts while preserving audio boundaries
+
+### Three-Step Workflow
+
+#### Step 1: Extract Transcript
+
+Extract the transcript from a YouTube video for review:
+
+```bash
+node ./dist/index.js youtube-extract-transcript config.yaml
+```
+
+This command:
+- Downloads audio from YouTube video
+- Transcribes with Whisper API (or uses cache)
+- Saves human-readable transcript to `.youtube-cache/{VIDEO_ID}/full-transcript.txt`
+- Each Whisper segment separated by blank line
+
+**Output location:** `.youtube-cache/{VIDEO_ID}/full-transcript.txt`
+
+#### Step 2: Edit Transcript and Mark Page Breaks
+
+Open the transcript file and:
+1. Fix any transcription errors (typos, formatting)
+2. Insert page breaks using `---` (triple dash)
+3. Add page titles using `# Page N: Title` format
+4. Save as `full-transcript-edited.txt` in same directory
+
+**Markdown Format:**
+```markdown
+# Page 1: Introduction
+Ma journée parfaite. Je m'appelle Liam.
+---
+# Page 2: Morning Routine
+Je me réveille sans réveil.
+---
+# Page 3: Breakfast
+Je prends une douche chaude puis je prépare le petit déjeuner.
+---
+```
+
+**Format Rules:**
+- `---` on its own line = page break
+- `# Page N: Title` = page heading (optional, auto-numbered if omitted)
+- Text between delimiters = page content
+- Multiple paragraphs within a page are preserved
+- UTF-8 encoding preserves diacritics (Vietnamese, French, etc.)
+
+#### Step 3: Validate (Optional but Recommended)
+
+Before generating, validate the transcript format:
+
+```bash
+node ./dist/index.js youtube-validate-transcript config.yaml
+```
+
+This command:
+- Validates page break format
+- Shows page structure preview with durations
+- Reports match confidence for each page
+- Displays warnings for edge cases (short pages, low similarity)
+- **Zero cost** (no H5P generation, just validation)
+
+**Example output:**
+```
+✅ Format valid: 12 pages found
+✅ All page breaks formatted correctly
+✅ All pages have content
+⚠️  Page 3 is very short (6.5 seconds)
+⚠️  Page 8 text similarity 87% (minor edits detected)
+
+📊 Story Structure:
+  Page 1: Introduction (9.4s) - ✅ 100% match
+  Page 2: Waking up (8.2s) - ✅ 100% match
+  Page 3: Morning routine (6.5s) - ⚠️ Very short
+  ...
+
+Total duration: 3:05 (185 seconds)
+```
+
+#### Step 4: Generate Story
+
+Generate the Interactive Book from the marked transcript:
+
+```bash
+node ./dist/index.js youtube-extract config.yaml --output story.yaml
+```
+
+This command:
+- Detects text-based mode (config has `transcriptSource` field)
+- Parses edited transcript with page breaks
+- Matches page text to Whisper segments
+- Derives timestamps from segment boundaries
+- Splits audio at precise timestamps
+- Generates translations (if enabled)
+- Creates Interactive Book YAML + H5P package
+
+### Config File Structure
+
+**Text-Based Mode Config:**
+
+```yaml
+title: "French Story with Text-Based Pages"
+language: fr
+
+source:
+  type: youtube
+  url: "https://www.youtube.com/watch?v=abc123"
+  startTime: "00:18"  # Optional: Skip intro
+  endTime: "03:23"    # Optional: Skip outro
+
+transcriptSource: ".youtube-cache/abc123/full-transcript-edited.txt"
+matchingMode: "tolerant"  # or "strict", "fuzzy"
+
+translation:
+  enabled: true
+  targetLanguage: en
+  style: collapsible
+```
+
+**Key Fields:**
+- `transcriptSource`: Path to edited transcript with page breaks
+- `matchingMode`: Text matching algorithm (see below)
+- **Do NOT include** `pages` array with timestamps (conflicting modes error)
+
+### Matching Modes
+
+The system supports three matching modes for handling edited text:
+
+#### Strict Mode (`matchingMode: "strict"`)
+- **Threshold:** 100% exact match after normalization
+- **Use when:** Transcript is unedited or only whitespace/punctuation fixes
+- **Tolerates:** Extra spaces, newlines, punctuation differences
+- **Does NOT tolerate:** Word changes, additions, deletions
+
+```yaml
+matchingMode: "strict"
+```
+
+#### Tolerant Mode (`matchingMode: "tolerant"`) - **DEFAULT**
+- **Threshold:** 85%+ token similarity (Jaccard index)
+- **Use when:** Fixing typos, merging sentences, minor pedagogical edits
+- **Tolerates:** Small word changes, reordering, minor additions/deletions
+- **Recommended for:** Most use cases
+
+```yaml
+matchingMode: "tolerant"  # Or omit - this is default
+```
+
+#### Fuzzy Mode (`matchingMode: "fuzzy"`)
+- **Threshold:** 60%+ token similarity
+- **Use when:** Heavily editing text while preserving meaning
+- **Tolerates:** Significant rewrites, paraphrasing
+- **Generates warnings:** For low-confidence matches
+
+```yaml
+matchingMode: "fuzzy"
+```
+
+**How Matching Works:**
+- System uses **sequential matching**: Each page matches segments AFTER previous page's last matched segment
+- Prevents duplicate segment assignment
+- Critical for language learning repetition drills (1st "Bonjour" → 2nd "Bonjour" → 3rd "Bonjour")
+- Uses Jaccard similarity: `intersection(tokens) / union(tokens)`
+- Sliding window search: Tries 1 segment, then 2, then 3+ to find best multi-segment match
+
+### Special Use Cases
+
+#### Repetition Drills (Language Learning)
+
+For videos with repeated phrases, sequential matching ensures each repetition gets its own unique segment:
+
+```markdown
+# Page 1: First Repetition
+Bonjour
+---
+# Page 2: Second Repetition
+Bonjour
+---
+# Page 3: Student Turn
+Répétez: Bonjour
+---
+```
+
+Each "Bonjour" page maps to a different Whisper segment chronologically.
+
+#### Multi-Segment Pages
+
+Pages spanning multiple Whisper segments work automatically:
+
+```markdown
+# Page 1: Morning Routine
+Je prends une douche chaude puis je prépare le petit déjeuner.
+Je mange des crêpes avec du miel et bois du jus d'orange frais.
+Délicieux! Après le petit déjeuner, je sors.
+---
+```
+
+System finds all segments containing this text and derives timestamps from first segment start to last segment end.
+
+#### Trimming Intro/Outro
+
+Use `source.startTime` and `source.endTime` to skip intro music, "hey guys" intros, outro music, end screens:
+
+```yaml
+source:
+  type: youtube
+  url: "https://www.youtube.com/watch?v=abc123"
+  startTime: "00:18"  # Skip 18-second intro
+  endTime: "03:23"    # Stop at 3:23, skip outro
+```
+
+**Important:** Extract transcript AFTER trimming. Text-based pages work on trimmed audio only.
+
+### Troubleshooting
+
+#### Error: "No page breaks (---) found in transcript"
+**Cause:** Transcript doesn't have any `---` delimiters.
+**Solution:** Add at least one `---` between pages.
+
+#### Error: "Page N has no content between delimiters"
+**Cause:** Empty page (two `---` with nothing between).
+**Solution:** Add content to the page or remove extra delimiter.
+
+#### Error: "Page text not found in Whisper segments. Similarity: X%"
+**Cause:** Edited text differs too much from Whisper transcript for current matching mode.
+**Solutions:**
+1. Use `matchingMode: "fuzzy"` in config (tolerates 60%+ similarity)
+2. Revert text closer to Whisper output
+3. Run `youtube-validate-transcript` to preview matching before generation
+
+#### Warning: "Page N is very short (X seconds)"
+**Cause:** Page duration < 5 seconds.
+**Impact:** May feel rushed for learners.
+**Solution:** Consider combining with adjacent pages.
+
+#### Warning: "Page N is very long (X seconds, >2 minutes)"
+**Cause:** Page duration > 120 seconds.
+**Impact:** May be too long for single page in learning context.
+**Solution:** Consider splitting into multiple pages.
+
+#### Warning: "Page N text similarity X% (minor edits detected)"
+**Cause:** Match confidence < 100% in tolerant mode.
+**Impact:** Text was edited (not exact match to Whisper).
+**Action:** Review page to ensure edits are intentional.
+
+### Best Practices
+
+1. **Always validate first:** Run `youtube-validate-transcript` before `youtube-extract` to catch format errors early (zero cost)
+2. **Trim intro/outro:** Set `source.startTime` and `source.endTime` BEFORE extracting transcript
+3. **Use tolerant mode:** Default matching mode handles most editing scenarios
+4. **Preview page structure:** Check validation output for durations and confidence
+5. **Preserve UTF-8:** Ensure editor saves as UTF-8 for Vietnamese/French diacritics
+6. **Sequential repetitions:** For language drills, let sequential matching handle repeated phrases automatically
+
+### File Storage Structure
+
+Text-based mode uses this cache structure:
+
+```
+.youtube-cache/{VIDEO_ID}/
+├── audio.mp3                      # Downloaded audio (trimmed if time range specified)
+├── whisper-transcript.json        # Raw Whisper API response (cached)
+├── full-transcript.txt            # Human-readable initial transcript
+├── full-transcript-edited.txt    # Edited version with page breaks (you create this)
+└── audio-segments/
+    ├── page1.mp3                  # Generated audio segments
+    ├── page2.mp3
+    └── ...
+```
+
+### Backward Compatibility
+
+Text-based mode is NEW workflow, not a replacement:
+- **Timestamp mode** (legacy): Still works with `pages[].startTime/endTime` in config
+- **Text-based mode** (new): Works with `transcriptSource` field in config
+- **Error if both:** System prevents mixing modes in same config
+
+### Example Configs
+
+See `examples/youtube-stories/text-based-example.yaml` for complete config example.
+
+See `examples/youtube-stories/full-transcript-example.txt` for transcript format example.
+
+
 ## Architecture
 
 ### Core Components

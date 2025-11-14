@@ -1,0 +1,8 @@
+# Page 1: Introduction
+Ma journée parfaite. Je m'appelle Liam.
+---
+# Page 2: Morning routine
+Je me réveille sans un réveil.
+---
+# Page 3: Going outside
+Après le petit-déjeuner, je sors.

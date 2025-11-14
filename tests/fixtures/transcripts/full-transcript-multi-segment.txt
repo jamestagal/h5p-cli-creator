@@ -1,0 +1,8 @@
+# Page 1: Long page
+Ma journée parfaite. Je m'appelle Liam. Je me réveille sans réveil. Après le petit déjeuner, je sors.
+---
+# Page 2: Another page
+Bonjour
+---
+# Page 3: Final page
+Au revoir
