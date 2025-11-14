@@ -8,8 +8,10 @@
  * - Handle API failures gracefully with retry logic
  * - Preserve Vietnamese diacritics (UTF-8 encoding)
  * - Provide user-friendly error messages
+ * - Display cost savings when audio is trimmed
  *
  * Phase 1: Whisper API Transcription Integration
+ * Phase 3: YouTube Extraction Improvements - Cost Transparency
  */
 
 import OpenAI from "openai";
@@ -26,6 +28,7 @@ import { TranscriptSegment } from "../types/YouTubeExtractorTypes";
  * - Proper diacritics, punctuation, and capitalization
  * - File-based caching to reduce API costs
  * - Cost estimation and transparency ($0.006 per minute)
+ * - Cost savings display when trimming is used
  * - Retry logic for transient failures
  * - User-friendly error messages
  */
@@ -59,19 +62,22 @@ export class WhisperTranscriptionService {
    * - Checks cache before making API call
    * - Validates file size (max 25MB)
    * - Estimates and logs cost
+   * - Shows cost savings when audio is trimmed
    * - Retries on transient failures
    * - Preserves Vietnamese diacritics (UTF-8 encoding)
    *
    * @param audioPath Path to audio file (MP3, MP4, M4A, WAV, WEBM)
    * @param language Language code (e.g., "vi" for Vietnamese, "en" for English)
    * @param videoId YouTube video ID for cache directory
+   * @param originalDuration Optional original video duration in seconds (for cost savings display)
    * @returns Array of transcript segments with timestamps
    * @throws Error if transcription fails or file invalid
    */
   public async transcribe(
     audioPath: string,
     language: string,
-    videoId: string
+    videoId: string,
+    originalDuration?: number
   ): Promise<TranscriptSegment[]> {
     const cacheDir = path.join(this.cacheBasePath, videoId);
     const cachePath = path.join(cacheDir, "whisper-transcript.json");
@@ -90,17 +96,32 @@ export class WhisperTranscriptionService {
     }
 
     // Calculate duration and estimated cost
-    const duration = await this.getAudioDuration(audioPath);
-    const durationMinutes = duration / 60;
-    const estimatedCost = durationMinutes * this.COST_PER_MINUTE;
+    const trimmedDuration = await this.getAudioDuration(audioPath);
+    const trimmedMinutes = trimmedDuration / 60;
+    const trimmedCost = trimmedMinutes * this.COST_PER_MINUTE;
 
-    console.log(`Estimated transcription cost: $${estimatedCost.toFixed(2)}`);
+    // Display cost with savings if audio was trimmed
+    if (originalDuration && originalDuration > trimmedDuration) {
+      const originalMinutes = originalDuration / 60;
+      const originalCost = originalMinutes * this.COST_PER_MINUTE;
+      const savings = originalCost - trimmedCost;
+      const savedDuration = originalDuration - trimmedDuration;
+
+      const trimmedTime = this.formatDuration(trimmedDuration);
+      const savedTime = this.formatDuration(savedDuration);
+
+      console.log(
+        `Transcribing ${trimmedTime} (saved ${savedTime}, $${savings.toFixed(2)})`
+      );
+    } else {
+      console.log(`Estimated transcription cost: $${trimmedCost.toFixed(2)}`);
+    }
 
     // Call Whisper API with retry logic
     const segments = await this.callWhisperAPIWithRetry(audioPath, language);
 
     // Log actual cost (same as estimate for Whisper API)
-    console.log(`Transcription complete. Cost: $${estimatedCost.toFixed(2)}`);
+    console.log(`Transcription complete. Cost: $${trimmedCost.toFixed(2)}`);
 
     // Cache the transcript
     await this.cacheTranscript(cacheDir, cachePath, segments);
@@ -243,6 +264,24 @@ export class WhisperTranscriptionService {
     const estimatedDuration = stats.size / (16 * 1024); // seconds
 
     return estimatedDuration;
+  }
+
+  /**
+   * Formats duration in seconds to MM:SS or HH:MM:SS format.
+   *
+   * @param seconds Duration in seconds
+   * @returns Formatted time string (e.g., "5:30", "1:15:45")
+   */
+  private formatDuration(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    } else {
+      return `${minutes}:${secs.toString().padStart(2, "0")}`;
+    }
   }
 
   /**

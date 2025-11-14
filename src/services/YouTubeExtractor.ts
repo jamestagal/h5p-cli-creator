@@ -7,9 +7,12 @@
  * - Extract transcript with timestamps using Whisper API
  * - Manage caching in .youtube-cache/VIDEO_ID/ directory
  * - Preserve Vietnamese diacritics (UTF-8 encoding)
+ * - Support time range extraction with ffmpeg trimming
+ * - Display cost transparency and savings
  *
  * Phase 1: YouTube Story Extraction for Interactive Books
  * Phase 2: Whisper API Transcription Integration
+ * Phase 3: YouTube Extraction Improvements - Audio Trimming and Cost Transparency
  */
 
 import * as fsExtra from "fs-extra";
@@ -19,6 +22,7 @@ import { promisify } from "util";
 import chalk from "chalk";
 import { VideoMetadata, TranscriptSegment, CacheMetadata } from "./types/YouTubeExtractorTypes";
 import { WhisperTranscriptionService } from "./transcription/WhisperTranscriptionService";
+import { parseTimeToSeconds } from "../utils/timeRangeValidation";
 
 const execAsync = promisify(exec);
 
@@ -32,6 +36,8 @@ const execAsync = promisify(exec);
  * - Caching strategy for fast iteration
  * - Vietnamese character encoding preservation
  * - Cost transparency for transcription
+ * - Time range extraction (trim before transcription)
+ * - Cost savings display when trimming is used
  */
 export class YouTubeExtractor {
   private cacheBasePath: string;
@@ -113,12 +119,21 @@ export class YouTubeExtractor {
    * - Output to cache directory
    * - Preserve metadata
    *
+   * If startTime and endTime are provided, trims the audio after download.
+   *
    * @param videoId YouTube video ID
    * @param url Full YouTube URL
-   * @returns Path to downloaded audio file
+   * @param startTime Optional start time for trimming (MM:SS or HH:MM:SS)
+   * @param endTime Optional end time for trimming (MM:SS or HH:MM:SS)
+   * @returns Path to downloaded (and possibly trimmed) audio file
    * @throws Error if yt-dlp not installed or download fails
    */
-  public async downloadAudio(videoId: string, url: string): Promise<string> {
+  public async downloadAudio(
+    videoId: string,
+    url: string,
+    startTime?: string,
+    endTime?: string
+  ): Promise<string> {
     // Check if yt-dlp is installed
     await this.checkYtDlpInstalled();
 
@@ -135,15 +150,78 @@ export class YouTubeExtractor {
 
     console.log(chalk.blue("Downloading audio from YouTube..."));
 
-    // Download using yt-dlp
+    // Download full video using yt-dlp (yt-dlp cannot download partial ranges)
     const command = `yt-dlp -x --audio-format mp3 -o "${outputPath}" "${url}"`;
 
     try {
       await execAsync(command);
       console.log(chalk.green("Audio download complete:"), outputPath);
+
+      // Trim audio if time range specified
+      if (startTime && endTime) {
+        console.log(chalk.blue(`Trimming audio to ${startTime}-${endTime}...`));
+        await this.trimAudio(videoId, startTime, endTime);
+        console.log(chalk.green(`Audio trimmed to ${startTime}-${endTime}`));
+      }
+
       return outputPath;
     } catch (error: any) {
       throw new Error(`Failed to download audio: ${error.message}`);
+    }
+  }
+
+  /**
+   * Trims audio to specified time range using ffmpeg.
+   *
+   * Strategy:
+   * 1. Download full video first (yt-dlp limitation)
+   * 2. Trim using ffmpeg with copy codec (no re-encoding, <2 seconds overhead)
+   * 3. Overwrite original audio.mp3 with trimmed version
+   *
+   * Uses ffmpeg command:
+   * `ffmpeg -y -i audio.mp3 -ss START_SECONDS -to END_SECONDS -c copy audio-trimmed.mp3`
+   *
+   * @param videoId YouTube video ID
+   * @param startTime Start time in MM:SS or HH:MM:SS format
+   * @param endTime End time in MM:SS or HH:MM:SS format
+   * @throws Error if ffmpeg fails or invalid time range
+   * @private
+   */
+  private async trimAudio(videoId: string, startTime: string, endTime: string): Promise<void> {
+    // Check if ffmpeg is installed
+    await this.checkFfmpegInstalled();
+
+    const cacheDir = this.getCacheDirectory(videoId);
+    const audioPath = path.join(cacheDir, "audio.mp3");
+    const trimmedPath = path.join(cacheDir, "audio-trimmed.mp3");
+
+    // Convert timestamps to seconds
+    const startSeconds = parseTimeToSeconds(startTime);
+    const endSeconds = parseTimeToSeconds(endTime);
+
+    // Validate range
+    if (startSeconds >= endSeconds) {
+      throw new Error(
+        `Invalid time range: startTime (${startTime}) must be before endTime (${endTime}). ` +
+          `Got ${startSeconds} seconds and ${endSeconds} seconds.`
+      );
+    }
+
+    // Trim audio using ffmpeg with copy codec
+    // -y: overwrite output file
+    // -i: input file
+    // -ss: start time in seconds
+    // -to: end time in seconds
+    // -c copy: copy codec (no re-encoding, preserves quality and speed)
+    const command = `ffmpeg -y -i "${audioPath}" -ss ${startSeconds} -to ${endSeconds} -c copy "${trimmedPath}"`;
+
+    try {
+      await execAsync(command);
+
+      // Replace original audio with trimmed version
+      await fsExtra.move(trimmedPath, audioPath, { overwrite: true });
+    } catch (error: any) {
+      throw new Error(`Failed to trim audio: ${error.message}`);
     }
   }
 
@@ -153,17 +231,20 @@ export class YouTubeExtractor {
    * Uses WhisperTranscriptionService for high-quality transcription.
    * Preserves Vietnamese diacritics with UTF-8 encoding.
    * Displays cost estimate and progress messages.
+   * Shows cost savings when audio is trimmed.
    *
    * @param videoId YouTube video ID
    * @param audioPath Path to audio file
    * @param language Language code (e.g., "vi" for Vietnamese, "en" for English)
+   * @param originalDuration Optional original video duration for cost savings display
    * @returns Array of transcript segments with timestamps
    * @throws Error if transcription fails
    */
   public async extractTranscript(
     videoId: string,
     audioPath: string,
-    language: string = "vi"
+    language: string = "vi",
+    originalDuration?: number
   ): Promise<TranscriptSegment[]> {
     const cacheDir = this.getCacheDirectory(videoId);
     await fsExtra.ensureDir(cacheDir);
@@ -182,16 +263,8 @@ export class YouTubeExtractor {
     console.log(chalk.gray(`Language: ${this.getLanguageName(language)} (${language})`));
 
     try {
-      // Calculate duration and estimated cost before API call
-      const duration = await this.getAudioDuration(audioPath);
-      const durationMinutes = duration / 60;
-      const estimatedCost = durationMinutes * 0.006;
-
-      console.log(chalk.gray(`Duration: ${durationMinutes.toFixed(1)} minutes`));
-      console.log(chalk.gray(`Estimated cost: $${estimatedCost.toFixed(2)}`));
-
-      // Use Whisper API for transcription
-      const segments = await this.whisperService.transcribe(audioPath, language, videoId);
+      // Use Whisper API for transcription (with original duration for cost savings display)
+      const segments = await this.whisperService.transcribe(audioPath, language, videoId, originalDuration);
 
       // Cache the transcript with UTF-8 encoding
       await fsExtra.writeJson(transcriptPath, segments, {
@@ -200,7 +273,6 @@ export class YouTubeExtractor {
       });
 
       console.log(chalk.green("Transcription complete!"));
-      console.log(chalk.gray(`Actual cost: $${estimatedCost.toFixed(2)}`));
       console.log(chalk.gray(`Cached: ${transcriptPath}`));
 
       return segments;
@@ -302,6 +374,24 @@ export class YouTubeExtractor {
   }
 
   /**
+   * Checks if ffmpeg is installed on the system.
+   * @throws Error with installation instructions if not found
+   * @private
+   */
+  private async checkFfmpegInstalled(): Promise<void> {
+    try {
+      await execAsync("ffmpeg -version");
+    } catch (error) {
+      throw new Error(
+        "ffmpeg is not installed. Please install it:\n\n" +
+          "macOS:   brew install ffmpeg\n" +
+          "Ubuntu:  apt-get install ffmpeg\n" +
+          "Windows: Download from https://ffmpeg.org/download.html\n"
+      );
+    }
+  }
+
+  /**
    * Gets audio duration from file metadata.
    *
    * Uses file size heuristic for estimation.
@@ -336,22 +426,45 @@ export class YouTubeExtractor {
   }
 
   /**
+   * Formats duration in seconds to MM:SS or HH:MM:SS format.
+   *
+   * @param seconds Duration in seconds
+   * @returns Formatted time string (e.g., "5:30", "1:15:45")
+   */
+  private formatDuration(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    } else {
+      return `${minutes}:${secs.toString().padStart(2, "0")}`;
+    }
+  }
+
+  /**
    * Complete extraction workflow for a YouTube video.
    *
    * Steps:
    * 1. Extract video ID from URL
    * 2. Check cache (skip download if cached)
    * 3. Download audio as MP3
-   * 4. Extract transcript with Whisper API
-   * 5. Save cache metadata with transcription details
+   * 4. Trim audio if time range specified
+   * 5. Extract transcript with Whisper API
+   * 6. Save cache metadata with transcription details
    *
    * @param url YouTube video URL
    * @param language Language code for transcription (default: "vi")
+   * @param startTime Optional start time for trimming (MM:SS or HH:MM:SS)
+   * @param endTime Optional end time for trimming (MM:SS or HH:MM:SS)
    * @returns Object with video metadata, audio path, and transcript segments
    */
   public async extract(
     url: string,
-    language: string = "vi"
+    language: string = "vi",
+    startTime?: string,
+    endTime?: string
   ): Promise<{
     metadata: VideoMetadata;
     audioPath: string;
@@ -385,6 +498,15 @@ export class YouTubeExtractor {
           duration: cachedMetadata.duration || 0,
           thumbnailUrl: ""
         };
+
+        // Display extraction range if present
+        if (cachedMetadata.extractionRange) {
+          console.log(
+            chalk.gray(
+              `Extracted ${cachedMetadata.extractionRange.startTime}-${cachedMetadata.extractionRange.endTime} from video`
+            )
+          );
+        }
       } else {
         metadata = await this.getVideoMetadata(url);
       }
@@ -393,20 +515,62 @@ export class YouTubeExtractor {
       if (cachedMetadata?.transcription) {
         console.log(chalk.gray(`Cached transcription: ${cachedMetadata.transcription.language} (${cachedMetadata.transcription.provider})`));
         console.log(chalk.gray(`Previous cost: $${cachedMetadata.transcription.cost.toFixed(2)}`));
+
+        // Display cost savings if extraction range was used
+        if (cachedMetadata.extractionRange && cachedMetadata.duration) {
+          const originalMinutes = cachedMetadata.duration / 60;
+          const trimmedMinutes = cachedMetadata.transcription.duration / 60;
+          const originalCost = originalMinutes * 0.006;
+          const savings = originalCost - cachedMetadata.transcription.cost;
+
+          if (savings > 0) {
+            console.log(chalk.gray(`Cost savings from trimming: $${savings.toFixed(2)}`));
+          }
+        }
       }
     } else {
       // Download fresh data
       metadata = await this.getVideoMetadata(url);
-      audioPath = await this.downloadAudio(videoId, url);
-      transcript = await this.extractTranscript(videoId, audioPath, language);
+      audioPath = await this.downloadAudio(videoId, url, startTime, endTime);
+
+      // Display cost transparency before transcription
+      if (startTime && endTime && metadata.duration) {
+        const trimmedDuration = await this.getAudioDuration(audioPath);
+        const originalDuration = metadata.duration;
+
+        const originalMinutes = originalDuration / 60;
+        const trimmedMinutes = trimmedDuration / 60;
+        const originalCost = originalMinutes * 0.006;
+        const trimmedCost = trimmedMinutes * 0.006;
+        const savings = originalCost - trimmedCost;
+
+        const originalTime = this.formatDuration(originalDuration);
+        const trimmedTime = this.formatDuration(trimmedDuration);
+
+        console.log(
+          chalk.gray(
+            `Original video: ${originalTime} ($${originalCost.toFixed(2)}), ` +
+            `Trimming to: ${trimmedTime} ($${trimmedCost.toFixed(2)}), ` +
+            `Savings: $${savings.toFixed(2)}`
+          )
+        );
+      }
+
+      // Extract transcript with cost savings display
+      transcript = await this.extractTranscript(
+        videoId,
+        audioPath,
+        language,
+        startTime && endTime ? metadata.duration : undefined
+      );
 
       // Calculate transcription cost
       const duration = await this.getAudioDuration(audioPath);
       const durationMinutes = duration / 60;
       const cost = durationMinutes * 0.006;
 
-      // Save cache metadata with transcription details
-      await this.saveCacheMetadata(videoId, {
+      // Build cache metadata
+      const cacheMetadata: CacheMetadata = {
         videoId,
         audioPath,
         transcriptPath: path.join(this.getCacheDirectory(videoId), "whisper-transcript.json"),
@@ -421,7 +585,19 @@ export class YouTubeExtractor {
           cost: cost,
           duration: duration
         }
-      });
+      };
+
+      // Add extraction range if specified
+      if (startTime && endTime) {
+        cacheMetadata.extractionRange = {
+          startTime,
+          endTime
+        };
+        console.log(chalk.gray(`Extracted ${startTime}-${endTime} from video`));
+      }
+
+      // Save cache metadata with transcription details
+      await this.saveCacheMetadata(videoId, cacheMetadata);
     }
 
     return {

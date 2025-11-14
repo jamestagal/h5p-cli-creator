@@ -12,26 +12,26 @@
 **Dependencies:** None
 **Estimated Time:** 1-2 hours
 
-- [ ] 1.0 Complete audio segment cache relocation
-  - [ ] 1.1 Write 2-6 focused tests for cache directory organization
+- [x] 1.0 Complete audio segment cache relocation
+  - [x] 1.1 Write 2-6 focused tests for cache directory organization
     - Test audio segments created in correct cache location (`.youtube-cache/{VIDEO_ID}/audio-segments/`)
     - Test segment naming remains sequential (page1.mp3, page2.mp3)
     - Test cache deletion removes audio segments
     - Limit to critical path tests only (no exhaustive coverage)
-  - [ ] 1.2 Update youtube-extract-module.ts to pass video-specific path
+  - [x] 1.2 Update youtube-extract-module.ts to pass video-specific path
     - Pass `.youtube-cache/{VIDEO_ID}/audio-segments/` to AudioSplitter constructor
     - Construct path using `path.join(extractor.getCacheDirectory(videoId), "audio-segments")`
     - Ensure directory is created before AudioSplitter is instantiated
-  - [ ] 1.3 Verify AudioSplitter constructor accepts custom path
+  - [x] 1.3 Verify AudioSplitter constructor accepts custom path
     - Review constructor: `constructor(outputDirectory?: string)`
     - Confirm default behavior: `./audio-segments` (backward compatible)
     - Confirm custom path behavior: accepts absolute path
     - No changes needed to AudioSplitter class (already supports this)
-  - [ ] 1.4 Update InteractiveBookAIHandler path references
+  - [x] 1.4 Update InteractiveBookAIHandler path references
     - Update any hardcoded references to `audio-segments/` directory
     - Use paths relative to `.youtube-cache/{VIDEO_ID}/audio-segments/`
     - Ensure YAML generation references correct segment paths
-  - [ ] 1.5 Ensure audio segment cache tests pass
+  - [x] 1.5 Ensure audio segment cache tests pass
     - Run ONLY the 2-6 tests written in 1.1
     - Verify segments appear in correct cache location
     - Do NOT run the entire test suite at this stage
@@ -51,16 +51,16 @@
 **Dependencies:** None
 **Estimated Time:** 30-45 minutes
 
-- [ ] 2.0 Complete type system extensions
-  - [ ] 2.1 Extend VideoSourceConfig interface in YouTubeExtractorTypes.ts
+- [x] 2.0 Complete type system extensions
+  - [x] 2.1 Extend VideoSourceConfig interface in YouTubeExtractorTypes.ts
     - Add optional `startTime?: string` field (MM:SS or HH:MM:SS format)
     - Add optional `endTime?: string` field (MM:SS or HH:MM:SS format)
     - Document that omitting both fields = full video (backward compatible)
-  - [ ] 2.2 Extend CacheMetadata interface in YouTubeExtractorTypes.ts
+  - [x] 2.2 Extend CacheMetadata interface in YouTubeExtractorTypes.ts
     - Add optional `extractionRange?: { startTime: string; endTime: string }` field
     - Store original time strings (not converted to seconds)
     - Maintain backward compatibility (field is optional)
-  - [ ] 2.3 Add time range validation utilities
+  - [x] 2.3 Add time range validation utilities
     - Create `parseTimeToSeconds(timeString: string): number` utility
     - Support both MM:SS and HH:MM:SS formats
     - Reuse AudioSplitter's timestamp parsing logic if applicable
@@ -78,29 +78,29 @@
 **Dependencies:** Task Group 2
 **Estimated Time:** 1-2 hours
 
-- [ ] 3.0 Complete audio trimming implementation
-  - [ ] 3.1 Write 2-6 focused tests for audio trimming
+- [x] 3.0 Complete audio trimming implementation
+  - [x] 3.1 Write 2-6 focused tests for audio trimming
     - Test trimmed audio has correct duration
     - Test trimmed audio starts at specified time
     - Test full video extraction when no range specified (backward compatibility)
     - Test validation rejects invalid ranges (startTime >= endTime)
     - Limit to critical workflow tests only
-  - [ ] 3.2 Implement ffmpeg trimming in YouTubeExtractor
+  - [x] 3.2 Implement ffmpeg trimming in YouTubeExtractor
     - Add `trimAudio()` method to YouTubeExtractor class
     - Use ffmpeg command: `ffmpeg -y -i input.mp3 -ss START_SECONDS -to END_SECONDS -c copy trimmed.mp3`
     - Convert MM:SS/HH:MM:SS to decimal seconds for ffmpeg
     - Use copy codec (`-c copy`) to avoid re-encoding (fast, no quality loss)
     - Overwrite original audio.mp3 with trimmed version
-  - [ ] 3.3 Integrate trimming into downloadAudio() workflow
+  - [x] 3.3 Integrate trimming into downloadAudio() workflow
     - After yt-dlp downloads full audio, check if time range specified
     - If startTime/endTime present, call trimAudio() with range
     - If no range specified, skip trimming (backward compatible)
     - Log trimming operation: "Trimming audio to 01:30-15:00..."
-  - [ ] 3.4 Update cache metadata to store extraction range
+  - [x] 3.4 Update cache metadata to store extraction range
     - Save `extractionRange: { startTime, endTime }` in cache-metadata.json when specified
     - Display range in console: "Extracted 01:30-15:00 from video"
     - Load extraction range from cache for display/reference
-  - [ ] 3.5 Ensure audio trimming tests pass
+  - [x] 3.5 Ensure audio trimming tests pass
     - Run ONLY the 2-6 tests written in 3.1
     - Verify trimmed audio has correct duration
     - Do NOT run the entire test suite at this stage
@@ -116,21 +116,21 @@
 **Dependencies:** Task Group 3
 **Estimated Time:** 30-45 minutes
 
-- [ ] 4.0 Complete cost calculation updates
-  - [ ] 4.1 Write 2-4 focused tests for cost calculation
+- [x] 4.0 Complete cost calculation updates
+  - [x] 4.1 Write 2-4 focused tests for cost calculation
     - Test cost calculated based on trimmed duration (not full video)
     - Test cost savings displayed correctly
     - Limit to critical cost calculation tests only
-  - [ ] 4.2 Update WhisperTranscriptionService cost display
+  - [x] 4.2 Update WhisperTranscriptionService cost display
     - Calculate cost based on trimmed audio duration
     - Display cost savings when range specified
     - Format: "Transcribing 5:30 (saved 3:15, $0.02)"
     - Show original video duration, trimmed duration, and savings
-  - [ ] 4.3 Add cost transparency to console output
+  - [x] 4.3 Add cost transparency to console output
     - Before transcription: "Original video: 20:00 ($0.12), Trimming to: 17:00 ($0.10), Savings: $0.02"
     - After transcription: Log actual cost based on trimmed duration
     - Store cost savings in cache metadata for reference
-  - [ ] 4.4 Ensure cost calculation tests pass
+  - [x] 4.4 Ensure cost calculation tests pass
     - Run ONLY the 2-4 tests written in 4.1
     - Verify cost calculation uses trimmed duration
     - Do NOT run the entire test suite at this stage
@@ -145,24 +145,24 @@
 **Dependencies:** Task Groups 2-4
 **Estimated Time:** 45 minutes - 1 hour
 
-- [ ] 5.0 Complete config parsing and validation
-  - [ ] 5.1 Write 2-6 focused tests for config parsing
+- [x] 5.0 Complete config parsing and validation
+  - [x] 5.1 Write 2-6 focused tests for config parsing
     - Test config with startTime/endTime parses correctly
     - Test config without range works (backward compatibility)
     - Test invalid ranges rejected with clear errors
     - Test page timestamps validated against trimmed duration
     - Limit to critical validation tests only
-  - [ ] 5.2 Update youtube-extract-module.ts config parsing
+  - [x] 5.2 Update youtube-extract-module.ts config parsing
     - Parse `source.startTime` and `source.endTime` from YAML config
     - Pass time range to YouTubeExtractor.extract() method
     - Validate time range format before extraction begins
     - Provide clear error messages for invalid formats
-  - [ ] 5.3 Update page timestamp validation
+  - [x] 5.3 Update page timestamp validation
     - Validate page timestamps are within trimmed audio duration
     - Page startTime "00:00" maps to source.startTime in original video
     - Page endTime must not exceed (source.endTime - source.startTime)
     - Error message example: "Page 3 endTime 10:30 exceeds trimmed audio duration 8:45"
-  - [ ] 5.4 Ensure config parsing tests pass
+  - [x] 5.4 Ensure config parsing tests pass
     - Run ONLY the 2-6 tests written in 5.1
     - Verify time range parsing and validation
     - Do NOT run the entire test suite at this stage
@@ -182,13 +182,13 @@
 **Dependencies:** Task Groups 1-5
 **Estimated Time:** 1-1.5 hours
 
-- [ ] 6.0 Complete integration testing and documentation
-  - [ ] 6.1 Review existing tests and fill critical gaps only
+- [x] 6.0 Complete integration testing and documentation
+  - [x] 6.1 Review existing tests and fill critical gaps only
     - Review tests from Task Groups 1-5 (approximately 8-22 tests)
     - Identify missing end-to-end workflow tests
     - Focus ONLY on critical user workflows for these two features
     - Do NOT assess entire application test coverage
-  - [ ] 6.2 Write up to 8 additional strategic tests maximum
+  - [x] 6.2 Write up to 8 additional strategic tests maximum
     - End-to-end: Full video extraction with segments in cache directory
     - End-to-end: Trimmed video extraction with cost savings
     - Integration: Cache metadata includes extraction range
@@ -198,19 +198,19 @@
     - Backward compatibility: Config without startTime/endTime works
     - Validation: Invalid time ranges rejected before expensive operations
     - Maximum 8 tests total - focus on high-value scenarios only
-  - [ ] 6.3 Update example YAML configs
+  - [x] 6.3 Update example YAML configs
     - Update `examples/youtube-stories/*.yaml` with startTime/endTime examples
     - Add comments explaining time range feature
     - Add example showing cost savings calculation
     - Add example with full video (no range specified)
-  - [ ] 6.4 Update user documentation
+  - [x] 6.4 Update user documentation
     - Update `docs/user-guides/youtube-story-extraction.md`
     - Document startTime/endTime config fields
     - Document time format support (MM:SS and HH:MM:SS)
     - Document cost savings feature
     - Document cache directory organization changes
     - Add troubleshooting section for time range validation errors
-  - [ ] 6.5 Run feature-specific tests only
+  - [x] 6.5 Run feature-specific tests only
     - Run ONLY tests related to these two features (approximately 16-30 tests total)
     - Verify all critical workflows pass
     - Do NOT run the entire application test suite
@@ -315,11 +315,15 @@ Recommended implementation sequence:
 
 **Type Definitions:**
 - `src/services/types/YouTubeExtractorTypes.ts` - Extend interfaces
+- `src/models/StoryConfig.ts` - Extend SourceConfig interface
 
 **Core Services:**
 - `src/services/YouTubeExtractor.ts` - Add trimming logic
 - `src/services/AudioSplitter.ts` - No changes (already supports custom path)
 - `src/services/transcription/WhisperTranscriptionService.ts` - Update cost display
+
+**Utilities:**
+- `src/utils/timeRangeValidation.ts` - New file with parsing and validation utilities
 
 **Module:**
 - `src/modules/youtube-extract-module.ts` - Parse config, pass paths, validate ranges

@@ -232,31 +232,6 @@ pages:
 - `https://www.youtube.com/embed/VIDEO_ID`
 - URLs with extra parameters (`?t=`, `&list=`, etc.)
 
-**Time Range Extraction (Optional Cost Optimization):**
-
-- `source.startTime` (optional): Start time for video extraction (format: `MM:SS` or `HH:MM:SS`)
-- `source.endTime` (optional): End time for video extraction (format: `MM:SS` or `HH:MM:SS`)
-
-Extract only the relevant portion of a video to reduce Whisper API transcription costs by skipping intros, outros, or irrelevant content.
-
-**Example:**
-```yaml
-source:
-  type: youtube
-  url: "https://www.youtube.com/watch?v=VIDEO_ID"
-  startTime: "01:30"  # Skip 90-second intro
-  endTime: "18:30"    # Skip outro after 18:30
-```
-
-**Cost savings:** For a 20-minute video, trimming to 17 minutes (skip 2-min intro + 1-min outro) saves $0.02 per video (17% reduction).
-
-**Supported time formats:** `MM:SS` (e.g., "01:30") or `HH:MM:SS` (e.g., "01:30:00")
-
-**Important:** When using time ranges, page timestamps become relative to the extracted audio. Page `startTime: "00:00"` corresponds to `source.startTime` in the original video. See examples for details.
-
-**Backward compatibility:** Omitting `startTime` and `endTime` extracts the full video (default behavior).
-
-
 #### Translation Configuration
 
 - `translation.enabled` (optional): Enable/disable translation (default: `false`)
@@ -379,25 +354,8 @@ When you run the extraction command, the tool caches:
 - **Downloaded audio**: `.youtube-cache/VIDEO_ID/audio.mp3`
 - **Whisper transcript**: `.youtube-cache/VIDEO_ID/whisper-transcript.json`
 - **Translations**: `.youtube-cache/VIDEO_ID/translations.json`
-- **Downloaded audio**: `.youtube-cache/VIDEO_ID/audio.mp3` (trimmed if time range specified)
-- **Whisper transcript**: `.youtube-cache/VIDEO_ID/whisper-transcript.json`
-- **Translations**: `.youtube-cache/VIDEO_ID/translations.json`
-- **Cache metadata**: `.youtube-cache/VIDEO_ID/cache-metadata.json` (includes extraction range, cost info)
-- **Audio segments**: `.youtube-cache/VIDEO_ID/audio-segments/` (page1.mp3, page2.mp3, etc.)
+- **Cache metadata**: `.youtube-cache/VIDEO_ID/cache-metadata.json`
 
-**Cache organization:** All assets for a video are co-located in a single directory:
-
-```
-.youtube-cache/VIDEO_ID/
-├── audio.mp3                    # Extracted audio (trimmed if startTime/endTime specified)
-├── whisper-transcript.json      # Full transcript from Whisper API
-├── cache-metadata.json          # Includes extraction range, cost info
-├── translations.json            # Cached translations
-└── audio-segments/              # Audio segments for each page
-    ├── page1.mp3
-    ├── page2.mp3
-    └── ...
-```
 **On subsequent runs:**
 - Audio is NOT re-downloaded (uses cache)
 - Transcript is NOT re-transcribed (uses cache)
@@ -724,39 +682,6 @@ node ./dist/index.js youtube-extract config.yaml
 - `https://www.youtube.com/embed/VIDEO_ID`
 
 Remove extra URL parameters if they cause issues.
-
-### Error: "Invalid time format - use MM:SS or HH:MM:SS"
-
-**Cause:** Time range format not recognized
-
-**Solution:** Use valid timestamp formats:
-```yaml
-# Valid:
-startTime: "01:30"     # MM:SS
-startTime: "01:30:00"  # HH:MM:SS
-
-# Invalid:
-startTime: "90"        # Must include colons
-startTime: "1:30"      # Minutes must be zero-padded
-```
-
-### Error: "startTime must be before endTime"
-
-**Cause:** Invalid time range - startTime >= endTime
-
-**Solution:** Ensure startTime is before endTime in `source` config.
-
-### Error: "endTime exceeds video duration"
-
-**Cause:** Specified endTime is beyond the video length
-
-**Solution:** Check video duration and ensure `source.endTime` does not exceed it.
-
-### Error: "Page N endTime exceeds trimmed audio duration"
-
-**Cause:** Page timestamp exceeds the extracted audio duration when using time range extraction
-
-**Solution:** Page timestamps must be relative to trimmed audio, not original video. If `source.startTime: "01:30"` and `source.endTime: "10:00"`, the trimmed duration is 08:30, so page endTime cannot exceed "08:30".
 
 ### Error: "End time must be after start time"
 

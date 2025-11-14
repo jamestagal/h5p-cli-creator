@@ -9,6 +9,7 @@
  *
  * Phase 1: YouTube Story Extraction for Interactive Books
  * Phase 2: Whisper API Transcription Integration
+ * Phase 3: YouTube Extraction Improvements - Time Range Specification
  */
 
 /**
@@ -123,6 +124,28 @@ export interface TranscriptionMetadata {
 }
 
 /**
+ * Time range specification for video extraction
+ *
+ * Stores the original time strings from the config.
+ * Used to track what portion of the video was extracted and transcribed.
+ */
+export interface ExtractionRange {
+  /**
+   * Start time in MM:SS or HH:MM:SS format
+   * @example "01:30" - Start at 1 minute 30 seconds
+   * @example "00:15:30" - Start at 15 minutes 30 seconds
+   */
+  startTime: string;
+
+  /**
+   * End time in MM:SS or HH:MM:SS format
+   * @example "15:00" - End at 15 minutes
+   * @example "01:30:00" - End at 1 hour 30 minutes
+   */
+  endTime: string;
+}
+
+/**
  * Cache metadata for YouTube downloads
  *
  * Stored in .youtube-cache/VIDEO_ID/cache-metadata.json
@@ -166,4 +189,27 @@ export interface CacheMetadata {
    * Present when transcript was generated using Whisper API.
    */
   transcription?: TranscriptionMetadata;
+
+  /**
+   * Extraction range specification (optional)
+   *
+   * When present, indicates that the cached audio is a trimmed version
+   * of the full video, containing only the specified time range.
+   *
+   * This field tracks cost optimization: by trimming the video before
+   * transcription, users pay only for the relevant portion of the content.
+   *
+   * If omitted, the cached audio contains the full video (backward compatible).
+   *
+   * @example
+   * ```json
+   * {
+   *   "extractionRange": {
+   *     "startTime": "01:30",
+   *     "endTime": "15:00"
+   *   }
+   * }
+   * ```
+   */
+  extractionRange?: ExtractionRange;
 }

@@ -1,7 +1,8 @@
 # Advanced Example: YouTube Story Extraction
-# Story with custom images and custom output paths
+# Story with custom images and time range optimization
 #
 # This example demonstrates:
+# - Time range extraction to reduce costs
 # - Custom images for specific pages
 # - Mix of placeholder and custom images
 # - Custom descriptive page titles
@@ -15,6 +16,28 @@ source:
   type: youtube
   url: "https://www.youtube.com/watch?v=Y8M9RJ_4C7E"
 
+  # Cost Optimization: Extract only the story content (skip intro/outro)
+  #
+  # This example shows how to reduce transcription costs by extracting
+  # only the relevant portion of the video:
+  #
+  # Original video duration: 5:14 (314 seconds)
+  # Cost for full video: $0.03 (314s / 60 * $0.006)
+  #
+  # If the video had a longer intro/outro, savings would be more significant:
+  # Example for 20-minute video with 2-min intro + 1-min outro:
+  # - Full transcription: 20:00 = $0.12
+  # - Trimmed to 17:00: $0.10
+  # - Savings: $0.02 (17% reduction)
+  #
+  # Uncomment to extract specific range:
+  # startTime: "00:00"  # Start at beginning (or skip intro: "00:30")
+  # endTime: "05:14"    # End at video conclusion
+  #
+  # Supported formats:
+  # - MM:SS (e.g., "01:30" = 1 minute 30 seconds)
+  # - HH:MM:SS (e.g., "01:30:00" = 1 hour 30 minutes)
+
 translation:
   enabled: true
   targetLanguage: en
@@ -27,6 +50,11 @@ pages:
     includeTranscript: true
 
   # Story pages with descriptive titles and custom images
+  #
+  # IMPORTANT: When using time range extraction (startTime/endTime):
+  # - Page timestamps are RELATIVE to the trimmed audio, not the original video
+  # - Example: If source.startTime="01:30", then page startTime="00:00" corresponds to 01:30 in original video
+  # - Page endTime must not exceed (source.endTime - source.startTime)
 
   - title: "Once Upon a Time"
     startTime: "00:00"
@@ -97,11 +125,21 @@ pages:
 
 # Advanced workflow:
 # 1. Generate with placeholders first (fast iteration)
-# 2. Review audio segments and timestamps
+# 2. Review audio segments and timestamps in .youtube-cache/{VIDEO_ID}/audio-segments/
 # 3. Create or source custom images
 # 4. Uncomment image paths and update with actual files
 # 5. Regenerate (uses cache, very fast)
 # 6. Compile to H5P and upload
+
+# Cache organization (all assets co-located for easy management):
+# .youtube-cache/{VIDEO_ID}/
+# ├── audio.mp3                    # Extracted audio (trimmed if startTime/endTime specified)
+# ├── whisper-transcript.json      # Full transcript from Whisper API
+# ├── cache-metadata.json          # Includes extraction range, cost info
+# └── audio-segments/              # Audio segments for each page
+#     ├── page1.mp3
+#     ├── page2.mp3
+#     └── ...
 
 # To use this example:
 # 1. npm run build

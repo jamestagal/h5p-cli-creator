@@ -13,6 +13,19 @@ source:
   type: youtube
   url: "https://www.youtube.com/watch?v=Y8M9RJ_4C7E"
 
+  # Optional: Extract only a specific time range from the video
+  # This reduces transcription costs by skipping intros, outros, or irrelevant content
+  # If omitted, the entire video is extracted (default behavior)
+  #
+  # Example: Skip 30-second intro and extract main content
+  # startTime: "00:30"  # Start extraction at 30 seconds
+  # endTime: "05:14"    # End extraction at 5:14 (video end)
+  #
+  # Cost savings example for a 20-minute video:
+  # - Full video transcription: 20:00 = $0.12
+  # - Trimmed (skip 2-min intro + 1-min outro): 17:00 = $0.10
+  # - Savings: $0.02 per video (17% reduction)
+
 translation:
   enabled: true
   targetLanguage: en
@@ -26,6 +39,12 @@ pages:
 
   # Story pages with timestamps
   # Each page uses placeholder image for quick generation
+  #
+  # IMPORTANT: Page timestamps are RELATIVE to the extracted audio range
+  # - If no startTime/endTime specified: timestamps relative to video start (00:00)
+  # - If startTime/endTime specified: timestamps relative to trimmed audio start (00:00 = startTime in original video)
+  #
+  # Example: If source.startTime is "00:30", then page startTime "00:00" = 00:30 in the original video
 
   - title: "Page 1"
     startTime: "00:00"

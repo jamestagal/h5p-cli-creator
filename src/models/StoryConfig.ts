@@ -5,6 +5,7 @@
  * Users specify source video URL, page timestamps, translation settings, and image options.
  *
  * Phase 1: YouTube Story Extraction for Interactive Books
+ * Phase 2: YouTube Extraction Improvements - Time Range Specification
  */
 
 /**
@@ -20,6 +21,34 @@ export interface SourceConfig {
    * YouTube video URL (supports multiple formats: watch?v=, youtu.be/, embed/)
    */
   url: string;
+
+  /**
+   * Optional video start time for extraction (MM:SS or HH:MM:SS format)
+   *
+   * When specified, only the portion of the video from startTime to endTime
+   * will be downloaded and transcribed. This reduces transcription costs
+   * by skipping intros, outros, or irrelevant sections.
+   *
+   * If omitted, the full video is extracted (backward compatible).
+   *
+   * @example "01:30" - Start extraction at 1 minute 30 seconds
+   * @example "00:15:30" - Start extraction at 15 minutes 30 seconds
+   */
+  startTime?: string;
+
+  /**
+   * Optional video end time for extraction (MM:SS or HH:MM:SS format)
+   *
+   * When specified with startTime, defines the end of the extraction range.
+   * The video will be trimmed to only include audio between startTime and endTime.
+   *
+   * Must be greater than startTime and within video duration.
+   * If omitted, the full video is extracted (backward compatible).
+   *
+   * @example "15:00" - End extraction at 15 minutes
+   * @example "01:30:00" - End extraction at 1 hour 30 minutes
+   */
+  endTime?: string;
 }
 
 /**
@@ -128,6 +157,23 @@ export type PageConfig = YouTubeIntroPage | StoryPage;
  *     startTime: "00:00"
  *     endTime: "00:38"
  *     placeholder: true
+ * ```
+ *
+ * @example Configuration with time range (cost optimization):
+ * ```yaml
+ * title: "Story (skip intro/outro)"
+ * language: vi
+ *
+ * source:
+ *   type: youtube
+ *   url: "https://www.youtube.com/watch?v=Y8M9RJ_4C7E"
+ *   startTime: "01:30"  # Skip 90-second intro
+ *   endTime: "15:00"    # Skip outro after 15:00
+ *
+ * pages:
+ *   - title: "Page 1"
+ *     startTime: "00:00"  # Relative to trimmed audio (= 01:30 in original video)
+ *     endTime: "00:45"
  * ```
  */
 export interface StoryConfig {

@@ -25,6 +25,7 @@ import { StoryTranslator } from "../../services/StoryTranslator";
 import { InteractiveBookYamlGenerator } from "../../services/InteractiveBookYamlGenerator";
 import { GeminiTranscriptParser } from "../../services/GeminiTranscriptParser";
 import { TranscriptSegment } from "../../services/types/YouTubeExtractorTypes";
+import { validateTimeRange, validatePageTimestamps, parseTimeToSeconds } from "../../utils/timeRangeValidation";
 
 /**
  * YouTubeExtractModule is the CLI command handler for youtube-extract.
@@ -101,6 +102,9 @@ export class YouTubeExtractModule implements yargs.CommandModule {
         console.log(`  - Title: "${config.title}"`);
         console.log(`  - Language: ${config.language}`);
         console.log(`  - Video: ${config.source.url}`);
+        if (config.source.startTime && config.source.endTime) {
+          console.log(`  - Time Range: ${config.source.startTime} - ${config.source.endTime}`);
+        }
         console.log(`  - Pages: ${config.pages.length}`);
         console.log();
       }
@@ -122,7 +126,18 @@ export class YouTubeExtractModule implements yargs.CommandModule {
 
         // Download audio only (skip yt-dlp transcript extraction)
         metadata = await extractor.getVideoMetadata(config.source.url);
-        audioPath = await extractor.downloadAudio(videoId, config.source.url);
+
+        // Validate time range against video duration (if specified)
+        if (config.source.startTime && config.source.endTime) {
+          validateTimeRange(config.source.startTime, config.source.endTime, metadata.duration);
+        }
+
+        audioPath = await extractor.downloadAudio(
+          videoId,
+          config.source.url,
+          config.source.startTime,
+          config.source.endTime
+        );
 
         // Load and parse Gemini transcript
         const transcriptPath = path.resolve(config.manualTranscriptPath);
@@ -150,10 +165,32 @@ export class YouTubeExtractModule implements yargs.CommandModule {
           console.log("  ✓ Using cached audio and transcript");
         } else {
           console.log("  - Downloading audio from YouTube...");
-          console.log("  - Extracting transcript with yt-dlp...");
+          console.log("  - Extracting transcript with Whisper API...");
         }
 
-        const extractResult = await extractor.extract(config.source.url);
+        // Get video metadata first to validate time range
+        metadata = await extractor.getVideoMetadata(config.source.url);
+
+        // Validate time range format and logical consistency before extraction
+        if (config.source.startTime && config.source.endTime) {
+          if (verbose) {
+            console.log(`  - Validating time range: ${config.source.startTime} - ${config.source.endTime}`);
+          }
+
+          try {
+            validateTimeRange(config.source.startTime, config.source.endTime, metadata.duration);
+          } catch (error: any) {
+            throw new Error(`Time range validation failed: ${error.message}`);
+          }
+        }
+
+        // Extract with time range parameters
+        const extractResult = await extractor.extract(
+          config.source.url,
+          config.language,
+          config.source.startTime,
+          config.source.endTime
+        );
         audioPath = extractResult.audioPath;
         transcript = extractResult.transcript;
         metadata = extractResult.metadata;
@@ -171,19 +208,61 @@ export class YouTubeExtractModule implements yargs.CommandModule {
         console.log();
       }
 
+      // Calculate trimmed duration for page timestamp validation
+      let trimmedDuration: number;
+      if (config.source.startTime && config.source.endTime) {
+        const startSeconds = parseTimeToSeconds(config.source.startTime);
+        const endSeconds = parseTimeToSeconds(config.source.endTime);
+        trimmedDuration = endSeconds - startSeconds;
+
+        if (verbose) {
+          console.log(`  - Trimmed audio duration: ${Math.floor(trimmedDuration / 60)}:${String(Math.floor(trimmedDuration % 60)).padStart(2, '0')}`);
+        }
+      } else {
+        // No trimming - use full video duration
+        trimmedDuration = metadata.duration;
+      }
+
+      // Validate page timestamps against trimmed duration
+      if (verbose) console.log("  - Validating page timestamps...");
+      const storyPages = config.pages.filter(isStoryPage);
+      for (let i = 0; i < storyPages.length; i++) {
+        const page = storyPages[i];
+        const pageNumber = i + 1;
+
+        try {
+          validatePageTimestamps(page.startTime, page.endTime, trimmedDuration, pageNumber);
+        } catch (error: any) {
+          throw new Error(
+            `Page timestamp validation failed: ${error.message}\n` +
+            `Note: Page timestamps are relative to trimmed audio start (00:00), not original video.`
+          );
+        }
+      }
+
+      if (verbose) console.log("  ✓ All page timestamps valid");
+      if (verbose) console.log();
+
       // Step 3: Split audio at timestamps
       console.log("Step 3: Splitting audio into segments...");
-      const splitter = new AudioSplitter();
+
+      // Construct video-specific cache directory path for audio segments
+      const audioSegmentsDir = path.join(extractor.getCacheDirectory(videoId), "audio-segments");
+
+      // Ensure directory is created before AudioSplitter is instantiated
+      await fsExtra.ensureDir(audioSegmentsDir);
+
+      // Pass video-specific path to AudioSplitter constructor
+      const splitter = new AudioSplitter(audioSegmentsDir);
 
       // Build timestamp segments from story pages (skip intro page)
-      const storyPages = config.pages.filter(isStoryPage);
       const timestampSegments: TimestampSegment[] = storyPages.map((page, index) => ({
         pageNumber: index + 1,
         startTime: this.parseTimestamp(page.startTime),
         endTime: this.parseTimestamp(page.endTime)
       }));
 
-      const audioSegments = await splitter.splitAudio(audioPath, timestampSegments, metadata.duration);
+      const audioSegments = await splitter.splitAudio(audioPath, timestampSegments, trimmedDuration);
       console.log(`  ✓ Created ${audioSegments.length} audio segments`);
       if (verbose) console.log();
 
@@ -270,7 +349,7 @@ export class YouTubeExtractModule implements yargs.CommandModule {
       console.log("✅ Success!\n");
       console.log("Generated files:");
       console.log(`  📄 ${path.basename(finalOutputPath)} (Interactive Book YAML)`);
-      console.log(`  🎵 audio-segments/ (${audioSegments.length} MP3 files)`);
+      console.log(`  🎵 ${path.relative(process.cwd(), audioSegmentsDir)}/ (${audioSegments.length} MP3 files)`);
       console.log(`  💾 .youtube-cache/${videoId}/ (cached audio and transcript)`);
       console.log();
       console.log("Next step:");
@@ -306,6 +385,9 @@ export class YouTubeExtractModule implements yargs.CommandModule {
           console.error("    - Enable auto-generated captions on YouTube");
           console.error("    - Manually add captions to the video");
           console.error("    - Use a different video with captions");
+        } else if (error.message.includes("Time range validation failed") || error.message.includes("Page timestamp validation failed")) {
+          // Clear, actionable error message for time range issues
+          console.error(`  ${error.message}`);
         } else {
           console.error(`  ${error.message}`);
           if (verbose && error.stack) {
@@ -351,6 +433,26 @@ export class YouTubeExtractModule implements yargs.CommandModule {
       throw new Error("Missing required field: pages (must have at least one page)");
     }
 
+    // Validate time range format (if specified)
+    if (config.source.startTime && !this.isValidExtendedTimestamp(config.source.startTime)) {
+      throw new Error(
+        `Invalid source.startTime format: ${config.source.startTime}. Expected MM:SS or HH:MM:SS format.`
+      );
+    }
+    if (config.source.endTime && !this.isValidExtendedTimestamp(config.source.endTime)) {
+      throw new Error(
+        `Invalid source.endTime format: ${config.source.endTime}. Expected MM:SS or HH:MM:SS format.`
+      );
+    }
+
+    // Validate that both startTime and endTime are specified together
+    if ((config.source.startTime && !config.source.endTime) || (!config.source.startTime && config.source.endTime)) {
+      throw new Error(
+        "Both source.startTime and source.endTime must be specified together. " +
+        "Cannot specify only one of them."
+      );
+    }
+
     // Validate timestamp format for story pages
     const storyPages = config.pages.filter(isStoryPage);
     for (const page of storyPages) {
@@ -381,6 +483,13 @@ export class YouTubeExtractModule implements yargs.CommandModule {
    */
   private isValidTimestamp(timestamp: string): boolean {
     return /^\d{1,2}:\d{2}$/.test(timestamp);
+  }
+
+  /**
+   * Validates extended timestamp format (MM:SS or HH:MM:SS).
+   */
+  private isValidExtendedTimestamp(timestamp: string): boolean {
+    return /^\d{1,2}:\d{2}$/.test(timestamp) || /^\d{1,2}:\d{2}:\d{2}$/.test(timestamp);
   }
 
   /**
