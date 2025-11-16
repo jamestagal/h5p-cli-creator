@@ -95,7 +95,9 @@ export class SegmentMatcher {
         break;
     }
 
-    // Sliding window search
+    // Sliding window search - find BEST match, preferring larger window for equal similarity
+    let bestMatch: { segments: TranscriptSegment[]; similarity: number } | null = null;
+
     for (let windowSize = 1; windowSize <= remainingSegments.length; windowSize++) {
       const candidateSegments = remainingSegments.slice(0, windowSize);
       const candidateText = this.concatenateSegments(candidateSegments);
@@ -104,28 +106,45 @@ export class SegmentMatcher {
       // Calculate similarity
       const similarity = this.calculateJaccardSimilarity(normalizedPageText, normalizedCandidateText);
 
-      // Check if meets threshold
+      // Track best match that meets threshold
+      // CRITICAL: If similarity is equal, prefer LARGER window (more segments = more complete audio)
       if (similarity >= threshold) {
-        // Match found! Advance pointer
-        this.currentSegmentIndex += windowSize;
-
-        // Log diff if not exact match
-        if (similarity < 1.0) {
-          console.warn(`⚠️  Match confidence: ${(similarity * 100).toFixed(1)}% (${this.matchingMode} mode)`);
-          this.logDiff(normalizedPageText, normalizedCandidateText);
+        if (!bestMatch || similarity > bestMatch.similarity ||
+            (similarity === bestMatch.similarity && candidateSegments.length > bestMatch.segments.length)) {
+          bestMatch = { segments: candidateSegments, similarity };
         }
-
-        return {
-          pageNumber: 0, // Will be set by caller
-          segments: candidateSegments,
-          confidence: similarity
-        };
       }
 
-      // Stop expanding window if candidate way too large (prevents runaway)
+      // Stop expanding window if:
+      // 1. Candidate way too large (prevents runaway)
+      // 2. Similarity starts decreasing significantly (we've gone past the page content)
       if (candidateText.length > pageText.length * 2) {
         break;
       }
+      if (bestMatch && similarity < bestMatch.similarity - 0.1) {
+        // Similarity dropped more than 10% - we've probably included content from next page
+        break;
+      }
+    }
+
+    // Return best match if found
+    if (bestMatch) {
+      // Advance pointer
+      this.currentSegmentIndex += bestMatch.segments.length;
+
+      // Log diff if not exact match
+      if (bestMatch.similarity < 1.0) {
+        console.warn(`⚠️  Match confidence: ${(bestMatch.similarity * 100).toFixed(1)}% (${this.matchingMode} mode)`);
+        const candidateText = this.concatenateSegments(bestMatch.segments);
+        const normalizedCandidateText = this.normalizeText(candidateText);
+        this.logDiff(normalizedPageText, normalizedCandidateText);
+      }
+
+      return {
+        pageNumber: 0, // Will be set by caller
+        segments: bestMatch.segments,
+        confidence: bestMatch.similarity
+      };
     }
 
     // No match found

@@ -1,0 +1,119 @@
+title: Ma Journée Parfaite - Text-Based Test
+language: fr
+chapters:
+  - title: Video Introduction
+    content:
+      - type: video
+        url: https://www.youtube.com/watch?v=Fhw6aoJ-2qE
+        title: Video Introduction
+      - type: accordion
+        panels:
+          - title: Video Transcript
+            content: Ma journée parfaite Je m'appelle Liam. J'ai 24 ans. Aujourd'hui, je veux vous parler de ma journée parfaite. Je me réveille sans réveil. Je me sens plein d'énergie. Je prends une douche chaude. Puis, je prépare le petit déjeuner. Je mange des crêpes avec du miel et bois du jus d'orange frais. Délicieux. Après le petit déjeuner, je sors. Le temps est superbe. Je monte mon vélo jusqu'au parc. J'écoute de la musique et profite de l'air frais. Plus tard, je me détends sur un banc dans le parc. Je lis un bon livre. L'après-midi, je prends ma raquette de tennis et je vais au cours. Mon ami Jack m'y attend. Nous jouons au tennis pendant une heure. Nous courons beaucoup et frappons la balle avec force. C'est très amusant. Après le match, nous allons dans un petit café. Nous déjeunons et parlons de la vie. Ensuite, je rentre chez moi. Je prépare le dîner. Des pâtes avec des légumes. Je mets de la musique douce et j'apprécie cuisiner. Le soir, je m'assois à mon ordinateur. Je mets mes écouteurs. Je joue à des jeux en ligne avec mes amis. Nous rions beaucoup. C'est ma journée parfaite. Ça a l'air bien, n'est-ce pas? Mais je me réveille au son de mon réveil. C'est lundi. Je saute du lit. Je n'ai pas le temps. Je mange rapidement deux sandwiches. Je cours au travail. Je travaille du matin au soir. Je suis assise à un ordinateur et bois trop de café. Pas de vélo, pas de tennis. Le soir, je rentre chez moi, fatiguée. Je ne cuisine pas. Je mange des nouilles dans une boîte. Ensuite, je m'assois sur le canapé et je regarde simplement la télévision. C'est ma vraie journée. Mais bon, peut-être que samedi sera meilleur.
+  - title: Introduction
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: .youtube-cache/Fhw6aoJ-2qE/audio-segments/page1.mp3
+      - type: text
+        text: Ma journée parfaite Je m'appelle Liam. J'ai 24 ans. Aujourd'hui, je veux vous parler de ma journée parfaite. Je me réveille sans réveil. Je me sens plein d'énergie.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: |-
+              My Perfect Day
+
+              My name is Liam. I’m 24 years old. Today, I want to tell you about my perfect day. I wake up without an alarm clock. I feel full of energy.
+  - title: Morning routine
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: .youtube-cache/Fhw6aoJ-2qE/audio-segments/page2.mp3
+      - type: text
+        text: Je prends une douche chaude. Puis, je prépare le petit déjeuner. Je mange des crêpes avec du miel et bois du jus d'orange frais.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: I take a warm shower. Then, I make breakfast. I eat pancakes with honey and drink fresh orange juice.
+  - title: Going out
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: .youtube-cache/Fhw6aoJ-2qE/audio-segments/page3.mp3
+      - type: text
+        text: Délicieux. Après le petit déjeuner, je sors. Le temps est superbe. Je monte mon vélo jusqu'au parc. J'écoute de la musique et profite de l'air frais.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Delicious. After breakfast, I go outside. The weather is wonderful. I ride my bike to the park. I listen to music and enjoy the fresh air.
+  - title: Tennis
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: .youtube-cache/Fhw6aoJ-2qE/audio-segments/page4.mp3
+      - type: text
+        text: Plus tard, je me détends sur un banc dans le parc. Je lis un bon livre. L'après-midi, je prends ma raquette de tennis et je vais au cours. Mon ami Jack m'y attend. Nous jouons au tennis pendant une heure. Nous courons beaucoup et frappons la balle avec force. C'est très amusant. Après le match, nous allons dans un petit café.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Later, I relax on a bench in the park. I'm reading a good book. In the afternoon, I grab my tennis racket and head to practice. My friend Jack is waiting for me there. We play tennis for an hour. We run a lot and hit the ball hard. It's so much fun! After the match, we go to a little café.
+  - title: Dinner
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: .youtube-cache/Fhw6aoJ-2qE/audio-segments/page5.mp3
+      - type: text
+        text: Nous déjeunons et parlons de la vie. Ensuite, je rentre chez moi. Je prépare le dîner. Des pâtes avec des légumes.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: We have lunch and talk about life. Then, I go home. I make dinner. Pasta with vegetables.
+  - title: Evening gaming
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: .youtube-cache/Fhw6aoJ-2qE/audio-segments/page6.mp3
+      - type: text
+        text: Je mets de la musique douce et j'apprécie cuisiner. Le soir, je m'assois à mon ordinateur. Je mets mes écouteurs. Je joue à des jeux en ligne avec mes amis. Nous rions beaucoup. C'est ma journée parfaite. Ça a l'air bien, n'est-ce pas? Mais je me réveille au son de mon réveil.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: I play soft music and enjoy cooking. In the evening, I sit at my computer. I put on my headphones. I play online games with my friends. We laugh a lot. It's my perfect day. Sounds nice, doesn’t it? But then I wake up to the sound of my alarm clock.
+  - title: Monday reality
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: .youtube-cache/Fhw6aoJ-2qE/audio-segments/page7.mp3
+      - type: text
+        text: C'est lundi. Je saute du lit. Je n'ai pas le temps. Je mange rapidement deux sandwiches. Je cours au travail. Je travaille du matin au soir.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: It's Monday. I jump out of bed. I don't have time. I quickly eat two sandwiches. I run to work. I work from morning until evening.
+  - title: Evening reality
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: .youtube-cache/Fhw6aoJ-2qE/audio-segments/page8.mp3
+      - type: text
+        text: Je suis assise à un ordinateur et bois trop de café. Pas de vélo, pas de tennis. Le soir, je rentre chez moi, fatiguée. Je ne cuisine pas. Je mange des nouilles dans une boîte. Ensuite, je m'assois sur le canapé et je regarde simplement la télévision. C'est ma vraie journée. Mais bon, peut-être que samedi sera meilleur.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: I sit at a computer and drink too much coffee. No biking, no tennis. In the evening, I go home, tired. I don’t cook. I eat noodles from a box. Then, I sit on the couch and just watch TV. That’s my real day. But maybe Saturday will be better.

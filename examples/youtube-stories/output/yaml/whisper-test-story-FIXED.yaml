@@ -1,0 +1,155 @@
+title: Vietnamese Children's Story
+language: vi
+chapters:
+  - title: Video Introduction
+    content:
+      - type: video
+        url: https://www.youtube.com/watch?v=Y8M9RJ_4C7E
+        title: Video Introduction
+      - type: accordion
+        panels:
+          - title: Video Transcript
+            content: Xin chào! Rất vui được gặp lại bạn ngày hôm nay. Hôm nay, mình đã quay lại với một câu chuyện mới về Peter. Hôm nay, Peter đã đi ra ngoài đường và nghe rất là nhiều những câu bắt đầu bằng Trời ơi! Trời ơi! Bạn cùng nghe câu chuyện với mình nha! Một ngày đẹp trời, Peter đang đi dạo ở ngoài đường. Bỗng, có một chú đi xe từ phía sau đi tới và hét lên Trời ơi! Coi chừng con gà! Peter nhìn lại và thấy một con gà đang đi ở ngoài đường. Peter thấy rất là lạ. Tại sao lại có con gà đi ở ngoài đường? Rồi Peter đi tiếp. Peter thấy một bà bán trái cây và một cô đang nói chuyện với nhau. Peter nghe thoang thoảng được là cô gái này nói Trời ơi! Hôm nay trái cây mắc quá! Hôm nay trái cây mắc quá! Peter đã nghe cô gái này phàn nàng. Hôm nay trái cây mắc quá! Rồi Peter đi tiếp tới một quán cà phê vỉa hè. Peter nói với nhân viên Em ơi! Cho anh một ly cà phê sữa đá. Cô nhân viên vui vẻ nói Ok anh! Đợi em một xíu. Peter thấy vui vì mình sắp được uống cà phê rồi. Nhưng Peter nhìn qua bên bàn bên kia. Thấy hai chú, hai chú lớn tuổi đang uống bia. Một hai bà vô. Hai chú đang uống bia nhưng cũng cãi nhau về một chuyện gì đó. Một chú nói Trời ơi! Không phải như vậy đâu! Trời ơi! Không phải như vậy! Peter thấy lạ quá. Sao ở Việt Nam mọi người nói trời ơi nhiều quá vậy? Rồi Peter nhìn qua bên kia đường. Thấy một chú đang coi video trên điện thoại. Rồi chú hét lên Trời ơi! Mắc cười quá! Trời ơi! Mắc cười quá! Peter thấy lạ thêm một lần nữa. Ai cũng thích nói trời ơi ở Việt Nam sao? Rồi khi cô nhân viên mang cà phê tới. Cô nhân viên đã lỡ làm đổ cà phê. Cô nhân viên nói Trời ơi! Em xin lỗi! Em xin lỗi! Lại một lần nữa Peter nghe tiếng nói trời ơi từ người Việt Nam. Rồi Peter thấy một gia đình đang ngồi ăn cơm với nhau. Rất là hạnh phúc. Cậu bé nhỏ này thì nói Trời ơi! Đồ ăn hôm nay ngon quá! Tiếp theo, một bà, một bà lão lớn tuổi nhìn thấy Peter. Bà tới gần và nói Trời ơi! Con ốm quá! Ăn đi con! Đồ ăn đây! Ăn đi! Bà lão thấy Peter ốp nên muốn cho Peter ăn. Rồi Peter gọi Em ơi! Tính tiền! Peter thấy hôm nay là một ngày rất vui vì mình được cho đồ ăn và mình được nghe người Việt Nam nói Trời ơi! Rất là nhiều! Nhưng vừa tính tiền xong Trời đổ mưa! Peter không về nhà được. Peter nói Trời ơi! Mưa lớn quá! Vậy là Peter cũng đã nói Trời ơi! Giống như người Việt Nam rồi. Đó là câu chuyện của ngày hôm nay. Mình cảm ơn bạn đã lắng nghe câu chuyện của mình và mình hẹn gặp lại bạn vào những câu chuyện tiếp theo. Tạm biệt! Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn
+  - title: Page 1
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: audio-segments/page1.mp3
+      - type: text
+        text: Xin chào! Rất vui được gặp lại bạn ngày hôm nay. Hôm nay, mình đã quay lại với một câu chuyện mới về Peter. Hôm nay, Peter đã đi ra ngoài đường và nghe rất là nhiều những câu bắt đầu bằng Trời ơi! Trời ơi! Bạn cùng nghe câu chuyện với mình nha! Một ngày đẹp trời, Peter đang đi dạo ở ngoài đường.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Hello! I'm so happy to see you again today. I'm back with a new story about Peter. Today, Peter went out for a walk and heard a lot of things starting with "Oh my goodness!" Come listen to the story with me! One beautiful day, Peter was strolling down the street.
+  - title: Page 2
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: audio-segments/page2.mp3
+      - type: text
+        text: Bỗng, có một chú đi xe từ phía sau đi tới và hét lên Trời ơi! Coi chừng con gà! Peter nhìn lại và thấy một con gà đang đi ở ngoài đường. Peter thấy rất là lạ. Tại sao lại có con gà đi ở ngoài đường?
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Suddenly, a man on a bike came up from behind and shouted, "Oh no! Watch out for the chicken!" Peter turned around and saw a chicken walking down the street. Peter thought it was very strange. Why was there a chicken on the road?
+  - title: Page 3
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: audio-segments/page3.mp3
+      - type: text
+        text: Rồi Peter đi tiếp. Peter thấy một bà bán trái cây và một cô đang nói chuyện với nhau. Peter nghe thoang thoảng được là cô gái này nói Trời ơi! Hôm nay trái cây mắc quá! Hôm nay trái cây mắc quá! Peter đã nghe cô gái này phàn nàng. Hôm nay trái cây mắc quá!
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Then Peter continued on his way. He saw a fruit seller and a girl talking to each other. Peter could faintly hear the girl saying, "Oh my! The fruit is so expensive today! The fruit is so expensive today!" Peter listened as the girl complained, "The fruit is so expensive today!"
+  - title: Page 4
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: audio-segments/page4.mp3
+      - type: text
+        text: Rồi Peter đi tiếp tới một quán cà phê vỉa hè. Peter nói với nhân viên Em ơi! Cho anh một ly cà phê sữa đá. Cô nhân viên vui vẻ nói Ok anh! Đợi em một xíu. Peter thấy vui vì mình sắp được uống cà phê rồi.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Then Peter walked over to a sidewalk café. He said to the staff, "Hey there! Can I have an iced milk coffee, please?" The cheerful staff replied, "Sure thing! Just wait a moment." Peter felt happy because he was about to enjoy his coffee.
+  - title: Page 5
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: audio-segments/page5.mp3
+      - type: text
+        text: Nhưng Peter nhìn qua bên bàn bên kia. Thấy hai chú, hai chú lớn tuổi đang uống bia. Một hai bà vô. Hai chú đang uống bia nhưng cũng cãi nhau về một chuyện gì đó. Một chú nói Trời ơi! Không phải như vậy đâu! Trời ơi! Không phải như vậy! Peter thấy lạ quá. Sao ở Việt Nam mọi người nói trời ơi nhiều quá vậy?
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: But Peter looked over at the table across from him. He saw two older men drinking beer. A couple of ladies came in. The two men were drinking beer but also arguing about something. One of them exclaimed, "Oh my! That's not how it is! Oh my! That's not it!" Peter found it very strange. Why do people in Vietnam say "oh my" so much?
+  - title: Page 6
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: audio-segments/page6.mp3
+      - type: text
+        text: Rồi Peter nhìn qua bên kia đường. Thấy một chú đang coi video trên điện thoại. Rồi chú hét lên Trời ơi! Mắc cười quá! Trời ơi! Mắc cười quá! Peter thấy lạ thêm một lần nữa. Ai cũng thích nói trời ơi ở Việt Nam sao?
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Then Peter looked across the street. He saw a boy watching a video on his phone. Suddenly, the boy shouted, "Oh my gosh! That's so funny! Oh my gosh! That's so funny!" Peter found it strange once again. Does everyone in Vietnam love to say "oh my gosh"?
+  - title: Page 7
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: audio-segments/page7.mp3
+      - type: text
+        text: Rồi khi cô nhân viên mang cà phê tới. Cô nhân viên đã lỡ làm đổ cà phê. Cô nhân viên nói Trời ơi! Em xin lỗi! Em xin lỗi! Lại một lần nữa Peter nghe tiếng nói trời ơi từ người Việt Nam.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Then the waitress brought the coffee. She accidentally spilled it. "Oh no! I'm so sorry! I'm so sorry!" she exclaimed. Once again, Peter heard the familiar phrase "oh no" from a Vietnamese person.
+  - title: Page 8
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: audio-segments/page8.mp3
+      - type: text
+        text: Rồi Peter thấy một gia đình đang ngồi ăn cơm với nhau. Rất là hạnh phúc. Cậu bé nhỏ này thì nói Trời ơi! Đồ ăn hôm nay ngon quá!
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Then Peter saw a family sitting together, enjoying a meal. They looked so happy. The little boy exclaimed, "Wow! The food today is so delicious!"
+  - title: Page 9
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: audio-segments/page9.mp3
+      - type: text
+        text: Tiếp theo, một bà, một bà lão lớn tuổi nhìn thấy Peter. Bà tới gần và nói Trời ơi! Con ốm quá! Ăn đi con! Đồ ăn đây! Ăn đi! Bà lão thấy Peter ốp nên muốn cho Peter ăn.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Next, an elderly woman saw Peter. She came closer and said, "Oh my! You look so thin! Eat, dear! Here’s some food! Go on, eat!" The old woman noticed Peter was skinny and wanted to give him something to eat.
+  - title: Page 10
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: audio-segments/page10.mp3
+      - type: text
+        text: Rồi Peter gọi Em ơi! Tính tiền! Peter thấy hôm nay là một ngày rất vui vì mình được cho đồ ăn và mình được nghe người Việt Nam nói Trời ơi! Rất là nhiều!
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Then Peter called out, "Hey! Time to pay!" He felt that today was a very happy day because he got to eat food and heard Vietnamese people say, "Oh my gosh!" a lot!
+  - title: Page 11
+    content:
+      - type: image
+        path: placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: audio-segments/page11.mp3
+      - type: text
+        text: Nhưng vừa tính tiền xong Trời đổ mưa! Peter không về nhà được. Peter nói Trời ơi! Mưa lớn quá! Vậy là Peter cũng đã nói Trời ơi! Giống như người Việt Nam rồi. Đó là câu chuyện của ngày hôm nay. Mình cảm ơn bạn đã lắng nghe câu chuyện của mình và mình hẹn gặp lại bạn vào những câu chuyện tiếp theo. Tạm biệt!
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: But just as he finished paying, it started to rain! Peter couldn't go home. He exclaimed, "Oh no! It's raining so hard!" And just like that, Peter had said "Oh no!" just like a Vietnamese person would. That's the story for today. Thank you for listening to my story, and I look forward to sharing more stories with you next time. Goodbye!

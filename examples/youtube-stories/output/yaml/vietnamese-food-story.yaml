@@ -1,0 +1,142 @@
+title: Peter Tries Different Vietnamese Foods
+language: vi
+chapters:
+  - title: Video Introduction
+    content:
+      - type: video
+        url: https://www.youtube.com/watch?v=cYyqlPn2ee0
+        title: Video Introduction
+      - type: accordion
+        panels:
+          - title: Video Transcript
+            content: Một ngày kia, Peter đi ra khỏi khách sạn của mình. Vừa mới thức dậy, Peter đi ra khỏi khách sạn của mình. Khách sạn của Peter nằm ở trong một đường hẻm. Đường hẻm 143 Khách sạn của Peter nằm trong đường hẻm 143. Peter nhận ra, Peter nhận ra, đường hẻm này nhìn rất là nhỏ. Đường hẻm rất là nhỏ và ngoằng nguèo. Đường hẻm ở trong khách sạn của Peter rất là nhỏ và ngoằng nguèo giống như một mê cung. Mê cung là những cái đường nhỏ và đang sang với nhau. Bạn không biết đường ra mê cung. Mình rất khó để tìm đường ra. Rất khó để tìm đường ở trong mê cung. Cái hẻm ở trên đường hẻm của khách sạn của Peter giống như cái mê cung vậy đó. Nhỏ và ngoằng nguèo. Nhiều nhà sang sát với nhau. Nhiều nhà gần gần với nhau. Peter nhìn quanh. Peter nhìn xung quanh. Peter nhìn xung quanh. Peter thấy ai cũng đang ăn hết. Peter thấy ai cũng đang ăn. Ông này thì đang ăn cái gì đó. Mọi người đang ăn buổi sáng của mình. Cô này thì đang bán đồ ăn. Cả một cái hẻm tràn ngập mùi thức ăn. Cả một cái hẻm đâu đâu cũng nghe được mùi đồ ăn. Peter thấy đói bụng quá. Peter thấy đói bụng. Bởi vì ngưỡi ở đâu cũng thấy mùi đồ ăn. Và mọi người ai cũng đang ăn. Peter thấy đói bụng quá. Peter muốn tìm đồ ăn. Peter nhìn quanh, nhìn lên những bản hiệu. Peter thấy các món ăn rất là lạ. Không giống như phở hoặc là bánh mì như Peter thường hay ăn. Peter hay ăn phở hoặc bánh mì. Nhưng những món được bán ở cái hẻm này rất là lạ. Peter chưa bao giờ ăn. Giống như là bánh cuốn, bún riêu, bánh canh. Peter chưa bao giờ ăn những món này. Peter thấy rất là lạ. Có một người dân địa phương ở đây. Anh này bán bánh cuốn và bánh canh. Bánh canh thì thường ăn với súp. Bánh canh thì thường có súp. Còn bánh cuốn thì ăn với nước mắm. Bánh cuốn thì ăn với nước mắm chua ngọt. Cả hai món này Peter đều chưa ăn. Cho nên là Peter nghĩ là OK, mình nên thử ăn cái này. Mình nên thử ăn cái này. Cho biết là nó có ngon hay là không. Người địa phương này đã giới thiệu cho Peter món ăn mới. Đó là bánh cuốn và bánh canh. Peter ăn thử. Peter ăn hai món. Peter đã ăn một lần hai món luôn. Hai tay hai món. Bên này là bánh cuốn. Bên này là bánh canh. Peter ăn một lần hai món. Và Peter thấy Wow, cái món này rất rất rất rất rất là ngon. Cái món này rất rất là ngon. Peter chưa bao giờ ăn món nào ngon như vậy. Peter đã tìm ra món ăn Việt Nam mới mà Peter thích. Peter thấy rất là vui. Peter rất là muốn nói cho bạn bè của mình biết về món ăn mới này. Sau khi ăn xong, Peter rất là hạnh phúc. Bởi vì hôm nay được ăn một món ăn Việt Nam mới. Rất ngon. Peter thấy rất hạnh phúc. Peter bắt tay người địa phương kia. Anh bắt tay hai người bắt tay nhau. Và Peter chào anh. Peter nói là hẹn gặp lại. Hẹn gặp lại. Tôi sẽ quay lại đây để ăn món này. Peter muốn quay lại cái hẻm này để ăn bánh cuốn và bánh canh. Vậy bạn đã bao giờ ăn món ăn mới?
+  - title: Introduction
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/cYyqlPn2ee0/audio-segments/page1.mp3
+      - type: text
+        text: Một ngày kia, Peter đi ra khỏi khách sạn của mình.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: One day, Peter stepped out of his hotel.
+  - title: The Narrow Alley
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/cYyqlPn2ee0/audio-segments/page2.mp3
+      - type: text
+        text: Vừa mới thức dậy, Peter đi ra khỏi khách sạn của mình. Khách sạn của Peter nằm ở trong một đường hẻm. Đường hẻm 143 Khách sạn của Peter nằm trong đường hẻm 143. Peter nhận ra, Peter nhận ra, đường hẻm này nhìn rất là nhỏ.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Just waking up, Peter stepped out of his hotel. His hotel was located in a small alley. The alley was called Alley 143, and Peter noticed that it looked very tiny.
+  - title: What is a Maze?
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/cYyqlPn2ee0/audio-segments/page3.mp3
+      - type: text
+        text: Đường hẻm rất là nhỏ và ngoằng nguèo. Đường hẻm ở trong khách sạn của Peter rất là nhỏ và ngoằng nguèo giống như một mê cung. Mê cung là những cái đường nhỏ và đang sang với nhau. Bạn không biết đường ra mê cung.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: The alley is very small and winding. The alley in Peter's hotel is just as tiny and twisty as a maze. A maze has lots of little paths that cross each other, and you never know how to find your way out.
+  - title: Like a Maze
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/cYyqlPn2ee0/audio-segments/page4.mp3
+      - type: text
+        text: Mình rất khó để tìm đường ra. Rất khó để tìm đường ở trong mê cung. Cái hẻm ở trên đường hẻm của khách sạn của Peter giống như cái mê cung vậy đó. Nhỏ và ngoằng nguèo. Nhiều nhà sang sát với nhau. Nhiều nhà gần gần với nhau. Peter nhìn quanh.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: It's really hard to find a way out. It's very difficult to navigate through the maze. The alley behind Peter's hotel feels just like a maze. It's small and winding, with many houses close together. Peter looks around.
+  - title: Food Smells Everywhere
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/cYyqlPn2ee0/audio-segments/page5.mp3
+      - type: text
+        text: Peter nhìn xung quanh. Peter nhìn xung quanh. Peter thấy ai cũng đang ăn hết. Peter thấy ai cũng đang ăn. Ông này thì đang ăn cái gì đó. Mọi người đang ăn buổi sáng của mình. Cô này thì đang bán đồ ăn. Cả một cái hẻm tràn ngập mùi thức ăn.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Peter looked around. He saw everyone eating. This man was having something to eat. People were enjoying their breakfast. This woman was selling food. The whole alley was filled with the smell of delicious dishes.
+  - title: Peter Gets Hungry
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/cYyqlPn2ee0/audio-segments/page6.mp3
+      - type: text
+        text: Cả một cái hẻm đâu đâu cũng nghe được mùi đồ ăn. Peter thấy đói bụng quá. Peter thấy đói bụng. Bởi vì ngưỡi ở đâu cũng thấy mùi đồ ăn. Và mọi người ai cũng đang ăn.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: In the whole alley, the smell of food was everywhere. Peter felt really hungry. He could smell food all around him, and everyone was eating.
+  - title: Strange Foods
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/cYyqlPn2ee0/audio-segments/page7.mp3
+      - type: text
+        text: Peter thấy đói bụng quá. Peter muốn tìm đồ ăn. Peter nhìn quanh, nhìn lên những bản hiệu. Peter thấy các món ăn rất là lạ. Không giống như phở hoặc là bánh mì như Peter thường hay ăn. Peter hay ăn phở hoặc bánh mì. Nhưng những món được bán ở cái hẻm này rất là lạ.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Peter was really hungry. He wanted to find something to eat. Peter looked around, glancing at the signs. He saw some very strange dishes. They weren't like the pho or banh mi that Peter usually ate. He often enjoyed pho or banh mi. But the food being sold in this alley was very unusual.
+  - title: Meeting the Local Vendor
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/cYyqlPn2ee0/audio-segments/page8.mp3
+      - type: text
+        text: Peter chưa bao giờ ăn. Giống như là bánh cuốn, bún riêu, bánh canh. Peter chưa bao giờ ăn những món này. Peter thấy rất là lạ. Có một người dân địa phương ở đây. Anh này bán bánh cuốn và bánh canh. Bánh canh thì thường ăn với súp. Bánh canh thì thường có súp. Còn bánh cuốn thì ăn với nước mắm. Bánh cuốn thì ăn với nước mắm chua ngọt. Cả hai món này Peter đều chưa ăn.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Peter had never eaten before. He had never tried dishes like rice rolls, crab noodle soup, or tapioca noodles. Peter found this very strange. There was a local person here who sold rice rolls and tapioca noodles. Tapioca noodles are usually served with soup. Rice rolls are eaten with fish sauce, specifically a sweet and sour fish sauce. Peter had never tried either of these dishes.
+  - title: Trying the Food
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/cYyqlPn2ee0/audio-segments/page9.mp3
+      - type: text
+        text: Cho nên là Peter nghĩ là OK, mình nên thử ăn cái này. Mình nên thử ăn cái này. Cho biết là nó có ngon hay là không. Người địa phương này đã giới thiệu cho Peter món ăn mới. Đó là bánh cuốn và bánh canh. Peter ăn thử. Peter ăn hai món. Peter đã ăn một lần hai món luôn. Hai tay hai món. Bên này là bánh cuốn. Bên này là bánh canh. Peter ăn một lần hai món. Và Peter thấy Wow, cái món này rất rất rất rất rất là ngon. Cái món này rất rất là ngon. Peter chưa bao giờ ăn món nào ngon như vậy.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: So Peter thought, okay, I should try this. I should try this to see if it's good or not. A local person introduced Peter to a new dish. It was bánh cuốn and bánh canh. Peter gave them a try. He ate both dishes at the same time. One in each hand. On this side was bánh cuốn. On that side was bánh canh. Peter took a bite of both at once. And he thought, wow, this is really, really, really, really delicious. This is so tasty! Peter had never eaten anything this good before.
+  - title: Happy Ending
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/placeholder.png
+        alt: Story illustration
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/cYyqlPn2ee0/audio-segments/page10.mp3
+      - type: text
+        text: Peter đã tìm ra món ăn Việt Nam mới mà Peter thích. Peter thấy rất là vui. Peter rất là muốn nói cho bạn bè của mình biết về món ăn mới này. Sau khi ăn xong, Peter rất là hạnh phúc. Bởi vì hôm nay được ăn một món ăn Việt Nam mới. Rất ngon. Peter thấy rất hạnh phúc. Peter bắt tay người địa phương kia. Anh bắt tay hai người bắt tay nhau. Và Peter chào anh. Peter nói là hẹn gặp lại.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Peter discovered a new Vietnamese dish that he really liked. He felt very happy. Peter wanted to tell his friends about this new food. After finishing his meal, Peter was filled with joy because he had enjoyed a delicious Vietnamese dish today. He felt so happy. Peter shook hands with a local person. They both smiled and shook hands. Peter said goodbye and promised to see him again.

@@ -1,0 +1,16 @@
+{
+  "videoId": "Y8M9RJ_4C7E",
+  "audioPath": "/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/audio.mp3",
+  "transcriptPath": "/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/whisper-transcript.json",
+  "downloadDate": "2025-11-13T10:50:59.162Z",
+  "duration": 325,
+  "title": "【Vietnamese Listening Practice】 Peter learns how to say Trời ơi! - Upper Beginner",
+  "transcription": {
+    "provider": "whisper-api",
+    "model": "whisper-1",
+    "language": "vi",
+    "timestamp": "2025-11-13T10:50:59.169Z",
+    "cost": 0.0161214599609375,
+    "duration": 161.214599609375
+  }
+}

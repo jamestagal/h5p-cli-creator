@@ -136,13 +136,24 @@ export class AudioSplitter {
       }
 
       // Validate: end time must not exceed duration
-      if (segment.endTime > duration + 1) {
-        // Allow 1 second tolerance
+      // Allow 3 second tolerance for Whisper timestamp precision issues
+      // (Whisper's last segment can slightly exceed actual audio duration)
+      if (segment.endTime > duration + 3) {
         throw new Error(
           `Page ${segment.pageNumber}: end time (${this.formatTimestamp(
             segment.endTime
-          )}) is beyond video duration (${this.formatTimestamp(duration)})`
+          )}) is beyond video duration (${this.formatTimestamp(duration)}) by more than 3 seconds`
         );
+      }
+
+      // Clamp end time to duration if slightly over (common with Whisper's last segment)
+      if (segment.endTime > duration) {
+        console.warn(
+          `⚠️  Page ${segment.pageNumber}: Clamping end time from ${this.formatTimestamp(
+            segment.endTime
+          )} to ${this.formatTimestamp(duration)} (audio file boundary)`
+        );
+        segment.endTime = duration;
       }
 
       // Check for overlaps with next segment

@@ -148,7 +148,8 @@ export class TranscriptMatcher {
    * 1. Finds segments for each page's timestamp range
    * 2. Concatenates segments into page text
    * 3. Preserves formatting
-   * 4. Builds StoryPageData objects
+   * 4. Completes sentence boundaries (post-processing)
+   * 5. Builds StoryPageData objects
    *
    * @param transcript Full video transcript
    * @param pages Array of page definitions with timestamps
@@ -183,7 +184,76 @@ export class TranscriptMatcher {
       results.push(pageData);
     }
 
-    return results;
+    // Complete sentences at page boundaries (Whisper often cuts mid-sentence)
+    return this.completeSentenceBoundaries(results);
+  }
+
+  /**
+   * Completes sentences that were split across page boundaries by Whisper segmentation.
+   *
+   * Whisper API segments audio based on speech pauses, not sentence boundaries.
+   * This causes sentences to be split mid-way, creating poor reading experience.
+   *
+   * Example (French):
+   * - Page 1 ends: "Aujourd'hui je veux vous" (incomplete)
+   * - Page 2 starts: "parler de ma journée parfaite." (fragment)
+   * - After fix: Page 1 ends with complete sentence, Page 2 starts fresh
+   *
+   * This method:
+   * 1. Detects pages ending without sentence-ending punctuation
+   * 2. Extracts text from next page up to first sentence boundary
+   * 3. Appends completion to current page
+   * 4. Removes completed text from next page
+   *
+   * Preserves the >50% segment assignment logic (no duplicates).
+   * Works with multiple languages (French, Vietnamese, English, etc.)
+   *
+   * @param pages Array of story pages with assigned transcript text
+   * @returns Pages with completed sentences at boundaries
+   */
+  public completeSentenceBoundaries(pages: StoryPageData[]): StoryPageData[] {
+    // TODO: Rename vietnameseText to sourceText for language neutrality
+
+    for (let i = 0; i < pages.length - 1; i++) {
+      const currentPage = pages[i];
+      const nextPage = pages[i + 1];
+
+      // Skip if next page has no text
+      if (!nextPage.vietnameseText || nextPage.vietnameseText.trim().length === 0) {
+        continue;
+      }
+
+      // Check if current page ends mid-sentence
+      const currentText = currentPage.vietnameseText.trim();
+
+      // Sentence-ending punctuation for multiple languages:
+      // French: . ! ? … » (closing guillemet)
+      // Vietnamese: . ! ?
+      // English: . ! ?
+      // Also check for quotation marks after punctuation
+      const endsWithPunctuation = /[.!?…»"']+$/.test(currentText);
+
+      if (!endsWithPunctuation) {
+        // Extract text from next page up to first sentence-ending punctuation
+        // Pattern: capture everything up to and including first sentence-ending punctuation
+        // Also capture trailing quotes/spaces after punctuation
+        const match = nextPage.vietnameseText.match(/^([^.!?…»]+[.!?…»]["'\s]*)/);
+
+        if (match) {
+          const completion = match[1].trim();
+
+          // Append completion to current page
+          currentPage.vietnameseText = currentText + ' ' + completion;
+
+          // Remove completed text from next page
+          nextPage.vietnameseText = nextPage.vietnameseText
+            .substring(match[0].length)
+            .trim();
+        }
+      }
+    }
+
+    return pages;
   }
 
   /**

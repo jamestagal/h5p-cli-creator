@@ -1,0 +1,20 @@
+{
+  "videoId": "cYyqlPn2ee0",
+  "audioPath": "/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/cYyqlPn2ee0/audio.mp3",
+  "transcriptPath": "/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/cYyqlPn2ee0/whisper-transcript.json",
+  "downloadDate": "2025-11-15T07:51:44.536Z",
+  "duration": 478,
+  "title": "【Vietnamese Listening Practice】 Peter tries different Vietnamese foods! - Upper Beginner",
+  "transcription": {
+    "provider": "whisper-api",
+    "model": "whisper-1",
+    "language": "vi",
+    "timestamp": "2025-11-15T07:51:44.543Z",
+    "cost": 0.0173958740234375,
+    "duration": 173.958740234375
+  },
+  "extractionRange": {
+    "startTime": "01:06",
+    "endTime": "07:20"
+  }
+}

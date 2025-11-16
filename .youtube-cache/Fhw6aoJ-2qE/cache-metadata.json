@@ -1,0 +1,20 @@
+{
+  "videoId": "Fhw6aoJ-2qE",
+  "audioPath": "/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/audio.mp3",
+  "transcriptPath": "/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/whisper-transcript.json",
+  "downloadDate": "2025-11-15T12:47:32.527Z",
+  "duration": 1107,
+  "title": "Very Simple French Story for Beginners (A1–A2) - My perfect day",
+  "transcription": {
+    "provider": "whisper-api",
+    "model": "whisper-1",
+    "language": "fr",
+    "timestamp": "2025-11-15T12:47:32.534Z",
+    "cost": 0.009733569335937501,
+    "duration": 97.335693359375
+  },
+  "extractionRange": {
+    "startTime": "00:19",
+    "endTime": "03:23"
+  }
+}

@@ -22,6 +22,7 @@ import * as fsExtra from "fs-extra";
 import * as yaml from "js-yaml";
 
 import { StoryConfig, isYouTubeIntroPage, isStoryPage, validateConfigMode } from "../../models/StoryConfig";
+import { StoryPageData } from "../../models/StoryPageData";
 import { YouTubeExtractor } from "../../services/YouTubeExtractor";
 import { AudioSplitter, TimestampSegment } from "../../services/AudioSplitter";
 import { TranscriptMatcher, PageDefinition } from "../../services/TranscriptMatcher";
@@ -252,6 +253,7 @@ export class YouTubeExtractModule implements yargs.CommandModule {
       // DUAL-MODE WORKFLOW BRANCHING
       let timestampSegments: TimestampSegment[];
       let textBasedPages: TextPageDefinition[] | undefined;
+      let matchedSegments: MatchedSegment[] | undefined;
 
       if (isTextBasedMode) {
         // TEXT-BASED MODE WORKFLOW
@@ -306,7 +308,7 @@ export class YouTubeExtractModule implements yargs.CommandModule {
         console.log(`  - Using ${matchingMode} matching mode`);
 
         const matcher = new SegmentMatcher(whisperSegments, matchingMode);
-        const matchedSegments: MatchedSegment[] = pages.map((page) => {
+        matchedSegments = pages.map((page) => {
           const matched = matcher.matchPageToSegments(page.text);
           // Override pageNumber (SegmentMatcher sets it to 0)
           return {
@@ -410,14 +412,15 @@ export class YouTubeExtractModule implements yargs.CommandModule {
         pageDefinitions = textBasedPages.map((page, index) => {
           const audioSegment = audioSegments[index];
           const ts = timestampSegments[index];
+          const imageInfo = this.getImagePath(videoId, page.pageNumber);
           return {
             pageNumber: page.pageNumber,
             title: page.title,
             startTime: ts.startTime,
             endTime: ts.endTime,
-            audioPath: path.relative(process.cwd(), audioSegment.filePath),
-            imagePath: "placeholder.png",
-            isPlaceholder: true
+            audioPath: path.resolve(audioSegment.filePath),  // Use absolute path
+            imagePath: imageInfo.imagePath,
+            isPlaceholder: imageInfo.isPlaceholder
           };
         });
       } else {
@@ -425,20 +428,62 @@ export class YouTubeExtractModule implements yargs.CommandModule {
         const storyPages = config.pages.filter(isStoryPage);
         pageDefinitions = storyPages.map((page, index) => {
           const audioSegment = audioSegments[index];
+          const pageNumber = index + 1;
+
+          // Check for custom image first, then config image, then placeholder
+          let imagePath: string;
+          let isPlaceholder: boolean;
+
+          if (page.image) {
+            // Config explicitly specifies an image
+            imagePath = page.image;
+            isPlaceholder = page.placeholder !== false; // Default to true
+          } else {
+            // No config image - check for custom image in .youtube-cache
+            const imageInfo = this.getImagePath(videoId, pageNumber);
+            imagePath = imageInfo.imagePath;
+            isPlaceholder = imageInfo.isPlaceholder;
+          }
+
           return {
-            pageNumber: index + 1,
+            pageNumber,
             title: page.title,
             startTime: this.parseTimestamp(page.startTime),
             endTime: this.parseTimestamp(page.endTime),
-            audioPath: path.relative(process.cwd(), audioSegment.filePath),
-            imagePath: page.image || "placeholder.png",
-            isPlaceholder: page.placeholder !== false // Default to true
+            audioPath: path.resolve(audioSegment.filePath),  // Use absolute path
+            imagePath,
+            isPlaceholder
           };
         });
       }
 
-      const pageData = matcher.matchToPages(transcript, pageDefinitions);
-      console.log(`  ✓ Matched transcript to ${pageData.length} pages`);
+      // Build page data differently based on mode
+      let pageData: StoryPageData[];
+
+      if (isTextBasedMode && textBasedPages && matchedSegments) {
+        // TEXT-BASED MODE: Use edited page text from user
+        // The user has explicitly defined page breaks and text in their edited transcript
+        pageData = textBasedPages.map((page, index) => {
+          const pageDef = pageDefinitions[index];
+          const matched = matchedSegments[index];
+          return {
+            pageNumber: page.pageNumber,
+            title: page.title,
+            startTime: pageDef.startTime,
+            endTime: pageDef.endTime,
+            vietnameseText: page.text,  // Use user's edited text, not Whisper segments!
+            audioPath: pageDef.audioPath,
+            imagePath: pageDef.imagePath,
+            isPlaceholder: pageDef.isPlaceholder,
+            transcriptSegments: matched.segments  // Include segments for audio alignment
+          };
+        });
+        console.log(`  ✓ Built ${pageData.length} pages from edited transcript`);
+      } else {
+        // TIMESTAMP MODE: Extract text from Whisper transcript using timestamps
+        pageData = matcher.matchToPages(transcript, pageDefinitions);
+        console.log(`  ✓ Matched transcript to ${pageData.length} pages`);
+      }
 
       if (verbose) {
         pageData.forEach((page, index) => {
@@ -663,6 +708,56 @@ export class YouTubeExtractModule implements yargs.CommandModule {
    */
   private isValidExtendedTimestamp(timestamp: string): boolean {
     return /^\d{1,2}:\d{2}$/.test(timestamp) || /^\d{1,2}:\d{2}:\d{2}$/.test(timestamp);
+  }
+
+  /**
+   * Gets custom image path for a page if it exists, otherwise returns placeholder.
+   *
+   * Looks for custom images in .youtube-cache/{videoId}/images/ directory:
+   * - Tries img-{pageNumber}.jpg
+   * - Tries img-{pageNumber}.jpeg
+   * - Tries img-{pageNumber}.png
+   * - Falls back to placeholder.png if none exist
+   *
+   * @param videoId The YouTube video ID
+   * @param pageNumber The page number (1-based)
+   * @returns Object with imagePath and isPlaceholder flag
+   */
+  private getImagePath(videoId: string, pageNumber: number): { imagePath: string; isPlaceholder: boolean } {
+    const imagesDir = path.join(".youtube-cache", videoId, "images");
+
+    // Try .jpg extension first
+    const jpgPath = path.join(imagesDir, `img-${pageNumber}.jpg`);
+    if (fsExtra.existsSync(jpgPath)) {
+      return {
+        imagePath: path.resolve(jpgPath),  // Use absolute path
+        isPlaceholder: false
+      };
+    }
+
+    // Try .jpeg extension
+    const jpegPath = path.join(imagesDir, `img-${pageNumber}.jpeg`);
+    if (fsExtra.existsSync(jpegPath)) {
+      return {
+        imagePath: path.resolve(jpegPath),  // Use absolute path
+        isPlaceholder: false
+      };
+    }
+
+    // Try .png extension
+    const pngPath = path.join(imagesDir, `img-${pageNumber}.png`);
+    if (fsExtra.existsSync(pngPath)) {
+      return {
+        imagePath: path.resolve(pngPath),  // Use absolute path
+        isPlaceholder: false
+      };
+    }
+
+    // Fall back to placeholder (absolute path)
+    return {
+      imagePath: path.resolve("placeholder.png"),
+      isPlaceholder: true
+    };
   }
 
   /**

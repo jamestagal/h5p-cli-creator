@@ -1,0 +1,186 @@
+title: Peter learns how to say Trời ơi!
+language: vi
+chapters:
+  - title: Video Introduction
+    content:
+      - type: video
+        url: https://www.youtube.com/watch?v=Y8M9RJ_4C7E
+        title: Video Introduction
+      - type: accordion
+        panels:
+          - title: Video Transcript
+            content: Hôm nay Peter đã đi ra ngoài đường và nghe rất là nhiều những câu bắt đầu bằng Trời ơi! Trời ơi! Bạn cùng nghe câu chuyện với mình nha! Một ngày đẹp trời, Peter đang đi dạo ở ngoài đường. Bỗng, có một chú đi xe từ phía sau đi tới và hét lên Trời ơi! Coi chừng con gà! Peter nhìn lại và thấy một con gà đang đi ở ngoài đường. Peter thấy rất là lạ. Tại sao lại có con gà đi ở ngoài đường? Rồi Peter đi tiếp. Peter thấy một bà bán trái cây và một cô đang nói chuyện với nhau. Peter nghe thoang thoảng được là cô gái này nói Trời ơi! Hôm nay trái cây mắc quá! Hôm nay trái cây mắc quá! Peter đã nghe cô gái này phàn nàng. Hôm nay trái cây mắc quá! Rồi Peter đi tiếp tới một quán cà phê vỉa hè. Peter nói với nhân viên Em ơi! Cho anh một ly cà phê sữa đá. Cô nhân viên vui vẻ nói Ok anh! Đợi em một xíu. Peter thấy vui vì mình sắp được uống cà phê rồi. Nhưng Peter nhìn qua bên bàn bên kia. Thấy hai chú, hai chú lớn tuổi đang uống bia. Một hai bà vô. Hai chú đang uống bia nhưng cũng cãi nhau về một chuyện gì đó. Một chú nói Trời ơi! Không phải như vậy đâu! Trời ơi! Không phải như vậy! Peter thấy lạ quá. Sao ở Việt Nam mọi người nói trời ơi nhiều quá vậy? Rồi Peter nhìn qua bên kia đường. Thấy một chú đang coi video trên điện thoại. Rồi chú hét lên Trời ơi! Mắc cười quá! Trời ơi! Mắc cười quá! Peter thấy lạ thêm một lần nữa. Ai cũng thích nói trời ơi ở Việt Nam sao? Rồi khi cô nhân viên mang cà phê tới. Cô nhân viên đã lỡ làm đổ cà phê. Cô nhân viên nói trời ơi! Em xin lỗi! Em xin lỗi! Lại một lần nữa. Peter nghe tiếng nói trời ơi từ người Việt Nam. Rồi Peter thấy một gia đình đang ngồi ăn cơm với nhau. Rất là hạnh phúc. Cậu bé nhỏ này thì nói trời ơi! Đồ ăn hôm nay ngon quá! Tiếp theo, một bà, một bà lão lớn tuổi nhìn thấy Peter. Bà tới gần và nói trời ơi! Con ốm quá! Ăn đi con! Đồ ăn đây! Ăn đi! Bà lão thấy Peter ốm nên muốn cho Peter ăn. Rồi Peter gọi. Em ơi! Tính tiền! Peter thấy hôm nay là một ngày rất vui vì mình được cho đồ ăn và mình được nghe người Việt Nam nói trời ơi rất là nhiều. Nhưng vừa tính tiền xong, trời đổ mưa. Peter không về nhà được. Peter nói trời ơi! Mưa lớn quá! Vậy là Peter cũng đã nói trời ơi! Giống như người Việt Nam rồi. Đó là câu chuyện của ngày hôm nay.
+  - title: Introduction
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/images/img-1.jpeg
+        alt: Introduction
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/audio-segments/page1.mp3
+      - type: text
+        text: Hôm nay Peter đã đi ra ngoài đường và nghe rất là nhiều những câu bắt đầu bằng Trời ơi! Trời ơi! Bạn cùng nghe câu chuyện với mình nha! Một ngày đẹp trời, Peter đang đi dạo ở ngoài đường.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Today, Peter went outside and heard a lot of phrases starting with "Oh my!" Oh my! Come listen to the story with me! One beautiful day, Peter was taking a stroll down the street.
+  - title: Watch Out for the Chicken!
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/images/img-2.jpeg
+        alt: Watch Out for the Chicken!
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/audio-segments/page2.mp3
+      - type: text
+        text: Bỗng, có một chú đi xe từ phía sau đi tới và hét lên Trời ơi! Coi chừng con gà! Peter nhìn lại và thấy một con gà đang đi ở ngoài đường. Peter thấy rất là lạ. Tại sao lại có con gà đi ở ngoài đường?
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Suddenly, a man riding a bike came from behind and shouted, "Oh no! Watch out for the chicken!" Peter turned around and saw a chicken walking in the street. Peter thought it was very strange. Why was there a chicken walking on the road?
+  - title: The Fruit Vendor
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/images/img-3.jpg
+        alt: The Fruit Vendor
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/audio-segments/page3.mp3
+      - type: text
+        text: Rồi Peter đi tiếp. Peter thấy một bà bán trái cây và một cô đang nói chuyện với nhau. Peter nghe thoang thoảng được là cô gái này nói Trời ơi! Hôm nay trái cây mắc quá! Hôm nay trái cây mắc quá! Peter đã nghe cô gái này phàn nàng. Hôm nay trái cây mắc quá!
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: 'Then Peter continued on his way. He saw a fruit seller and a girl talking to each other. Peter caught a glimpse of what the girl was saying: "Oh my! The fruit is so expensive today! The fruit is so expensive today!" Peter heard her complaining, "The fruit is so expensive today!"'
+  - title: Ordering Coffee
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/images/img-4.jpg
+        alt: Ordering Coffee
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/audio-segments/page4.mp3
+      - type: text
+        text: Rồi Peter đi tiếp tới một quán cà phê vỉa hè. Peter nói với nhân viên Em ơi! Cho anh một ly cà phê sữa đá. Cô nhân viên vui vẻ nói Ok anh! Đợi em một xíu. Peter thấy vui vì mình sắp được uống cà phê rồi.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Then Peter walked over to a sidewalk café. He said to the staff, "Excuse me! Can I have an iced milk coffee, please?" The cheerful staff replied, "Sure! Just wait a moment." Peter felt happy because he was about to enjoy his coffee.
+  - title: Two Men Arguing
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/images/img-5.jpg
+        alt: Two Men Arguing
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/audio-segments/page5.mp3
+      - type: text
+        text: Nhưng Peter nhìn qua bên bàn bên kia. Thấy hai chú, hai chú lớn tuổi đang uống bia. Một hai bà vô. Hai chú đang uống bia nhưng cũng cãi nhau về một chuyện gì đó. Một chú nói Trời ơi! Không phải như vậy đâu! Trời ơi! Không phải như vậy! Peter thấy lạ quá. Sao ở Việt Nam mọi người nói trời ơi nhiều quá vậy?
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: But Peter looked over to the table next to him. He saw two older men drinking beer. A couple of ladies came in. The two men were drinking beer but also arguing about something. One of the men said, "Oh my gosh! That's not how it is! Oh my gosh! That's not it!" Peter found it very strange. Why do people in Vietnam say "oh my gosh" so much?
+  - title: Funny Video
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/images/img-6.jpg
+        alt: Funny Video
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/audio-segments/page6.mp3
+      - type: text
+        text: Rồi Peter nhìn qua bên kia đường. Thấy một chú đang coi video trên điện thoại. Rồi chú hét lên Trời ơi! Mắc cười quá! Trời ơi! Mắc cười quá! Peter thấy lạ thêm một lần nữa. Ai cũng thích nói trời ơi ở Việt Nam sao?
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Then Peter looked across the street. He saw a boy watching a video on his phone. Suddenly, the boy shouted, "Oh my gosh! That's so funny! Oh my gosh! That's so funny!" Peter found it strange once again. Does everyone in Vietnam like to say "oh my gosh"?
+  - title: Coffee Spill
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/images/img-7.jpg
+        alt: Coffee Spill
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/audio-segments/page7.mp3
+      - type: text
+        text: Rồi khi cô nhân viên mang cà phê tới. Cô nhân viên đã lỡ làm đổ cà phê. Cô nhân viên nói trời ơi! Em xin lỗi! Em xin lỗi! Lại một lần nữa. Peter nghe tiếng nói trời ơi từ người Việt Nam.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Then, when the waitress brought the coffee, she accidentally spilled it. The waitress exclaimed, "Oh no! I'm so sorry! I'm so sorry!" Once again, Peter heard the words "oh no" from a Vietnamese person.
+  - title: Happy Family
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/images/img-8.jpg
+        alt: Happy Family
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/audio-segments/page8.mp3
+      - type: text
+        text: Rồi Peter thấy một gia đình đang ngồi ăn cơm với nhau. Rất là hạnh phúc. Cậu bé nhỏ này thì nói trời ơi! Đồ ăn hôm nay ngon quá!
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Then Peter saw a family sitting together, happily eating their meal. The little boy exclaimed, "Oh my! The food today is so delicious!"
+  - title: The Kind Old Lady
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/images/img-9.jpg
+        alt: The Kind Old Lady
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/audio-segments/page9.mp3
+      - type: text
+        text: Tiếp theo, một bà, một bà lão lớn tuổi nhìn thấy Peter. Bà tới gần và nói trời ơi! Con ốm quá! Ăn đi con! Đồ ăn đây! Ăn đi! Bà lão thấy Peter ốm nên muốn cho Peter ăn.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Next, an elderly woman saw Peter. She came closer and exclaimed, "Oh my! You’re so thin! Eat, dear! Here’s some food! Go ahead and eat!" The old woman noticed Peter was skinny and wanted to feed him.
+  - title: Getting the Bill
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/images/img-10.jpg
+        alt: Getting the Bill
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/audio-segments/page10.mp3
+      - type: text
+        text: Rồi Peter gọi. Em ơi! Tính tiền! Peter thấy hôm nay là một ngày rất vui vì mình được cho đồ ăn và mình được nghe người Việt Nam nói trời ơi rất là nhiều.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Then Peter called out, "Hey there! Time to pay!" He felt that today was a very happy day because he got to eat delicious food and heard Vietnamese people say "Oh my gosh!" many times.
+  - title: Rain Ending
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/images/img-11.jpg
+        alt: Rain Ending
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Y8M9RJ_4C7E/audio-segments/page11.mp3
+      - type: text
+        text: Nhưng vừa tính tiền xong, trời đổ mưa. Peter không về nhà được. Peter nói trời ơi! Mưa lớn quá! Vậy là Peter cũng đã nói trời ơi! Giống như người Việt Nam rồi. Đó là câu chuyện của ngày hôm nay.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: But just as he finished paying, it started to rain. Peter couldn't go home. He exclaimed, "Oh no! It's raining too hard!" And just like that, Peter had said "Oh no!" just like a Vietnamese person would. That's the story for today.
+  - title: Practice Activities
+    content:
+      - type: text
+        title: Test Your Understanding
+        text: Now let's practice what we learned from Peter's adventure! Test your knowledge of the story and Vietnamese expressions.
+
+      - type: ai-single-choice-set
+        title: Story Comprehension Quiz
+        prompt: |
+          Based on Peter's story about learning the Vietnamese expression "Trời ơi!", create 5 multiple choice questions about the story events and when Vietnamese people use this phrase. Each question should have one correct answer and 3 plausible distractors.
+
+          Story summary: Peter walked outside and heard many people saying "Trời ơi!" in different situations - a man warning about a chicken, a girl complaining about expensive fruit, men arguing at a café, someone watching a funny video, a waitress apologizing for spilling coffee, a child enjoying food, an elderly woman concerned Peter looks thin, and finally Peter himself saying it when it started raining.
+        questionCount: 5
+
+      - type: ai-fill-in-the-blanks
+        title: Vietnamese Phrases Practice
+        prompt: |
+          Create 3 fill-in-the-blank exercises using key Vietnamese phrases from Peter's story about "Trời ơi!". Include phrases like "Trời ơi!", "Em ơi!", "Coi chừng", "mắc quá", "ngon quá", etc. Make sure the blanks test understanding of when to use these expressions.
+        questionCount: 3
+
+      - type: ai-true-false
+        title: Story Facts Quiz
+        prompt: |
+          Create 3 true/false questions about facts mentioned in Peter's story about learning "Trời ơi!". Include questions about story events, locations, and what happened to Peter.
+        questionCount: 3
+
+      - type: ai-accordion
+        title: Vietnamese Expression Summary
+        prompt: Create a summary accordion with 4-5 panels explaining key Vietnamese expressions learned in Peter's story. Focus on "Trời ơi!" and when Vietnamese people use it (surprise, frustration, concern, delight). Include other expressions like "Em ơi!" and "Coi chừng!".
+        panelCount: 5
+        style: summary

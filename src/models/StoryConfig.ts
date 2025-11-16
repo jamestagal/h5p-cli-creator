@@ -318,7 +318,7 @@ export function isStoryPage(page: PageConfig): page is StoryPage {
  */
 export function validateConfigMode(config: StoryConfig): void {
   const hasTranscriptSource = !!config.transcriptSource;
-  const hasTimestampPages = config.pages.some(isStoryPage);
+  const hasTimestampPages = config.pages?.some(isStoryPage) || false;
 
   if (hasTranscriptSource && hasTimestampPages) {
     throw new Error(

@@ -140,6 +140,10 @@ export class YouTubeExtractor {
     const cacheDir = this.getCacheDirectory(videoId);
     await fsExtra.ensureDir(cacheDir);
 
+    // Create images subdirectory for custom page images
+    const imagesDir = path.join(cacheDir, "images");
+    await fsExtra.ensureDir(imagesDir);
+
     const outputPath = path.join(cacheDir, "audio.mp3");
 
     // Check if already downloaded

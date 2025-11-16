@@ -1,0 +1,41 @@
+title: "Peter Tries Different Vietnamese Foods"
+language: vi
+
+source:
+  type: youtube
+  url: "https://www.youtube.com/watch?v=cYyqlPn2ee0"
+  startTime: "01:06"  # Story narration begins
+  endTime: "07:20"    # Story narration ends (with buffer)
+
+# Text-based mode: reference edited transcript
+transcriptSource: ".youtube-cache/cYyqlPn2ee0/full-transcript-edited.txt"
+
+# Fuzzy mode allows more edits (60%+ similarity)
+matchingMode: "fuzzy"
+
+translation:
+  enabled: true
+  targetLanguage: en
+  style: collapsible
+
+# AI-generated content types to include after story pages
+ai:
+  enabled: true
+  contentTypes:
+    - type: "multiple-choice"
+      count: 3
+      difficulty: "medium"
+      instruction: "Generate questions based on story content about Vietnamese foods Peter tried"
+
+    - type: "fill-in-blanks"
+      count: 2
+      difficulty: "easy"
+      instruction: "Create fill-in-the-blank exercises using key sentences from the story"
+
+    - type: "true-false"
+      count: 3
+      difficulty: "easy"
+      instruction: "Generate true/false questions about facts mentioned in the story"
+
+    - type: "accordion"
+      instruction: "Create a summary accordion with key points about each Vietnamese food mentioned"

@@ -1,0 +1,22 @@
+title: "Ma Journée Parfaite - Text-Based Test"
+language: fr
+
+source:
+  type: youtube
+  url: "https://www.youtube.com/watch?v=Fhw6aoJ-2qE"
+  startTime: "00:19"
+  endTime: "03:23"
+
+# Text-based mode: reference edited transcript
+transcriptSource: ".youtube-cache/Fhw6aoJ-2qE/full-transcript-edited.txt"
+
+# Fuzzy mode allows significant edits (60%+ similarity)
+matchingMode: "fuzzy"
+
+translation:
+  enabled: true
+  targetLanguage: en
+  style: collapsible
+
+# Note: pages array is not used in text-based mode
+# Page definitions come from transcriptSource instead

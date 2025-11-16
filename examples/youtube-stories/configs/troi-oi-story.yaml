@@ -1,0 +1,44 @@
+title: "Peter learns how to say Trời ơi!"
+language: vi
+
+source:
+  type: youtube
+  url: "https://www.youtube.com/watch?v=Y8M9RJ_4C7E"
+  startTime: "00:14"
+  endTime: "05:01"
+  # Will trim to story section after reviewing transcript
+
+# Text-based mode: reference edited transcript
+transcriptSource: ".youtube-cache/Y8M9RJ_4C7E/full-transcript-edited.txt"
+
+# Fuzzy mode allows more edits (60%+ similarity)
+matchingMode: "fuzzy"
+
+translation:
+  enabled: true
+  targetLanguage: en
+  style: collapsible
+
+# AI-generated content types to include after story pages
+ai:
+  enabled: true
+  model: "gemini-2.0-flash-exp"
+
+  contentTypes:
+    - type: "single-choice"
+      count: 5
+      difficulty: "easy"
+      instruction: "Create multiple choice questions about the story events and Vietnamese phrases"
+
+    - type: "fill-in-the-blanks"
+      count: 3
+      difficulty: "medium"
+      instruction: "Create fill-in-the-blank exercises using key Vietnamese phrases from the story"
+
+    - type: "true-false"
+      count: 3
+      difficulty: "easy"
+      instruction: "Generate true/false questions about facts mentioned in the story"
+
+    - type: "accordion"
+      instruction: "Create a summary accordion with key points about Vietnamese expressions learned"
