@@ -228,6 +228,66 @@ No visual mockups provided for this specification (backend/API feature).
 - Can be leveraged as default target language when `aiConfig.targetLanguage` not specified
 - Already validated and stored in book definition structure
 
+## Bonus Feature: Audio Autoplay Configuration
+
+### Requirement
+
+Add optional `audioAutoplay` field to `BookDefinition` interface to enable automatic playback of audio content, particularly useful for digital audiobooks and language learning materials.
+
+### Configuration
+
+```yaml
+title: "Vietnamese Audio Story"
+language: vi
+audioAutoplay: true  # Enable automatic audio playback
+
+chapters:
+  - title: "Chapter 1"
+    content:
+      - type: audio
+        title: "Listen to the story"
+        path: audio/chapter1.mp3
+        # Audio will autoplay when page loads
+```
+
+### Implementation
+
+**File:** `src/compiler/YamlInputParser.ts` (BookDefinition interface)
+```typescript
+export interface BookDefinition {
+  title: string;
+  language?: string;
+  audioAutoplay?: boolean;  // NEW: Enable audio autoplay (default: false)
+  coverImage?: string;
+  chapters: ChapterDefinition[];
+  aiConfig?: AIConfiguration;
+}
+```
+
+**File:** `src/compiler/ChapterBuilder.ts` (line 224)
+```typescript
+// Before:
+autoplay: false,
+
+// After:
+autoplay: this.book.audioAutoplay ?? false,  // Use book setting, default false
+```
+
+### Benefits
+
+- **Language Learning**: Audio plays automatically for listening comprehension
+- **Audiobooks**: Seamless playback for digital story experiences
+- **Accessibility**: Reduces clicks for users with motor impairments
+- **User Control**: Optional (defaults to false for standard behavior)
+
+### Acceptance Criteria
+
+- [ ] `BookDefinition` interface includes optional `audioAutoplay?: boolean` field
+- [ ] ChapterBuilder reads `audioAutoplay` from book configuration
+- [ ] Defaults to `false` when not specified (backward compatible)
+- [ ] Works for all audio content types (audio, video with audio track)
+- [ ] Applies to all chapters in the book uniformly
+
 ## Out of Scope
 
 - Translation of existing H5P library UI strings (separate localization system)
@@ -240,3 +300,4 @@ No visual mockups provided for this specification (backend/API feature).
 - AI-powered translation quality validation (future enhancement)
 - Custom language instructions per content type (future enhancement)
 - Streaming AI responses (use existing batch response pattern)
+- Per-chapter or per-audio autoplay control (use book-level only for simplicity)

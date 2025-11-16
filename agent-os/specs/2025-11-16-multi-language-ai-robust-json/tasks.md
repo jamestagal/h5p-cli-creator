@@ -37,16 +37,24 @@ This specification implements TWO major features for h5p-cli-creator's AI conten
   - [ ] 1.4 Update AIConfiguration export in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/compiler/types.ts`
     - Ensure new fields are included in type exports
     - Verify backward compatibility (all new fields optional)
-  - [ ] 1.5 Ensure type definition tests pass
+  - [ ] 1.5 Add audioAutoplay field to BookDefinition interface (Bonus Feature)
+    - Add `audioAutoplay?: boolean` to BookDefinition in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/compiler/YamlInputParser.ts` (around line 260)
+    - Update JSDoc comment: "Enable automatic audio playback for all audio content (default: false)"
+    - Update ChapterBuilder to read audioAutoplay from book config in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/compiler/ChapterBuilder.ts` (line 224)
+    - Change `autoplay: false,` to `autoplay: this.book.audioAutoplay ?? false,`
+    - Test with Vietnamese audiobook example
+  - [ ] 1.6 Ensure type definition tests pass
     - Run ONLY the 2-8 tests written in 1.1
     - Verify language mapping accuracy
     - Do NOT run the entire test suite at this stage
 
 **Acceptance Criteria:**
 - The 2-8 tests written in 1.1 pass
-- AIConfiguration interface includes three new optional fields
+- AIConfiguration interface includes three new optional fields (targetLanguage, instructionalLanguage, includeTranslations)
+- BookDefinition interface includes audioAutoplay field (bonus feature)
 - LanguageUtils.getLanguageName() correctly maps common language codes
 - Invalid codes return code as-is with warning
+- Audio autoplay works when enabled in book config
 - Backward compatible (existing configs work without changes)
 
 ### Phase 2: JSON Validation Infrastructure
