@@ -142,7 +142,7 @@ export class H5pCompiler {
     const validator = new SemanticValidator();
     const builder = new ContentBuilder(this.libraryRegistry, validator);
 
-    builder.createBook(bookDef.title, bookDef.language);
+    builder.createBook(bookDef.title, bookDef.language, bookDef.audioAutoplay ?? false);
     if (verbose) {
       console.log(`  - Created book: "${bookDef.title}"`);
 

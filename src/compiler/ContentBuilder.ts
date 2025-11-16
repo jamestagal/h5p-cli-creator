@@ -34,6 +34,7 @@ export interface BookContent {
 export class ContentBuilder {
   private bookTitle: string = "";
   private bookLanguage: string = "en";
+  private bookAudioAutoplay: boolean = false;
   private chapters: any[] = [];
   private mediaFiles: MediaFile[] = [];
   private imageCounter: number = 0;
@@ -50,14 +51,16 @@ export class ContentBuilder {
   ) {}
 
   /**
-   * Initializes a new book with title and language.
+   * Initializes a new book with title, language, and optional audioAutoplay setting.
    * @param title Book title
    * @param language Language code (e.g., "en", "de")
+   * @param audioAutoplay Enable automatic audio playback (default: false)
    * @returns This builder for method chaining
    */
-  public createBook(title: string, language: string): this {
+  public createBook(title: string, language: string, audioAutoplay: boolean = false): this {
     this.bookTitle = title;
     this.bookLanguage = language;
+    this.bookAudioAutoplay = audioAutoplay;
     this.chapters = [];
     this.mediaFiles = [];
     return this;
@@ -75,7 +78,8 @@ export class ContentBuilder {
       this.chapters,
       this.mediaFiles,
       this.imageCounter,
-      this.audioCounter
+      this.audioCounter,
+      this.bookAudioAutoplay
     );
 
     // Update counters when chapter is finalized
@@ -150,5 +154,13 @@ export class ContentBuilder {
    */
   public getLanguage(): string {
     return this.bookLanguage;
+  }
+
+  /**
+   * Gets the book audio autoplay setting.
+   * @returns true if audio should autoplay, false otherwise
+   */
+  public getAudioAutoplay(): boolean {
+    return this.bookAudioAutoplay;
   }
 }

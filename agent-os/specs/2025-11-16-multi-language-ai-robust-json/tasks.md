@@ -18,32 +18,32 @@ This specification implements TWO major features for h5p-cli-creator's AI conten
 #### Task Group 1: TypeScript Type Definitions and Language Utilities
 **Dependencies:** None
 
-- [ ] 1.0 Complete type definitions and language utilities
-  - [ ] 1.1 Write 2-8 focused tests for language name resolution
+- [x] 1.0 Complete type definitions and language utilities
+  - [x] 1.1 Write 2-8 focused tests for language name resolution
     - Test ISO 639-1 code mapping (vi → Vietnamese, fr → French, de → German, es → Spanish)
     - Test invalid code handling (returns code as-is, logs warning)
     - Test case insensitivity (VI → Vietnamese, Fr → French)
     - Limit to 2-8 tests maximum (core mapping scenarios only)
-  - [ ] 1.2 Update AIConfiguration interface in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/compiler/types.ts` (lines 185-241)
+  - [x] 1.2 Update AIConfiguration interface in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/compiler/types.ts` (lines 185-241)
     - Add `targetLanguage?: string` field (ISO 639-1 code)
     - Add `instructionalLanguage?: string` field (ISO 639-1 code for scaffolding)
     - Add `includeTranslations?: boolean` field (bilingual content flag)
     - Update JSDoc comments with usage examples
-  - [ ] 1.3 Create language name resolution utility in new file `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/LanguageUtils.ts`
+  - [x] 1.3 Create language name resolution utility in new file `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/LanguageUtils.ts`
     - Implement `getLanguageName(isoCode: string): string` function
     - Map common ISO 639-1 codes to full names: en→English, vi→Vietnamese, fr→French, de→German, es→Spanish, ja→Japanese, ko→Korean, zh→Chinese, ar→Arabic, pt→Portuguese
     - Return code as-is for unrecognized codes (with warning log)
     - Export as static utility class
-  - [ ] 1.4 Update AIConfiguration export in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/compiler/types.ts`
+  - [x] 1.4 Update AIConfiguration export in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/compiler/types.ts`
     - Ensure new fields are included in type exports
     - Verify backward compatibility (all new fields optional)
-  - [ ] 1.5 Add audioAutoplay field to BookDefinition interface (Bonus Feature)
+  - [x] 1.5 Add audioAutoplay field to BookDefinition interface (Bonus Feature)
     - Add `audioAutoplay?: boolean` to BookDefinition in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/compiler/YamlInputParser.ts` (around line 260)
     - Update JSDoc comment: "Enable automatic audio playback for all audio content (default: false)"
     - Update ChapterBuilder to read audioAutoplay from book config in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/compiler/ChapterBuilder.ts` (line 224)
     - Change `autoplay: false,` to `autoplay: this.book.audioAutoplay ?? false,`
     - Test with Vietnamese audiobook example
-  - [ ] 1.6 Ensure type definition tests pass
+  - [x] 1.6 Ensure type definition tests pass
     - Run ONLY the 2-8 tests written in 1.1
     - Verify language mapping accuracy
     - Do NOT run the entire test suite at this stage
@@ -62,42 +62,42 @@ This specification implements TWO major features for h5p-cli-creator's AI conten
 #### Task Group 2: JSONValidator Utility Class
 **Dependencies:** None (can run in parallel with Task Group 1)
 
-- [ ] 2.0 Complete JSON validation utility
-  - [ ] 2.1 Write 2-8 focused tests for JSONValidator
+- [x] 2.0 Complete JSON validation utility
+  - [x] 2.1 Write 2-8 focused tests for JSONValidator
     - Test truncated JSON detection (missing closing braces)
     - Test markdown code fence stripping (```json, ```)
     - Test JSON extraction from mixed content (text before/after JSON)
     - Test complete JSON validation (balanced braces/brackets)
     - Limit to 2-8 tests maximum (critical validation scenarios only)
-  - [ ] 2.2 Create JSONValidator class in new file `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/JSONValidator.ts`
+  - [x] 2.2 Create JSONValidator class in new file `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/JSONValidator.ts`
     - Implement as static utility class (no instance state)
     - Method signatures:
       - `validateCompleteJSON(text: string): boolean`
       - `extractJSON(text: string): string`
       - `stripMarkdown(text: string): string`
       - `isLikelyTruncated(text: string): boolean`
-  - [ ] 2.3 Implement `stripMarkdown()` method
+  - [x] 2.3 Implement `stripMarkdown()` method
     - Remove markdown code fences: ```json, ```javascript, ```
     - Remove extra whitespace (leading/trailing)
     - Handle both ```json\n and ``` patterns
     - Aggressive cleaning for Gemini provider (more markdown noise)
-  - [ ] 2.4 Implement `extractJSON()` method
+  - [x] 2.4 Implement `extractJSON()` method
     - Find first `{` or `[` character (start of JSON)
     - Find matching closing `}` or `]` (balanced bracket counting)
     - Extract substring between start and end
     - Handle nested objects and arrays correctly
     - Support both JSON objects and arrays
-  - [ ] 2.5 Implement `validateCompleteJSON()` method
+  - [x] 2.5 Implement `validateCompleteJSON()` method
     - Count opening braces/brackets: `{`, `[`
     - Count closing braces/brackets: `}`, `]`
     - Return true if counts match (balanced structure)
     - Handle strings with escaped braces correctly
-  - [ ] 2.6 Implement `isLikelyTruncated()` method
+  - [x] 2.6 Implement `isLikelyTruncated()` method
     - Check if text ends mid-property (e.g., `"text": "Hello`)
     - Check for unbalanced braces (more `{` than `}`)
     - Check for sudden end without closing brackets
     - Return true if truncation indicators detected
-  - [ ] 2.7 Ensure JSONValidator tests pass
+  - [x] 2.7 Ensure JSONValidator tests pass
     - Run ONLY the 2-8 tests written in 2.1
     - Verify truncation detection accuracy
     - Verify markdown stripping completeness
@@ -116,35 +116,35 @@ This specification implements TWO major features for h5p-cli-creator's AI conten
 #### Task Group 3: System Prompt Language Configuration
 **Dependencies:** Task Group 1 (requires LanguageUtils and updated types)
 
-- [ ] 3.0 Complete language injection in AIPromptBuilder
-  - [ ] 3.1 Write 2-8 focused tests for language prompt injection
+- [x] 3.0 Complete language injection in AIPromptBuilder
+  - [x] 3.1 Write 2-8 focused tests for language prompt injection
     - Test CONTENT LANGUAGE injection (targetLanguage specified)
     - Test INSTRUCTIONAL LANGUAGE injection (differs from target)
     - Test TRANSLATIONS instruction injection (includeTranslations=true)
     - Test monolingual mode (no instructionalLanguage specified)
     - Limit to 2-8 tests maximum (key language scenarios only)
-  - [ ] 3.2 Update `buildSystemPrompt()` in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/AIPromptBuilder.ts` (lines 146-168)
+  - [x] 3.2 Update `buildSystemPrompt()` in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/AIPromptBuilder.ts` (lines 146-168)
     - Import LanguageUtils from `./LanguageUtils`
     - Inject CONTENT LANGUAGE instruction when `config.targetLanguage` specified
     - Format: "CONTENT LANGUAGE: Generate all educational content (questions, answers, explanations) in [LanguageName] ([code]). Do not translate content to other languages unless explicitly instructed."
     - Inject after TONE section, before customization
-  - [ ] 3.3 Add INSTRUCTIONAL LANGUAGE injection to `buildSystemPrompt()`
+  - [x] 3.3 Add INSTRUCTIONAL LANGUAGE injection to `buildSystemPrompt()`
     - Only inject when `config.instructionalLanguage` differs from `config.targetLanguage`
     - Format: "INSTRUCTIONAL LANGUAGE: Generate all task instructions, directions, and scaffolding text in [LanguageName] ([code]). This includes quiz instructions, activity directions, and any text that guides the learner through the task."
     - Inject after CONTENT LANGUAGE, before customization
-  - [ ] 3.4 Add TRANSLATIONS instruction injection to `buildSystemPrompt()`
+  - [x] 3.4 Add TRANSLATIONS instruction injection to `buildSystemPrompt()`
     - Only inject when `config.includeTranslations === true`
     - Format: "TRANSLATIONS: Include English translations in parentheses after [LanguageName] terms for language learners. Format: 'Term (translation)'."
     - Inject after INSTRUCTIONAL LANGUAGE (if present) or CONTENT LANGUAGE, before customization
-  - [ ] 3.5 Update `resolveConfig()` in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/AIPromptBuilder.ts` (lines 226-253)
+  - [x] 3.5 Update `resolveConfig()` in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/AIPromptBuilder.ts` (lines 226-253)
     - Add targetLanguage cascade: item > chapter > book > undefined
     - Add instructionalLanguage cascade: item > chapter > book > undefined (defaults to targetLanguage when not specified)
     - Add includeTranslations cascade: item > chapter > book > false (default)
     - Maintain existing cascade for targetAudience, tone, outputStyle, customization
-  - [ ] 3.6 Add auto-detection from BookDefinition.language
+  - [x] 3.6 Add auto-detection from BookDefinition.language
     - When `targetLanguage` not specified in aiConfig hierarchy, fall back to `bookDefinition.language`
     - Implement in handlers (Task Group 5) by passing book language to resolveConfig
-  - [ ] 3.7 Ensure language injection tests pass
+  - [x] 3.7 Ensure language injection tests pass
     - Run ONLY the 2-8 tests written in 3.1
     - Verify correct language instructions appear in system prompt
     - Verify instructional language only appears when different from target
