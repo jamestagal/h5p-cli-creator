@@ -24,23 +24,23 @@ This specification implements TWO major features for h5p-cli-creator's AI conten
     - Test invalid code handling (returns code as-is, logs warning)
     - Test case insensitivity (VI → Vietnamese, Fr → French)
     - Limit to 2-8 tests maximum (core mapping scenarios only)
-  - [x] 1.2 Update AIConfiguration interface in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/compiler/types.ts` (lines 185-241)
+  - [x] 1.2 Update AIConfiguration interface in `/home/user/h5p-cli-creator/src/compiler/types.ts` (lines 185-241)
     - Add `targetLanguage?: string` field (ISO 639-1 code)
     - Add `instructionalLanguage?: string` field (ISO 639-1 code for scaffolding)
     - Add `includeTranslations?: boolean` field (bilingual content flag)
     - Update JSDoc comments with usage examples
-  - [x] 1.3 Create language name resolution utility in new file `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/LanguageUtils.ts`
+  - [x] 1.3 Create language name resolution utility in new file `/home/user/h5p-cli-creator/src/ai/LanguageUtils.ts`
     - Implement `getLanguageName(isoCode: string): string` function
     - Map common ISO 639-1 codes to full names: en→English, vi→Vietnamese, fr→French, de→German, es→Spanish, ja→Japanese, ko→Korean, zh→Chinese, ar→Arabic, pt→Portuguese
     - Return code as-is for unrecognized codes (with warning log)
     - Export as static utility class
-  - [x] 1.4 Update AIConfiguration export in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/compiler/types.ts`
+  - [x] 1.4 Update AIConfiguration export in `/home/user/h5p-cli-creator/src/compiler/types.ts`
     - Ensure new fields are included in type exports
     - Verify backward compatibility (all new fields optional)
   - [x] 1.5 Add audioAutoplay field to BookDefinition interface (Bonus Feature)
-    - Add `audioAutoplay?: boolean` to BookDefinition in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/compiler/YamlInputParser.ts` (around line 260)
+    - Add `audioAutoplay?: boolean` to BookDefinition in `/home/user/h5p-cli-creator/src/compiler/YamlInputParser.ts` (around line 260)
     - Update JSDoc comment: "Enable automatic audio playback for all audio content (default: false)"
-    - Update ChapterBuilder to read audioAutoplay from book config in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/compiler/ChapterBuilder.ts` (line 224)
+    - Update ChapterBuilder to read audioAutoplay from book config in `/home/user/h5p-cli-creator/src/compiler/ChapterBuilder.ts` (line 224)
     - Change `autoplay: false,` to `autoplay: this.book.audioAutoplay ?? false,`
     - Test with Vietnamese audiobook example
   - [x] 1.6 Ensure type definition tests pass
@@ -69,7 +69,7 @@ This specification implements TWO major features for h5p-cli-creator's AI conten
     - Test JSON extraction from mixed content (text before/after JSON)
     - Test complete JSON validation (balanced braces/brackets)
     - Limit to 2-8 tests maximum (critical validation scenarios only)
-  - [x] 2.2 Create JSONValidator class in new file `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/JSONValidator.ts`
+  - [x] 2.2 Create JSONValidator class in new file `/home/user/h5p-cli-creator/src/ai/JSONValidator.ts`
     - Implement as static utility class (no instance state)
     - Method signatures:
       - `validateCompleteJSON(text: string): boolean`
@@ -123,7 +123,7 @@ This specification implements TWO major features for h5p-cli-creator's AI conten
     - Test TRANSLATIONS instruction injection (includeTranslations=true)
     - Test monolingual mode (no instructionalLanguage specified)
     - Limit to 2-8 tests maximum (key language scenarios only)
-  - [x] 3.2 Update `buildSystemPrompt()` in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/AIPromptBuilder.ts` (lines 146-168)
+  - [x] 3.2 Update `buildSystemPrompt()` in `/home/user/h5p-cli-creator/src/ai/AIPromptBuilder.ts` (lines 146-168)
     - Import LanguageUtils from `./LanguageUtils`
     - Inject CONTENT LANGUAGE instruction when `config.targetLanguage` specified
     - Format: "CONTENT LANGUAGE: Generate all educational content (questions, answers, explanations) in [LanguageName] ([code]). Do not translate content to other languages unless explicitly instructed."
@@ -136,7 +136,7 @@ This specification implements TWO major features for h5p-cli-creator's AI conten
     - Only inject when `config.includeTranslations === true`
     - Format: "TRANSLATIONS: Include English translations in parentheses after [LanguageName] terms for language learners. Format: 'Term (translation)'."
     - Inject after INSTRUCTIONAL LANGUAGE (if present) or CONTENT LANGUAGE, before customization
-  - [x] 3.5 Update `resolveConfig()` in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/AIPromptBuilder.ts` (lines 226-253)
+  - [x] 3.5 Update `resolveConfig()` in `/home/user/h5p-cli-creator/src/ai/AIPromptBuilder.ts` (lines 226-253)
     - Add targetLanguage cascade: item > chapter > book > undefined
     - Add instructionalLanguage cascade: item > chapter > book > undefined (defaults to targetLanguage when not specified)
     - Add includeTranslations cascade: item > chapter > book > false (default)
@@ -164,42 +164,42 @@ This specification implements TWO major features for h5p-cli-creator's AI conten
 #### Task Group 4: Robust JSON Parsing with Retry Logic
 **Dependencies:** Task Group 2 (requires JSONValidator)
 
-- [ ] 4.0 Complete retry logic and error handling
-  - [ ] 4.1 Write 2-8 focused tests for retry logic
+- [x] 4.0 Complete retry logic and error handling
+  - [x] 4.1 Write 2-8 focused tests for retry logic
     - Test retry on malformed JSON (transient error)
     - Test progressive degradation on truncation (increase max_tokens)
     - Test exponential backoff timing (1s, 2s, 4s)
     - Test final fallback after 3 failed retries
     - Limit to 2-8 tests maximum (critical retry scenarios only)
-  - [ ] 4.2 Update `generateRawContent()` in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/QuizGenerator.ts` (lines 345-383)
+  - [x] 4.2 Update `generateRawContent()` in `/home/user/h5p-cli-creator/src/ai/QuizGenerator.ts` (lines 345-383)
     - Import JSONValidator from `./JSONValidator`
     - Wrap existing API call in retry loop (max 3 attempts)
     - Implement exponential backoff: 1000ms, 2000ms, 4000ms between retries
     - Use `await new Promise(resolve => setTimeout(resolve, backoffMs))` for delays
-  - [ ] 4.3 Implement truncation detection and progressive degradation
+  - [x] 4.3 Implement truncation detection and progressive degradation
     - After each failed attempt, check `JSONValidator.isLikelyTruncated(responseText)`
     - If truncated: double `max_tokens` for next retry (2048 → 4096 → 8192, capped at 8192)
     - If malformed (not truncated): retry with same `max_tokens` (transient error)
     - Track `max_tokens` as mutable variable in retry loop
-  - [ ] 4.4 Add provider-specific error handling
+  - [x] 4.4 Add provider-specific error handling
     - Detect provider from `this.provider` field ("anthropic" or "google")
     - Gemini responses: use aggressive `JSONValidator.stripMarkdown()` before extraction
     - Claude responses: use minimal cleaning (more reliable, less noise)
     - Apply provider-specific extraction in JSONValidator.extractJSON()
-  - [ ] 4.5 Add verbose logging throughout retry process
+  - [x] 4.5 Add verbose logging throughout retry process
     - Log raw AI response (first 500 chars): `[VERBOSE] Raw response (first 500 chars): ...`
     - Log each processing step: `[VERBOSE] After stripMarkdown: ...`, `[VERBOSE] After extractJSON: ...`
     - Log retry attempts: `[VERBOSE] Retry attempt ${attempt}/${MAX_RETRIES} (reason: ${reason})`
     - Log backoff delays: `[VERBOSE] Waiting ${backoffMs}ms before retry...`
     - Log final decision: `[VERBOSE] Success on attempt ${attempt}` or `[VERBOSE] All retries failed, using fallback`
     - Only log when verbose mode enabled (check via context or global flag)
-  - [ ] 4.6 Implement validation pipeline in retry loop
+  - [x] 4.6 Implement validation pipeline in retry loop
     - Step 1: Strip markdown using `JSONValidator.stripMarkdown(responseText)`
     - Step 2: Extract JSON using `JSONValidator.extractJSON(strippedText)`
     - Step 3: Validate completeness using `JSONValidator.validateCompleteJSON(extractedJSON)`
     - Step 4: Parse using `JSON.parse(extractedJSON)`
     - Catch errors at each step, log reason, and retry if attempts remaining
-  - [ ] 4.7 Ensure retry logic tests pass
+  - [x] 4.7 Ensure retry logic tests pass
     - Run ONLY the 2-8 tests written in 4.1
     - Verify retry attempts work correctly
     - Verify progressive degradation increases max_tokens
@@ -220,52 +220,52 @@ This specification implements TWO major features for h5p-cli-creator's AI conten
 #### Task Group 5: Update All 7 AI Handlers
 **Dependencies:** Task Groups 3 and 4 (requires language injection and JSONValidator)
 
-- [ ] 5.0 Complete handler updates for language support and JSON validation
-  - [ ] 5.1 Write 2-8 focused tests for handler integration
+- [x] 5.0 Complete handler updates for language support and JSON validation
+  - [x] 5.1 Write 2-8 focused tests for handler integration
     - Test handler with Vietnamese targetLanguage (content in Vietnamese)
     - Test handler with instructionalLanguage=en + targetLanguage=vi (English instructions, Vietnamese content)
     - Test handler with includeTranslations=true (bilingual content)
     - Test handler JSON parsing with JSONValidator (malformed response recovery)
     - Limit to 2-8 tests maximum (integration scenarios only)
-  - [ ] 5.2 Update AIAccordionHandler in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AIAccordionHandler.ts`
+  - [x] 5.2 Update AIAccordionHandler in `/home/user/h5p-cli-creator/src/handlers/ai/AIAccordionHandler.ts`
     - Import JSONValidator from `../../ai/JSONValidator`
     - Update line 199: Replace manual markdown stripping with `JSONValidator.stripMarkdown(response)`
     - Add validation before parse (line 200): Check `JSONValidator.validateCompleteJSON(cleaned)`
     - Update error messages to differentiate truncation vs malformed JSON
     - Ensure configuration cascade passes book.language as fallback targetLanguage
-  - [ ] 5.3 Update AIEssayHandler in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AIEssayHandler.ts`
+  - [x] 5.3 Update AIEssayHandler in `/home/user/h5p-cli-creator/src/handlers/ai/AIEssayHandler.ts`
     - Import JSONValidator from `../../ai/JSONValidator`
     - Replace manual JSON extraction with `JSONValidator.extractJSON(response)`
     - Add validation before parse: Check `JSONValidator.validateCompleteJSON(extracted)`
     - Update error handling to distinguish truncation errors
     - Pass language configuration to AIPromptBuilder
-  - [ ] 5.4 Update AITrueFalseHandler in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AITrueFalseHandler.ts`
+  - [x] 5.4 Update AITrueFalseHandler in `/home/user/h5p-cli-creator/src/handlers/ai/AITrueFalseHandler.ts`
     - Import JSONValidator from `../../ai/JSONValidator`
     - Replace manual markdown stripping with `JSONValidator.stripMarkdown(response)`
     - Add complete JSON validation before parsing
     - Update error messages for better debugging
     - Ensure language configuration cascades correctly
-  - [ ] 5.5 Update AICrosswordHandler in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AICrosswordHandler.ts`
+  - [x] 5.5 Update AICrosswordHandler in `/home/user/h5p-cli-creator/src/handlers/ai/AICrosswordHandler.ts`
     - Import JSONValidator from `../../ai/JSONValidator`
     - Use `JSONValidator.extractJSON()` and `validateCompleteJSON()`
     - Handle truncation errors appropriately
     - Pass targetLanguage to ensure crossword clues in correct language
-  - [ ] 5.6 Update AIDragTextHandler in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AIDragTextHandler.ts`
+  - [x] 5.6 Update AIDragTextHandler in `/home/user/h5p-cli-creator/src/handlers/ai/AIDragTextHandler.ts`
     - Import JSONValidator from `../../ai/JSONValidator`
     - Replace manual JSON parsing with validation pipeline
     - Ensure language configuration used for generating drag-text content
     - Update error handling pattern
-  - [ ] 5.7 Update AIBlanksHandler in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AIBlanksHandler.ts`
+  - [x] 5.7 Update AIBlanksHandler in `/home/user/h5p-cli-creator/src/handlers/ai/AIBlanksHandler.ts`
     - Import JSONValidator from `../../ai/JSONValidator`
     - Use `JSONValidator.stripMarkdown()` and `extractJSON()`
     - Add validation before parsing
     - Ensure fill-in-the-blanks questions generated in target language
-  - [ ] 5.8 Update AISingleChoiceSetHandler in `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AISingleChoiceSetHandler.ts`
+  - [x] 5.8 Update AISingleChoiceSetHandler in `/home/user/h5p-cli-creator/src/handlers/ai/AISingleChoiceSetHandler.ts`
     - Already reviewed - update line 273: Use `JSONValidator.stripMarkdown(response)`
     - Add validation check at line 274: `JSONValidator.validateCompleteJSON(cleaned)`
     - Update error messages to show truncation vs malformed distinction
     - Verify language configuration cascade working (line 238-244)
-  - [ ] 5.9 Ensure handler integration tests pass
+  - [x] 5.9 Ensure handler integration tests pass
     - Run ONLY the 2-8 tests written in 5.1
     - Verify language configuration works end-to-end
     - Verify JSONValidator integration improves parse success rate
@@ -286,8 +286,8 @@ This specification implements TWO major features for h5p-cli-creator's AI conten
 #### Task Group 6: Integration Testing and Configuration Examples
 **Dependencies:** Task Groups 1-5 (requires complete implementation)
 
-- [ ] 6.0 Complete end-to-end testing and validation
-  - [ ] 6.1 Write up to 10 additional integration tests (MAXIMUM)
+- [x] 6.0 Complete end-to-end testing and validation
+  - [x] 6.1 Write up to 10 additional integration tests (MAXIMUM)
     - Test Vietnamese story with English instructions (beginner scaffolding)
     - Test French story with full immersion (no instructional language)
     - Test bilingual content with translations (Vietnamese with English)
@@ -297,7 +297,7 @@ This specification implements TWO major features for h5p-cli-creator's AI conten
     - Test auto-detection from BookDefinition.language
     - Test invalid language codes (warnings but no errors)
     - Maximum 10 tests total - focus on critical user workflows only
-  - [ ] 6.2 Test Vietnamese story with beginner scaffolding
+  - [x] 6.2 Test Vietnamese story with beginner scaffolding
     - Create test YAML config: `examples/multi-language/vietnamese-beginner.yaml`
     - Set targetLanguage=vi, instructionalLanguage=en, includeTranslations=true
     - Generate H5P package and verify:
@@ -305,7 +305,7 @@ This specification implements TWO major features for h5p-cli-creator's AI conten
       - Quiz questions in Vietnamese ("Peter đi đâu?")
       - Answers in Vietnamese with translations ("Quán cà phê (Cafe)")
       - Accordion panels in Vietnamese with English scaffolding
-  - [ ] 6.3 Test French story with full immersion
+  - [x] 6.3 Test French story with full immersion
     - Create test YAML config: `examples/multi-language/french-immersion.yaml`
     - Set targetLanguage=fr (no instructionalLanguage specified)
     - Set includeTranslations=false
@@ -313,31 +313,31 @@ This specification implements TWO major features for h5p-cli-creator's AI conten
       - All content in French (monolingual)
       - Task instructions in French ("Choisissez la bonne réponse")
       - No English translations anywhere
-  - [ ] 6.4 Test JSON error recovery with intentional failures
+  - [x] 6.4 Test JSON error recovery with intentional failures
     - Mock truncated JSON responses from AI provider
     - Mock malformed JSON with syntax errors
     - Verify retry logic triggers (logged in verbose mode)
     - Verify progressive degradation increases max_tokens
     - Verify fallback content generated after 3 failed retries
     - Verify error messages actionable and clear
-  - [ ] 6.5 Test backward compatibility
+  - [x] 6.5 Test backward compatibility
     - Test existing YAML configs without new language fields
     - Verify default behavior (English content)
     - Verify no errors or warnings for legacy configs
     - Verify generated packages identical to previous versions
-  - [ ] 6.6 Create configuration examples
+  - [x] 6.6 Create configuration examples
     - Document beginner scaffolding pattern in `examples/multi-language/README.md`
     - Document full immersion pattern
     - Document bilingual content pattern
     - Document configuration cascade behavior
     - Include Vietnamese, French, German, Spanish examples
-  - [ ] 6.7 Update CLAUDE.md documentation
+  - [x] 6.7 Update CLAUDE.md documentation
     - Document new AIConfiguration fields (targetLanguage, instructionalLanguage, includeTranslations)
     - Add multi-language workflow section
     - Document JSON error handling improvements
     - Add verbose logging usage examples
     - Update configuration cascade documentation
-  - [ ] 6.8 Run feature-specific integration tests
+  - [x] 6.8 Run feature-specific integration tests
     - Run ONLY integration tests from 6.1 (maximum 10 tests)
     - Run ONLY unit tests from Task Groups 1-5 (approximately 10-40 tests total)
     - Expected total: approximately 20-50 tests maximum
@@ -469,26 +469,26 @@ if (verbose) {
 ## File Locations Reference
 
 ### New Files
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/LanguageUtils.ts` - Language name resolution
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/JSONValidator.ts` - JSON validation utilities
+- `/home/user/h5p-cli-creator/src/ai/LanguageUtils.ts` - Language name resolution
+- `/home/user/h5p-cli-creator/src/ai/JSONValidator.ts` - JSON validation utilities
 
 ### Modified Files
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/compiler/types.ts` - AIConfiguration interface (lines 185-241)
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/AIPromptBuilder.ts` - Language injection (lines 146-253)
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/ai/QuizGenerator.ts` - Retry logic (lines 345-383)
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AIAccordionHandler.ts` - Validation (line 199-200)
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AIEssayHandler.ts` - Validation
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AITrueFalseHandler.ts` - Validation
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AICrosswordHandler.ts` - Validation
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AIDragTextHandler.ts` - Validation
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AIBlanksHandler.ts` - Validation
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/src/handlers/ai/AISingleChoiceSetHandler.ts` - Validation (lines 273-274)
+- `/home/user/h5p-cli-creator/src/compiler/types.ts` - AIConfiguration interface (lines 185-241)
+- `/home/user/h5p-cli-creator/src/ai/AIPromptBuilder.ts` - Language injection (lines 146-253)
+- `/home/user/h5p-cli-creator/src/ai/QuizGenerator.ts` - Retry logic (lines 345-383)
+- `/home/user/h5p-cli-creator/src/handlers/ai/AIAccordionHandler.ts` - Validation (line 199-200)
+- `/home/user/h5p-cli-creator/src/handlers/ai/AIEssayHandler.ts` - Validation
+- `/home/user/h5p-cli-creator/src/handlers/ai/AITrueFalseHandler.ts` - Validation
+- `/home/user/h5p-cli-creator/src/handlers/ai/AICrosswordHandler.ts` - Validation
+- `/home/user/h5p-cli-creator/src/handlers/ai/AIDragTextHandler.ts` - Validation
+- `/home/user/h5p-cli-creator/src/handlers/ai/AIBlanksHandler.ts` - Validation
+- `/home/user/h5p-cli-creator/src/handlers/ai/AISingleChoiceSetHandler.ts` - Validation (lines 273-274)
 
 ### Documentation Files
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/CLAUDE.md` - Update with multi-language workflow
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/examples/multi-language/README.md` - Configuration examples
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/examples/multi-language/vietnamese-beginner.yaml` - Test config
-- `/Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/examples/multi-language/french-immersion.yaml` - Test config
+- `/home/user/h5p-cli-creator/CLAUDE.md` - Update with multi-language workflow
+- `/home/user/h5p-cli-creator/examples/multi-language/README.md` - Configuration examples
+- `/home/user/h5p-cli-creator/examples/multi-language/vietnamese-beginner.yaml` - Test config
+- `/home/user/h5p-cli-creator/examples/multi-language/french-immersion.yaml` - Test config
 
 ## Common Pitfalls & Gotchas
 

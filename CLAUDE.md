@@ -367,6 +367,309 @@ See `examples/youtube-stories/text-based-example.yaml` for complete config examp
 See `examples/youtube-stories/full-transcript-example.txt` for transcript format example.
 
 
+
+## Multi-Language AI Content Generation
+
+h5p-cli-creator supports generating AI-powered educational content in multiple languages (Vietnamese, French, German, Spanish, etc.) with optional scaffolding for language learners.
+
+### Key Features
+
+#### 1. Target Language Configuration
+
+Generate educational content (questions, answers, explanations) in any language:
+
+```yaml
+aiConfig:
+  targetLanguage: "vi"  # ISO 639-1 code (vi=Vietnamese, fr=French, de=German, etc.)
+```
+
+#### 2. Instructional Language (Beginner Scaffolding)
+
+Provide task instructions in a different language to support language learners:
+
+```yaml
+aiConfig:
+  targetLanguage: "vi"           # Content in Vietnamese
+  instructionalLanguage: "en"    # Instructions in English (scaffolding)
+```
+
+**Use Case:** Beginner learners need instructions in their first language to understand what to do, but practice content in the target language.
+
+**Generated Output:**
+- Task instructions: "Choose the correct answer" (English)
+- Questions: "Peter đi đâu?" (Vietnamese)
+- Answers: "Quán cà phê", "Nhà hàng" (Vietnamese)
+
+#### 3. Translation Support
+
+Add English translations for vocabulary support:
+
+```yaml
+aiConfig:
+  targetLanguage: "vi"
+  instructionalLanguage: "en"
+  includeTranslations: true      # Add English translations in parentheses
+```
+
+**Generated Output:**
+- "Xin chào (Hello)"
+- "Cảm ơn (Thank you)"
+- "Quán cà phê (Cafe)"
+
+### Configuration Patterns
+
+#### Pattern 1: Beginner Scaffolding
+
+For lower beginner language learners who need first-language instructions:
+
+```yaml
+title: "Peter learns Trời ơi!"
+language: vi
+
+aiConfig:
+  targetLanguage: "vi"           # Content in Vietnamese
+  instructionalLanguage: "en"    # Instructions in English
+  includeTranslations: true      # Add translations
+  targetAudience: "esl-beginner"
+
+chapters:
+  - title: "Vietnamese Greetings"
+    content:
+      - type: ai-singlechoiceset
+        title: "Greeting Quiz"
+        prompt: "Create questions about Vietnamese greetings"
+        questionCount: 5
+```
+
+**Example:** `examples/multi-language/vietnamese-beginner.yaml`
+
+#### Pattern 2: Full Immersion
+
+For advanced learners ready for monolingual content:
+
+```yaml
+title: "La Culture Française"
+language: fr
+
+aiConfig:
+  targetLanguage: "fr"           # All content in French
+  includeTranslations: false     # No translations (immersion)
+  targetAudience: "high-school"
+
+chapters:
+  - title: "La Gastronomie"
+    content:
+      - type: ai-text
+        prompt: "Décrivez la cuisine française"
+```
+
+**Note:** When `instructionalLanguage` is not specified, it defaults to `targetLanguage` (monolingual mode).
+
+**Example:** `examples/multi-language/french-immersion.yaml`
+
+#### Pattern 3: Bilingual Content
+
+For intermediate learners comfortable with target language instructions but needing vocabulary support:
+
+```yaml
+aiConfig:
+  targetLanguage: "vi"
+  instructionalLanguage: "vi"    # Same as target (monolingual instructions)
+  includeTranslations: true      # But add translations for vocabulary
+```
+
+### Configuration Cascade
+
+Language settings cascade from book → chapter → item levels:
+
+```yaml
+# Book level (applies to all content)
+aiConfig:
+  targetLanguage: "vi"
+
+chapters:
+  # Chapter level (overrides book for this chapter)
+  - title: "Chapter 1"
+    aiConfig:
+      targetLanguage: "fr"    # This chapter in French
+    content:
+      # Item level (overrides chapter and book)
+      - type: ai-text
+        aiConfig:
+          targetLanguage: "de"  # This item in German
+        prompt: "Write a story"
+```
+
+**Resolution Order (highest to lowest priority):**
+1. Item-level `aiConfig.targetLanguage`
+2. Chapter-level `aiConfig.targetLanguage`
+3. Book-level `aiConfig.targetLanguage`
+4. Auto-detected from `BookDefinition.language`
+5. Default to English
+
+### Auto-Detection from Book Language
+
+When `targetLanguage` is not specified, it auto-detects from the book's `language` field:
+
+```yaml
+title: "Vietnamese Story"
+language: vi  # Auto-detected as targetLanguage
+
+# No aiConfig needed - will default to Vietnamese content
+chapters:
+  - title: "Chapter 1"
+    content:
+      - type: ai-text
+        prompt: "Write a story"  # Generated in Vietnamese
+```
+
+### Supported Languages
+
+Common ISO 639-1 language codes:
+
+| Code | Language   | Example Usage                          |
+|------|------------|----------------------------------------|
+| `vi` | Vietnamese | Language learning, cultural content    |
+| `fr` | French     | Literature, culture, language courses  |
+| `de` | German     | Language learning, technical content   |
+| `es` | Spanish    | Language courses, cultural studies     |
+| `ja` | Japanese   | Language learning, cultural content    |
+| `ko` | Korean     | Language courses, K-pop culture        |
+| `zh` | Chinese    | Language learning, history             |
+| `ar` | Arabic     | Language courses, cultural studies     |
+| `pt` | Portuguese | Language learning, Brazilian culture   |
+| `en` | English    | Default (no special configuration)     |
+
+**Note:** The system accepts any ISO 639-1 code. Unknown codes are passed through with a warning but do not block generation.
+
+### JSON Error Handling and Retry Logic
+
+The system includes robust JSON error handling to reduce AI generation failures from ~20% to <5%:
+
+#### Automatic Retry with Exponential Backoff
+
+- **Maximum 3 retry attempts** before falling back to error content
+- **Exponential backoff:** 1s, 2s, 4s between attempts
+- **Progressive degradation:** Increases `max_tokens` if truncation detected
+- **Provider-specific handling:** Different strategies for Gemini vs Claude
+
+#### Verbose Logging
+
+Run with `--verbose` flag to see detailed debugging information:
+
+```bash
+node dist/index.js interactivebook-ai config.yaml output.h5p --verbose
+```
+
+**Verbose output includes:**
+- Raw AI responses (first 500 characters)
+- Processing steps (strip markdown → extract JSON → validate → parse)
+- Retry attempts with reasons
+- Truncation detection
+- Final decision (success/retry/fallback)
+
+**Example verbose output:**
+```
+[VERBOSE] AI Provider: gemini-2.5-flash
+[VERBOSE] Raw response (first 500 chars): Here's your quiz:
+```json
+{
+  "questions": [
+    {"text": "What is..."}
+[VERBOSE] After stripMarkdown: {"questions": [{"text": "What is..."}]}
+[VERBOSE] Validation: Complete JSON ✓
+[VERBOSE] Parse: Success ✓
+```
+
+#### Error Recovery Strategies
+
+1. **Truncation errors:** Automatically increase `max_tokens` (2048 → 4096 → 8192)
+2. **Malformed JSON:** Retry with same parameters (transient error)
+3. **Markdown wrapping:** Automatically strip code fences and explanatory text
+4. **Final fallback:** Generate valid H5P structure with actionable error message
+
+### Backward Compatibility
+
+Existing YAML configs without language fields continue working unchanged:
+
+```yaml
+# Legacy config (no language fields)
+aiConfig:
+  targetAudience: "grade-6"
+  tone: "educational"
+
+# Defaults to English content (100% backward compatible)
+```
+
+### Best Practices
+
+#### For Beginner Learners
+
+- Use English instructions (`instructionalLanguage: "en"`) to reduce cognitive load
+- Enable translations (`includeTranslations: true`) for vocabulary support
+- Start with `esl-beginner` audience for appropriate difficulty
+- Provide cultural context in accordion panels
+
+#### For Intermediate Learners
+
+- Use target language instructions (no `instructionalLanguage` specified)
+- Optionally include translations for new vocabulary
+- Mix scaffolding approaches across different chapters
+- Gradually reduce translation support as learners progress
+
+#### For Advanced Learners
+
+- Full immersion mode (`includeTranslations: false`)
+- No instructional scaffolding (monolingual)
+- Use `high-school` or `college` audience for complexity
+- Focus on cultural and contextual understanding
+
+### Troubleshooting
+
+#### AI Generates Wrong Language
+
+**Symptom:** Content appears in English despite `targetLanguage: "vi"`
+
+**Solutions:**
+1. Verify configuration cascade (check item/chapter/book levels)
+2. Run with `--verbose` to see system prompt injection
+3. Check if `targetLanguage` is misspelled or invalid
+4. Ensure AI provider supports target language
+
+#### Translations Not Appearing
+
+**Symptom:** `includeTranslations: true` but no English translations in output
+
+**Solutions:**
+1. Verify `targetLanguage` is NOT "en" (translations only for non-English)
+2. Check if AI provider followed instructions (use `--verbose`)
+3. Verify configuration cascade didn't override at item level
+
+#### JSON Parse Errors
+
+**Symptom:** "AI generation failed" errors frequently
+
+**Solutions:**
+1. Run with `--verbose` to see retry attempts and raw responses
+2. Check API key and quota status
+3. Verify network connectivity to AI provider
+4. Review logs for truncation or malformed JSON patterns
+5. Consider reducing `questionCount` or content complexity
+
+**Success Rate:** With retry logic and error handling, JSON parse success rate should be >95%.
+
+### Example Files
+
+- **Beginner Scaffolding:** `examples/multi-language/vietnamese-beginner.yaml`
+- **Full Immersion:** `examples/multi-language/french-immersion.yaml`
+- **Documentation:** `examples/multi-language/README.md`
+
+### Related Specifications
+
+- **Full Specification:** `agent-os/specs/2025-11-16-multi-language-ai-robust-json/spec.md`
+- **Requirements:** `agent-os/specs/2025-11-16-multi-language-ai-robust-json/planning/requirements.md`
+- **Task Breakdown:** `agent-os/specs/2025-11-16-multi-language-ai-robust-json/tasks.md`
+
 ## Architecture
 
 ### Core Components

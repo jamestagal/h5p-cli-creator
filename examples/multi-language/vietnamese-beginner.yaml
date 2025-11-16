@@ -1,0 +1,148 @@
+# Vietnamese Story with Beginner Scaffolding
+#
+# Use Case: Lower beginner Vietnamese learners need task instructions in their
+# first language (English) to understand what to do, but practice content in Vietnamese.
+#
+# Configuration:
+# - targetLanguage: "vi" - Educational content in Vietnamese
+# - instructionalLanguage: "en" - Task directions in English (scaffolding)
+# - includeTranslations: true - Add English translations for vocabulary support
+#
+# Build this example:
+#   npm run build
+#   node dist/index.js interactivebook-ai ./examples/multi-language/vietnamese-beginner.yaml ./vietnamese-beginner.h5p
+
+title: "Peter learns Trời ơi!"
+language: vi
+description: "Vietnamese language learning story with English scaffolding for beginners"
+
+# Global AI configuration for all AI-generated content
+aiConfig:
+  targetLanguage: "vi"           # Content in Vietnamese
+  instructionalLanguage: "en"    # Instructions in English (beginner scaffolding)
+  includeTranslations: true      # Add English translations in parentheses
+  targetAudience: "esl-beginner"
+  tone: "educational"
+
+chapters:
+  # ====================
+  # Chapter 1: Introduction
+  # ====================
+  - title: "Introduction - Giới Thiệu"
+    content:
+      - type: text
+        title: "Welcome to Vietnamese Learning!"
+        text: |
+          In this interactive story, you'll learn Vietnamese phrases while getting
+          instructions in English. This helps you focus on learning Vietnamese
+          without getting confused by instructions in a new language.
+
+      - type: ai-text
+        prompt: "Write a brief introduction welcoming beginner Vietnamese learners to this story about Peter learning Vietnamese greetings. Explain that Peter is visiting Vietnam for the first time and wants to learn how to greet people politely."
+        title: "Meet Peter"
+
+  # ====================
+  # Chapter 2: Greetings Vocabulary
+  # ====================
+  - title: "Vietnamese Greetings - Lời Chào"
+    content:
+      - type: text
+        title: "Common Vietnamese Greetings"
+        text: |
+          Vietnamese has different greetings depending on the time of day
+          and the person you're greeting. Let's learn the basics!
+
+      - type: ai-accordion
+        title: "Vietnamese Greeting Phrases"
+        prompt: "Create a glossary of common Vietnamese greetings including 'Xin chào' (Hello), 'Chào buổi sáng' (Good morning), 'Tạm biệt' (Goodbye), 'Cảm ơn' (Thank you), and 'Xin lỗi' (Sorry). For each phrase, explain when and how to use it, and include example sentences."
+        panelCount: 6
+        style: "glossary"
+
+  # ====================
+  # Chapter 3: Practice Quiz
+  # ====================
+  - title: "Practice - Luyện Tập"
+    content:
+      - type: text
+        title: "Time to Practice!"
+        text: |
+          Now that you've learned some greetings, let's practice!
+          Choose the correct Vietnamese greeting for each situation.
+
+      - type: ai-singlechoiceset
+        title: "Vietnamese Greetings Quiz"
+        prompt: "Create multiple choice questions about Vietnamese greetings. Ask students to choose the correct greeting for different situations (meeting someone in the morning, saying goodbye, thanking someone, apologizing). Include realistic distractors."
+        questionCount: 5
+        distractorsPerQuestion: 3
+        difficulty: "easy"
+
+  # ====================
+  # Chapter 4: Conversation Practice
+  # ====================
+  - title: "Conversations - Hội Thoại"
+    content:
+      - type: ai-text
+        prompt: "Write a short dialogue between Peter and a Vietnamese friend named Linh. They meet in the morning at a café. Include greetings, introductions, and polite phrases. Show both Vietnamese text and English translations."
+        title: "Peter Meets Linh"
+
+      - type: dialogcards
+        title: "Practice Conversations"
+        cards:
+          - front: "Peter: Xin chào!"
+            back: "Linh: Xin chào! Bạn khỏe không? (Hello! How are you?)"
+
+          - front: "Peter: Tôi khỏe, cảm ơn bạn. (I'm fine, thank you.)"
+            back: "Linh: Bạn tên là gì? (What is your name?)"
+
+          - front: "Peter: Tôi tên là Peter. (My name is Peter.)"
+            back: "Linh: Rất vui được gặp bạn! (Very happy to meet you!)"
+
+          - front: "Peter: Tôi cũng vậy! (Me too!)"
+            back: "Linh: Bạn đến từ đâu? (Where are you from?)"
+
+  # ====================
+  # Chapter 5: Cultural Notes
+  # ====================
+  - title: "Vietnamese Culture - Văn Hóa Việt Nam"
+    content:
+      - type: ai-text
+        prompt: "Explain important cultural aspects of Vietnamese greetings including the use of formal vs informal language, addressing people by age and relationship, and common gestures. Include examples of when to use formal greetings vs casual greetings."
+        title: "Cultural Context"
+
+      - type: ai-accordion
+        title: "Cultural Tips"
+        prompt: "Create FAQ about Vietnamese cultural etiquette related to greetings. Include topics like bowing slightly when greeting elders, using two hands when giving or receiving items, removing shoes when entering homes, and the importance of smiling."
+        panelCount: 4
+        style: "faq"
+
+  # ====================
+  # Chapter 6: Final Assessment
+  # ====================
+  - title: "Final Quiz - Kiểm Tra Cuối"
+    content:
+      - type: text
+        title: "Show What You've Learned!"
+        text: |
+          Great job learning Vietnamese greetings! Now let's see how much you remember.
+          This quiz covers everything from this lesson.
+
+      - type: ai-singlechoiceset
+        title: "Comprehensive Review"
+        prompt: "Create a comprehensive quiz covering Vietnamese greetings, cultural etiquette, and appropriate usage. Include questions about greeting different people (elders, peers, children), times of day, and cultural gestures. Mix vocabulary and cultural understanding questions."
+        questionCount: 8
+        distractorsPerQuestion: 3
+        difficulty: "medium"
+
+      - type: text
+        title: "Congratulations! - Chúc Mừng!"
+        text: |
+          Excellent work! You've completed the Vietnamese greetings lesson.
+
+          You learned:
+          ✓ Common Vietnamese greetings (Xin chào, Cảm ơn, Tạm biệt)
+          ✓ Cultural context for using greetings
+          ✓ Formal vs informal language
+          ✓ Polite gestures and etiquette
+
+          Keep practicing, and soon you'll be greeting people in Vietnamese naturally!
+          Chúc bạn học tốt! (Good luck with your studies!)

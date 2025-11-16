@@ -248,7 +248,7 @@ ${toneGuidance}
       }
 
       // TRANSLATIONS instruction (only when enabled)
-      if (config.includeTranslations) {
+      if (config.includeTranslations && config.targetLanguage !== "en") {
         systemPrompt += `\n\nTRANSLATIONS: Include English translations in parentheses after ${targetLangName} terms for language learners. Format: 'Term (translation)'.`;
       }
     }

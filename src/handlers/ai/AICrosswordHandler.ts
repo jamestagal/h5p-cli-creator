@@ -1,6 +1,7 @@
 import { ContentHandler } from "../ContentHandler";
 import { HandlerContext } from "../HandlerContext";
 import { AIPromptBuilder } from "../../ai/AIPromptBuilder";
+import { JSONValidator } from "../../ai/JSONValidator";
 
 /**
  * AI-generated crossword content from a single topic prompt
@@ -512,14 +513,21 @@ Return ONLY the JSON array with no additional text or markdown code blocks.`;
     logger: any,
     options: any
   ): GeneratedWord[] {
-    // Strip markdown code fences (```json ... ```)
-    const cleaned = response.trim()
-      .replace(/^```json\n?/, "")
-      .replace(/\n?```$/, "")
-      .trim();
+    // Strip markdown code fences and extract JSON using JSONValidator
+    const cleaned = JSONValidator.stripMarkdown(response);
+    const extracted = JSONValidator.extractJSON(cleaned);
+
+    // Validate JSON completeness before parsing
+    if (!JSONValidator.validateCompleteJSON(extracted)) {
+      if (JSONValidator.isLikelyTruncated(extracted)) {
+        throw new Error("Incomplete JSON structure (likely truncated response from AI)");
+      } else {
+        throw new Error("Malformed JSON structure (syntax errors in AI response)");
+      }
+    }
 
     // Parse JSON array
-    const rawWords = JSON.parse(cleaned);
+    const rawWords = JSON.parse(extracted);
 
     if (!Array.isArray(rawWords)) {
       throw new Error("AI response is not an array");

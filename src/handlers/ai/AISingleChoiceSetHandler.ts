@@ -1,6 +1,7 @@
 import { ContentHandler } from "../ContentHandler";
 import { HandlerContext } from "../HandlerContext";
 import { AIPromptBuilder } from "../../ai/AIPromptBuilder";
+import { JSONValidator } from "../../ai/JSONValidator";
 
 /**
  * AI-generated single choice set content from a single prompt
@@ -269,9 +270,20 @@ Return ONLY the JSON array with no additional text or markdown code blocks.`;
         logger.log(`      AI response length: ${response.length} characters`);
       }
 
-      // Parse JSON response
-      const cleaned = response.trim().replace(/^```json\n?/, "").replace(/\n?```$/, "").trim();
-      const questions = JSON.parse(cleaned);
+      // Parse JSON response using JSONValidator for robust parsing
+      const cleaned = JSONValidator.stripMarkdown(response);
+      const extracted = JSONValidator.extractJSON(cleaned);
+
+      // Validate JSON completeness before parsing
+      if (!JSONValidator.validateCompleteJSON(extracted)) {
+        if (JSONValidator.isLikelyTruncated(extracted)) {
+          throw new Error("Incomplete JSON structure (likely truncated response from AI)");
+        } else {
+          throw new Error("Malformed JSON structure (syntax errors in AI response)");
+        }
+      }
+
+      const questions = JSON.parse(extracted);
 
       if (!Array.isArray(questions)) {
         throw new Error("AI response is not an array");
