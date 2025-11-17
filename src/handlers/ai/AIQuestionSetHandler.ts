@@ -432,10 +432,18 @@ export class AIQuestionSetHandler implements ContentHandler {
           await handler.process(questionContext, handlerQuestionDef);
 
           // Extract the generated content from capture builder
-          const generatedContent = captureBuilder.getLastContent();
+          let generatedContent = captureBuilder.getLastContent();
 
           if (!generatedContent) {
             throw new Error(`Handler ${normalizedType} did not generate content`);
+          }
+
+          // Handle array format (some handlers return arrays)
+          if (Array.isArray(generatedContent)) {
+            if (generatedContent.length === 0) {
+              throw new Error(`Handler ${normalizedType} returned empty array`);
+            }
+            generatedContent = generatedContent[0]; // Extract first item
           }
 
           // Get library name from handler
