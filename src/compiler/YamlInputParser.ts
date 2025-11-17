@@ -11,7 +11,7 @@ import { AIConfiguration } from "./types";
  * - youtube-page: Story page with audio segment + Vietnamese/English text (optional, can reuse "text" type)
  * - video: H5P.Video content for YouTube embeds (using proper H5P.Video library)
  */
-export type ContentType = "text" | "image" | "audio" | "video" | "ai-text" | "ai-quiz" | "flashcards" | "dialogcards" | "accordion" | "ai-accordion" | "singlechoiceset" | "single-choice-set" | "ai-singlechoiceset" | "ai-single-choice-set" | "dragtext" | "drag-the-words" | "ai-dragtext" | "ai-drag-the-words" | "blanks" | "fill-in-the-blanks" | "ai-blanks" | "ai-fill-in-the-blanks" | "essay" | "ai-essay" | "truefalse" | "true-false" | "ai-truefalse" | "ai-true-false" | "crossword" | "ai-crossword" | "youtube-intro" | "youtube-page";
+export type ContentType = "text" | "image" | "audio" | "video" | "ai-text" | "ai-quiz" | "flashcards" | "dialogcards" | "accordion" | "ai-accordion" | "singlechoiceset" | "single-choice-set" | "ai-singlechoiceset" | "ai-single-choice-set" | "dragtext" | "drag-the-words" | "ai-dragtext" | "ai-drag-the-words" | "blanks" | "fill-in-the-blanks" | "ai-blanks" | "ai-fill-in-the-blanks" | "essay" | "ai-essay" | "truefalse" | "true-false" | "ai-truefalse" | "ai-true-false" | "crossword" | "ai-crossword" | "questionset" | "ai-questionset" | "youtube-intro" | "youtube-page";
 
 /**
  * Base content item interface
@@ -176,6 +176,9 @@ export { AITrueFalseContent } from "../handlers/ai/AITrueFalseHandler";
 // Export crossword content types
 export { CrosswordContent } from "../handlers/embedded/CrosswordHandler";
 export { AICrosswordContent } from "../handlers/ai/AICrosswordHandler";
+
+// Export questionset content types
+export { AIQuestionSetContent } from "../handlers/ai/AIQuestionSetHandler";
 
 /**
  * Union type for all content items
