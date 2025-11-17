@@ -269,6 +269,9 @@ export class ChapterBuilder {
   /**
    * Adds content directly to chapter without Row wrapper.
    * Used for content types that shouldn't be wrapped (QuestionSet, etc.)
+   * Interactive Book requires content in this structure:
+   * { content: { library, params, metadata, subContentId }, useSeparator: "auto" }
+   *
    * @param content H5P content structure
    * @returns This builder for method chaining
    */
@@ -283,7 +286,13 @@ export class ChapterBuilder {
           subContentId: randomUUID()
         };
 
-    this.chapterContent.push(contentWithId);
+    // Wrap in Interactive Book content item structure
+    const interactiveBookItem = {
+      content: contentWithId,
+      useSeparator: "auto"
+    };
+
+    this.chapterContent.push(interactiveBookItem);
     return this;
   }
 
