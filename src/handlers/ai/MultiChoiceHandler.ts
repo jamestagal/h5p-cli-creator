@@ -4,12 +4,16 @@ import { AIQuizContent } from "../../compiler/YamlInputParser";
 import { AIPromptBuilder } from "../../ai/AIPromptBuilder";
 
 /**
- * QuizHandler processes AI-generated quiz content items for Interactive Books.
- * Uses QuizGenerator to create multiple-choice questions from source text.
+ * MultiChoiceHandler processes AI-generated multiple-choice quiz content for Interactive Books.
+ * Uses QuizGenerator to create H5P.MultiChoice questions from source text.
  *
- * Phase 5: Integrated with AIPromptBuilder for reading level-appropriate quiz generation.
+ * NOTE: This handler generates H5P.MultiChoice content, which is different from H5P.SingleChoiceSet.
+ * - H5P.MultiChoice: Used in QuestionSet (can have multiple correct answers)
+ * - H5P.SingleChoiceSet: Standalone single-choice quiz (only one correct answer)
+ *
+ * Integrated with AIPromptBuilder for multi-language and reading level-appropriate quiz generation.
  */
-export class QuizHandler implements ContentHandler {
+export class MultiChoiceHandler implements ContentHandler {
   /**
    * Returns the content type identifier
    */

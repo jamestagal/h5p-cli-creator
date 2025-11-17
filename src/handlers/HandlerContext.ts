@@ -38,7 +38,7 @@ export interface HandlerContext {
 
   /**
    * Quiz generator for AI-powered quiz creation.
-   * Used by QuizHandler to generate H5P.MultiChoice content.
+   * Used by MultiChoiceHandler to generate H5P.MultiChoice content.
    */
   quizGenerator: QuizGenerator;
 

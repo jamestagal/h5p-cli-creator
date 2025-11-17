@@ -11,7 +11,7 @@ import { TextHandler } from "../../handlers/core/TextHandler";
 import { ImageHandler } from "../../handlers/core/ImageHandler";
 import { AudioHandler } from "../../handlers/core/AudioHandler";
 import { VideoHandler } from "../../handlers/core/VideoHandler";import { AITextHandler } from "../../handlers/core/AITextHandler";
-import { QuizHandler } from "../../handlers/ai/QuizHandler";
+import { MultiChoiceHandler } from "../../handlers/ai/MultiChoiceHandler";
 import { FlashcardsHandler } from "../../handlers/embedded/FlashcardsHandler";
 import { DialogCardsHandler } from "../../handlers/embedded/DialogCardsHandler";
 import { AccordionHandler } from "../../handlers/embedded/AccordionHandler";
@@ -114,7 +114,7 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
       handlerRegistry.register(new ImageHandler());
       handlerRegistry.register(new AudioHandler());
       handlerRegistry.register(new VideoHandler());      handlerRegistry.register(new AITextHandler());
-      handlerRegistry.register(new QuizHandler());
+      handlerRegistry.register(new MultiChoiceHandler());
       handlerRegistry.register(new FlashcardsHandler());
       handlerRegistry.register(new DialogCardsHandler());
       handlerRegistry.register(new AccordionHandler());
