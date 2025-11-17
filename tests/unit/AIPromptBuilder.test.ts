@@ -328,3 +328,262 @@ describe("AIPromptBuilder - Service Methods", () => {
     });
   });
 });
+
+/**
+ * Unit tests for Language Prompt Injection (Task Group 3)
+ * Tests multi-language AI content generation features
+ */
+describe("AIPromptBuilder - Language Prompt Injection", () => {
+  describe("CONTENT LANGUAGE injection", () => {
+    test("should inject CONTENT LANGUAGE instruction when targetLanguage specified", () => {
+      const prompt = AIPromptBuilder.buildSystemPrompt({
+        targetLanguage: "vi"
+      });
+
+      expect(prompt).toContain("CONTENT LANGUAGE:");
+      expect(prompt).toContain("Vietnamese (vi)");
+      expect(prompt).toContain("Generate all educational content");
+      expect(prompt).toContain("questions, answers, explanations");
+      expect(prompt).toContain("Do not translate content to other languages");
+    });
+
+    test("should resolve language name from ISO code", () => {
+      const frenchPrompt = AIPromptBuilder.buildSystemPrompt({
+        targetLanguage: "fr"
+      });
+
+      expect(frenchPrompt).toContain("French (fr)");
+
+      const germanPrompt = AIPromptBuilder.buildSystemPrompt({
+        targetLanguage: "de"
+      });
+
+      expect(germanPrompt).toContain("German (de)");
+    });
+
+    test("should not inject CONTENT LANGUAGE when targetLanguage not specified", () => {
+      const prompt = AIPromptBuilder.buildSystemPrompt({});
+
+      expect(prompt).not.toContain("CONTENT LANGUAGE:");
+    });
+  });
+
+  describe("INSTRUCTIONAL LANGUAGE injection", () => {
+    test("should inject INSTRUCTIONAL LANGUAGE when it differs from targetLanguage", () => {
+      const prompt = AIPromptBuilder.buildSystemPrompt({
+        targetLanguage: "vi",
+        instructionalLanguage: "en"
+      });
+
+      expect(prompt).toContain("INSTRUCTIONAL LANGUAGE:");
+      expect(prompt).toContain("English (en)");
+      expect(prompt).toContain("task instructions, directions, and scaffolding text");
+      expect(prompt).toContain("quiz instructions, activity directions");
+    });
+
+    test("should NOT inject INSTRUCTIONAL LANGUAGE when it equals targetLanguage", () => {
+      const prompt = AIPromptBuilder.buildSystemPrompt({
+        targetLanguage: "vi",
+        instructionalLanguage: "vi" // Same as target
+      });
+
+      expect(prompt).not.toContain("INSTRUCTIONAL LANGUAGE:");
+    });
+
+    test("should NOT inject INSTRUCTIONAL LANGUAGE when not specified (monolingual mode)", () => {
+      const prompt = AIPromptBuilder.buildSystemPrompt({
+        targetLanguage: "vi"
+        // No instructionalLanguage specified
+      });
+
+      expect(prompt).not.toContain("INSTRUCTIONAL LANGUAGE:");
+    });
+  });
+
+  describe("TRANSLATIONS instruction injection", () => {
+    test("should inject TRANSLATIONS instruction when includeTranslations=true", () => {
+      const prompt = AIPromptBuilder.buildSystemPrompt({
+        targetLanguage: "vi",
+        includeTranslations: true
+      });
+
+      expect(prompt).toContain("TRANSLATIONS:");
+      expect(prompt).toContain("Include English translations");
+      expect(prompt).toContain("Vietnamese terms");
+      expect(prompt).toContain("Format: 'Term (translation)'");
+    });
+
+    test("should NOT inject TRANSLATIONS instruction when includeTranslations=false", () => {
+      const prompt = AIPromptBuilder.buildSystemPrompt({
+        targetLanguage: "vi",
+        includeTranslations: false
+      });
+
+      expect(prompt).not.toContain("TRANSLATIONS:");
+    });
+
+    test("should NOT inject TRANSLATIONS instruction when not specified", () => {
+      const prompt = AIPromptBuilder.buildSystemPrompt({
+        targetLanguage: "vi"
+      });
+
+      expect(prompt).not.toContain("TRANSLATIONS:");
+    });
+  });
+
+  describe("Language instruction ordering", () => {
+    test("should inject CONTENT LANGUAGE after TONE section", () => {
+      const prompt = AIPromptBuilder.buildSystemPrompt({
+        targetLanguage: "vi",
+        tone: "educational"
+      });
+
+      const toneIndex = prompt.indexOf("TONE: EDUCATIONAL");
+      const contentLangIndex = prompt.indexOf("CONTENT LANGUAGE:");
+
+      expect(contentLangIndex).toBeGreaterThan(toneIndex);
+    });
+
+    test("should inject INSTRUCTIONAL LANGUAGE after CONTENT LANGUAGE", () => {
+      const prompt = AIPromptBuilder.buildSystemPrompt({
+        targetLanguage: "vi",
+        instructionalLanguage: "en"
+      });
+
+      const contentLangIndex = prompt.indexOf("CONTENT LANGUAGE:");
+      const instructionalLangIndex = prompt.indexOf("INSTRUCTIONAL LANGUAGE:");
+
+      expect(instructionalLangIndex).toBeGreaterThan(contentLangIndex);
+    });
+
+    test("should inject TRANSLATIONS after INSTRUCTIONAL LANGUAGE", () => {
+      const prompt = AIPromptBuilder.buildSystemPrompt({
+        targetLanguage: "vi",
+        instructionalLanguage: "en",
+        includeTranslations: true
+      });
+
+      const instructionalLangIndex = prompt.indexOf("INSTRUCTIONAL LANGUAGE:");
+      const translationsIndex = prompt.indexOf("TRANSLATIONS:");
+
+      expect(translationsIndex).toBeGreaterThan(instructionalLangIndex);
+    });
+  });
+});
+
+/**
+ * Unit tests for Language Configuration Cascade (Task Group 3)
+ * Tests resolveConfig() language field cascading
+ */
+describe("AIPromptBuilder - Language Configuration Cascade", () => {
+  describe("targetLanguage cascade", () => {
+    test("should cascade targetLanguage from item > chapter > book", () => {
+      const itemConfig: AIConfiguration = { targetLanguage: "vi" };
+      const chapterConfig: AIConfiguration = { targetLanguage: "fr" };
+      const bookConfig: AIConfiguration = { targetLanguage: "de" };
+
+      const resolved = AIPromptBuilder.resolveConfig(
+        itemConfig,
+        chapterConfig,
+        bookConfig
+      );
+
+      expect(resolved.targetLanguage).toBe("vi"); // Item wins
+    });
+
+    test("should fall back to chapter targetLanguage when item not specified", () => {
+      const chapterConfig: AIConfiguration = { targetLanguage: "fr" };
+      const bookConfig: AIConfiguration = { targetLanguage: "de" };
+
+      const resolved = AIPromptBuilder.resolveConfig(
+        undefined,
+        chapterConfig,
+        bookConfig
+      );
+
+      expect(resolved.targetLanguage).toBe("fr"); // Chapter wins
+    });
+
+    test("should fall back to book targetLanguage when item and chapter not specified", () => {
+      const bookConfig: AIConfiguration = { targetLanguage: "de" };
+
+      const resolved = AIPromptBuilder.resolveConfig(
+        undefined,
+        undefined,
+        bookConfig
+      );
+
+      expect(resolved.targetLanguage).toBe("de"); // Book wins
+    });
+
+    test("should return undefined when targetLanguage not specified at any level", () => {
+      const resolved = AIPromptBuilder.resolveConfig();
+
+      expect(resolved.targetLanguage).toBeUndefined();
+    });
+  });
+
+  describe("instructionalLanguage cascade", () => {
+    test("should cascade instructionalLanguage from item > chapter > book", () => {
+      const itemConfig: AIConfiguration = { instructionalLanguage: "en" };
+      const chapterConfig: AIConfiguration = { instructionalLanguage: "fr" };
+      const bookConfig: AIConfiguration = { instructionalLanguage: "de" };
+
+      const resolved = AIPromptBuilder.resolveConfig(
+        itemConfig,
+        chapterConfig,
+        bookConfig
+      );
+
+      expect(resolved.instructionalLanguage).toBe("en"); // Item wins
+    });
+
+    test("should return undefined when instructionalLanguage not specified (defaults to targetLanguage)", () => {
+      const resolved = AIPromptBuilder.resolveConfig();
+
+      expect(resolved.instructionalLanguage).toBeUndefined();
+    });
+  });
+
+  describe("includeTranslations cascade", () => {
+    test("should cascade includeTranslations from item > chapter > book", () => {
+      const itemConfig: AIConfiguration = { includeTranslations: true };
+      const chapterConfig: AIConfiguration = { includeTranslations: false };
+      const bookConfig: AIConfiguration = { includeTranslations: false };
+
+      const resolved = AIPromptBuilder.resolveConfig(
+        itemConfig,
+        chapterConfig,
+        bookConfig
+      );
+
+      expect(resolved.includeTranslations).toBe(true); // Item wins
+    });
+
+    test("should default to false when includeTranslations not specified", () => {
+      const resolved = AIPromptBuilder.resolveConfig();
+
+      expect(resolved.includeTranslations).toBe(false);
+    });
+  });
+
+  describe("mixed language and non-language config cascade", () => {
+    test("should cascade both language and non-language fields independently", () => {
+      const itemConfig: AIConfiguration = { targetLanguage: "vi" };
+      const chapterConfig: AIConfiguration = { tone: "academic", instructionalLanguage: "en" };
+      const bookConfig: AIConfiguration = { targetAudience: "college", includeTranslations: true };
+
+      const resolved = AIPromptBuilder.resolveConfig(
+        itemConfig,
+        chapterConfig,
+        bookConfig
+      );
+
+      expect(resolved.targetLanguage).toBe("vi"); // From item
+      expect(resolved.instructionalLanguage).toBe("en"); // From chapter
+      expect(resolved.includeTranslations).toBe(true); // From book
+      expect(resolved.tone).toBe("academic"); // From chapter
+      expect(resolved.targetAudience).toBe("college"); // From book
+    });
+  });
+});

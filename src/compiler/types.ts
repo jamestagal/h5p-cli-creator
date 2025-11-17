@@ -1,130 +1,49 @@
 /**
- * Library dependency information from library.json
- */
-export interface LibraryDependency {
-  machineName: string;
-  majorVersion: number;
-  minorVersion: number;
-}
-
-/**
- * Preloaded JavaScript file reference
- */
-export interface PreloadedJs {
-  path: string;
-}
-
-/**
- * Preloaded CSS file reference
- */
-export interface PreloadedCss {
-  path: string;
-}
-
-/**
- * Complete library metadata extracted from library.json and semantics.json
- */
-export interface LibraryMetadata {
-  machineName: string;
-  title: string;
-  majorVersion: number;
-  minorVersion: number;
-  patchVersion: number;
-  runnable?: number;
-  fullscreen?: number;
-  embedTypes?: string[];
-  preloadedJs?: PreloadedJs[];
-  preloadedCss?: PreloadedCss[];
-  preloadedDependencies?: LibraryDependency[];
-  editorDependencies?: LibraryDependency[];
-  dynamicDependencies?: LibraryDependency[];
-  semantics?: any;
-  libraryDirectory?: string;
-}
-
-/**
- * Library.json file structure
- */
-export interface LibraryJson {
-  machineName: string;
-  title: string;
-  majorVersion: number;
-  minorVersion: number;
-  patchVersion: number;
-  runnable?: number;
-  fullscreen?: number;
-  embedTypes?: string[];
-  preloadedJs?: PreloadedJs[];
-  preloadedCss?: PreloadedCss[];
-  preloadedDependencies?: LibraryDependency[];
-  editorDependencies?: LibraryDependency[];
-  dynamicDependencies?: LibraryDependency[];
-}
-
-/**
- * Field definition from semantics.json
- */
-export interface FieldDefinition {
-  name: string;
-  type: string;
-  label?: string;
-  description?: string;
-  importance?: string;
-  default?: any;
-  optional?: boolean;
-  widget?: string;
-  options?: string[];
-  min?: number;
-  max?: number;
-  pattern?: string;
-  common?: boolean;
-  fields?: FieldDefinition[];
-  field?: FieldDefinition;
-}
-
-/**
- * Parsed semantic schema from semantics.json
- */
-export interface SemanticSchema {
-  fields: FieldDefinition[];
-}
-
-/**
- * Validation error with field path and message
- */
-export interface ValidationError {
-  fieldPath: string;
-  message: string;
-  expectedType?: string;
-  actualType?: string;
-}
-
-/**
- * Result of content validation
- */
-export interface ValidationResult {
-  valid: boolean;
-  errors: ValidationError[];
-}
-
-/**
- * Reading level targeting for AI-generated content.
- * Each level defines vocabulary complexity, sentence structure, and tone.
+ * Type definitions for h5p-cli-creator's interactive book compiler
  *
- * Levels are based on educational standards and CEFR (Common European Framework of Reference):
- * - elementary: Grades 1-5
- * - grade-6: Ages 11-12 (DEFAULT)
- * - grade-9: Ages 14-15
- * - high-school: Grades 10-12
- * - college: Undergraduate level
- * - professional: Industry/adult learners
- * - esl-beginner: A1-A2 CEFR
- * - esl-intermediate: B1-B2 CEFR
+ * This file centralizes all TypeScript type definitions used throughout the compiler,
+ * including configuration interfaces, content types, and AI generation settings.
+ */
+
+/**
+ * Reading levels for AI-generated content
+ *
+ * Each level includes vocabulary guidelines, sentence structure rules, and examples:
+ * - kindergarten: 50-100 words, 3-5 word sentences, concrete nouns
+ * - elementary: Equivalent to grade-1 through grade-5, simplified grouping
+ * - grade-1: 100-300 words, 5-7 word sentences, simple adjectives
+ * - grade-2: 300-500 words, 7-10 word sentences, basic compound sentences
+ * - grade-3: 500-800 words, 8-12 word sentences, introductory conjunctions
+ * - grade-4: 800-1200 words, 10-15 word sentences, complex sentences
+ * - grade-5: 1200-1500 words, 12-18 word sentences, subordinate clauses
+ * - grade-6: 1500-2000 words, 15-20 word sentences, varied sentence structure
+ * - grade-7: 2000-3000 words, 18-25 word sentences, sophisticated transitions
+ * - grade-8: 3000-4000 words, 20-30 word sentences, nuanced arguments
+ * - grade-9: 4000-5000 words, advanced vocabulary, abstract concepts
+ * - grade-10: 5000-6000 words, discipline-specific terminology
+ * - grade-11: 6000-7000 words, college-level analysis
+ * - grade-12: 7000-8000 words, advanced academic writing
+ * - high-school: Equivalent to grade-9 through grade-12, simplified grouping
+ * - college: 8000+ words, field-specific jargon, critical analysis
+ * - professional: Technical vocabulary, industry standards, expert-level
+ * - esl-beginner: ESL beginners, basic high-frequency vocabulary (top 1000-2000 words)
+ * - esl-intermediate: ESL intermediate, everyday vocabulary and common idioms
  */
 export type ReadingLevel =
+  | "kindergarten"
   | "elementary"
+  | "grade-1"
+  | "grade-2"
+  | "grade-3"
+  | "grade-4"
+  | "grade-5"
   | "grade-6"
+  | "grade-7"
+  | "grade-8"
   | "grade-9"
+  | "grade-10"
+  | "grade-11"
+  | "grade-12"
   | "high-school"
   | "college"
   | "professional"
@@ -132,41 +51,120 @@ export type ReadingLevel =
   | "esl-intermediate";
 
 /**
- * Tone of AI-generated content.
- * Defines the style and voice of the generated text.
+ * Tone/style options for AI content generation
  *
- * Options:
- * - educational: Clear, instructional, approachable (DEFAULT)
- * - professional: Formal, business-like, concise
- * - casual: Conversational, friendly, relatable
- * - academic: Scholarly, research-oriented, precise
+ * Defines the voice and writing style:
+ * - educational: Clear, instructional, focused on learning outcomes
+ * - professional: Formal, objective, business/technical context
+ * - casual: Conversational, friendly, approachable tone
+ * - academic: Scholarly, evidence-based, formal citations
+ * - creative: Imaginative, expressive, narrative-driven
  */
 export type Tone =
   | "educational"
   | "professional"
   | "casual"
-  | "academic";
+  | "academic"
+  | "creative";
 
 /**
- * Output formatting style for AI-generated content.
+ * Output formatting styles
  *
- * NOTE: H5P requires plain-html, other options reserved for future use.
+ * Currently only "plain-html" is supported for H5P compatibility.
+ * Uses safe HTML tags: <p>, <h2>, <strong>, <em>, <ul>, <li>
  *
- * Options:
- * - plain-html: HTML tags only (p, h2, strong, em, ul, li) - DEFAULT and REQUIRED for H5P
- * - rich-html: Reserved for future (tables, div, span, etc.)
- * - markdown: Reserved for future (would be converted to HTML)
+ * Other options reserved for future use:
+ * - markdown: Markdown syntax (not yet implemented)
+ * - plain-text: No formatting (not yet implemented)
  */
-export type OutputStyle =
-  | "plain-html"
-  | "rich-html"
-  | "markdown";
+export type OutputStyle = "plain-html" | "markdown" | "plain-text";
 
 /**
- * AI configuration for content generation.
+ * Supported AI providers
  *
- * This is a UNIVERSAL configuration system that works across ALL AI-generated H5P content:
- * - Interactive Books (via BookDefinition.aiConfig)
+ * - google: Google Gemini (gemini-2.5-flash)
+ * - anthropic: Anthropic Claude (claude-sonnet-4)
+ */
+export type AIProvider = "google" | "anthropic";
+
+/**
+ * Content types for Smart Import API
+ *
+ * Supports various H5P interactive content types for AI generation:
+ * - ai-text: H5P.AdvancedText (formatted text content)
+ * - single-choice: H5P.SingleChoiceSet (multiple choice quiz)
+ * - ai-accordion: H5P.Accordion (collapsible panels)
+ * - ai-true-false: H5P.TrueFalse (true/false quiz)
+ * - ai-essay: H5P.Essay (open-ended writing prompt)
+ * - ai-crossword: H5P.Crossword (crossword puzzle)
+ * - ai-drag-text: H5P.DragText (drag-and-drop text)
+ * - ai-blanks: H5P.Blanks (fill-in-the-blank)
+ */
+export type ContentType =
+  | "ai-text"
+  | "single-choice"
+  | "ai-accordion"
+  | "ai-true-false"
+  | "ai-essay"
+  | "ai-crossword"
+  | "ai-drag-text"
+  | "ai-blanks"
+  | "text"
+  | "image"
+  | "audio"
+  | "video"
+  | "youtube"
+  | "column";
+
+/**
+ * AI item generation request for Smart Import API
+ *
+ * Used to request AI-generated content of specific types with configuration.
+ * Each request generates one H5P content item (quiz, accordion, essay, etc.)
+ */
+export interface SmartImportAIRequest {
+  type: ContentType;
+  prompt: string;
+  aiConfig?: AIConfiguration;
+  /** Number of questions/items to generate (for quiz types) */
+  count?: number;
+  /** Number of panels to generate (for accordion) */
+  panelCount?: number;
+  /** Keywords for content generation (for crossword) */
+  keywords?: string[];
+  /** Accordion style: "glossary" | "faq" | "general" */
+  style?: string;
+}
+
+/**
+ * Request payload for Smart Import API
+ *
+ * Generates an entire Interactive Book chapter from a single prompt using AI.
+ * The AI determines content structure, types, and sequencing automatically.
+ */
+export interface SmartImportRequest {
+  /** Main topic/theme for the chapter */
+  topic: string;
+
+  /** Optional AI configuration for content generation */
+  aiConfig?: AIConfiguration;
+
+  /** Optional specific content types to generate (overrides AI decision) */
+  contentTypes?: Array<{
+    type: ContentType;
+    count?: number;
+    panelCount?: number;
+    keywords?: string[];
+    style?: string;
+  }>;
+}
+
+/**
+ * AI Configuration for content generation
+ *
+ * Defines how AI should generate content, including reading level, tone, language,
+ * and output style. Used by:
+ * - Interactive Book compiler (via book/chapter/item aiConfig)
  * - Smart Import API (via request.aiConfig)
  * - Standalone content generators (Flashcards, Dialog Cards, Summaries, etc.)
  *
@@ -181,6 +179,9 @@ export type OutputStyle =
  * - targetAudience: "grade-6"
  * - tone: "educational"
  * - outputStyle: "plain-html"
+ * - targetLanguage: Auto-detected from book.language, or "en"
+ * - instructionalLanguage: Same as targetLanguage (monolingual by default)
+ * - includeTranslations: false
  */
 export interface AIConfiguration {
   /**
@@ -221,6 +222,96 @@ export interface AIConfiguration {
   outputStyle?: OutputStyle;
 
   /**
+   * Target language for educational content (ISO 639-1 code).
+   *
+   * Specifies the language for all AI-generated educational content including
+   * questions, answers, explanations, and activity text. This is the language
+   * learners will practice and engage with.
+   *
+   * Auto-detected from BookDefinition.language if not specified.
+   * Defaults to "en" (English) if neither is set.
+   *
+   * @example
+   * ```yaml
+   * # Vietnamese language learning content
+   * aiConfig:
+   *   targetLanguage: "vi"
+   *
+   * # French immersion content
+   * aiConfig:
+   *   targetLanguage: "fr"
+   * ```
+   *
+   * Common ISO 639-1 codes: en (English), vi (Vietnamese), fr (French),
+   * de (German), es (Spanish), ja (Japanese), ko (Korean), zh (Chinese),
+   * ar (Arabic), pt (Portuguese)
+   *
+   * @see LanguageUtils.getLanguageName() for full language code mapping
+   */
+  targetLanguage?: string;
+
+  /**
+   * Language for task instructions and scaffolding (ISO 639-1 code).
+   *
+   * Specifies the language for instructional text that guides learners through
+   * activities: quiz instructions, task directions, activity scaffolding.
+   * Useful for beginner language learners who need first-language support.
+   *
+   * Defaults to targetLanguage when not specified (monolingual content).
+   *
+   * @example
+   * ```yaml
+   * # Beginner Vietnamese learners (English instructions + Vietnamese content)
+   * aiConfig:
+   *   targetLanguage: "vi"           # Content in Vietnamese
+   *   instructionalLanguage: "en"    # Instructions in English
+   *
+   * # Advanced learners (full Vietnamese immersion)
+   * aiConfig:
+   *   targetLanguage: "vi"
+   *   # No instructionalLanguage = defaults to Vietnamese
+   * ```
+   *
+   * **Use Cases:**
+   * - Beginner learners: Instructions in first language (L1), content in target language (L2)
+   * - Intermediate learners: Mixed approach based on complexity
+   * - Advanced learners: Full immersion (instructionalLanguage = targetLanguage)
+   *
+   * @see targetLanguage for educational content language
+   */
+  instructionalLanguage?: string;
+
+  /**
+   * Include English translations in parentheses for language learners.
+   *
+   * When enabled, AI adds English translations after target language terms
+   * to support language acquisition. Useful for beginner and intermediate learners.
+   *
+   * Only applies when targetLanguage is not English.
+   * Defaults to false (no translations).
+   *
+   * @example
+   * ```yaml
+   * # Bilingual Vietnamese content with translations
+   * aiConfig:
+   *   targetLanguage: "vi"
+   *   includeTranslations: true
+   *
+   * # Output: "Xin chào (Hello)", "Cảm ơn (Thank you)"
+   * ```
+   *
+   * **Format:** "Target language term (English translation)"
+   *
+   * Can be combined with instructionalLanguage for maximum scaffolding:
+   * - Instructions: First language (via instructionalLanguage)
+   * - Content: Target language with translations (via includeTranslations)
+   *
+   * @see targetLanguage
+   * @see instructionalLanguage
+   */
+  includeTranslations?: boolean;
+
+  /**
    * Free-text customization instructions appended to system prompt.
    *
    * Provides additional context and requirements for AI content generation.
@@ -257,15 +348,4 @@ export {
   ChapterDefinition,
   AnyContentItem,
   ContentType,
-  TextContent,
-  AITextContent,
-  ImageContent,
-  AudioContent,
-  AIQuizContent,
-  FlashcardsContent,
-  DialogCardsContent,
-  EssayContent,
-  AIEssayContent,
-  TrueFalseContent,
-  AITrueFalseContent
 } from "./YamlInputParser";

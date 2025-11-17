@@ -1,0 +1,145 @@
+title: Ma journée parfaite - My Perfect Day
+language: fr
+description: "French beginner story (A1-A2) with English scaffolding - demonstrates multi-language AI features"
+audioAutoplay: true  # NEW: Audio autoplay for language learning
+
+# Global AI configuration - demonstrates multi-language AI features
+aiConfig:
+  targetLanguage: "fr"           # Content in French
+  instructionalLanguage: "en"    # Instructions in English (scaffolding for beginners)
+  includeTranslations: true      # Add English translations for learners
+  targetAudience: "esl-beginner"
+  tone: "friendly"
+
+chapters:
+  - title: Video Introduction
+    content:
+      - type: video
+        url: https://www.youtube.com/watch?v=Fhw6aoJ-2qE
+        title: Video Introduction
+      - type: accordion
+        panels:
+          - title: Video Transcript
+            content: Ma journée parfaite Je m'appelle Liam. J'ai 24 ans. Aujourd'hui, je veux vous parler de ma journée parfaite. Je me réveille sans réveil. Je me sens plein d'énergie. Je prends une douche chaude. Puis, je prépare le petit déjeuner. Je mange des crêpes avec du miel et bois du jus d'orange frais. Délicieux. Après le petit déjeuner, je sors. Le temps est superbe. Je monte mon vélo jusqu'au parc. J'écoute de la musique et profite de l'air frais. Plus tard, je me détends sur un banc dans le parc. Je lis un bon livre. L'après-midi, je prends ma raquette de tennis et je vais au cours. Mon ami Jack m'y attend. Nous jouons au tennis pendant une heure. Nous courons beaucoup et frappons la balle avec force. C'est très amusant. Après le match, nous allons dans un petit café. Nous déjeunons et parlons de la vie. Ensuite, je rentre chez moi. Je prépare le dîner. Des pâtes avec des légumes. Je mets de la musique douce et j'apprécie cuisiner. Le soir, je m'assois à mon ordinateur. Je mets mes écouteurs. Je joue à des jeux en ligne avec mes amis. Nous rions beaucoup. C'est ma journée parfaite. Ça a l'air bien, n'est-ce pas? Mais je me réveille au son de mon réveil. C'est lundi. Je saute du lit. Je n'ai pas le temps. Je mange rapidement deux sandwiches. Je cours au travail. Je travaille du matin au soir. Je suis assise à un ordinateur et bois trop de café. Pas de vélo, pas de tennis. Le soir, je rentre chez moi, fatiguée. Je ne cuisine pas. Je mange des nouilles dans une boîte. Ensuite, je m'assois sur le canapé et je regarde simplement la télévision. C'est ma vraie journée. Mais bon, peut-être que samedi sera meilleur.
+  - title: Introduction - Ma journée parfaite
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/images/img-1.jpg
+        alt: Introduction - Ma journée parfaite
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/audio-segments/page1.mp3
+      - type: text
+        text: Ma journée parfaite Je m'appelle Liam. J'ai 24 ans. Aujourd'hui, je veux vous parler de ma journée parfaite.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: |-
+              My Perfect Day
+
+              My name is Liam. I’m 24 years old. Today, I want to tell you about my perfect day.
+  - title: Le matin - Morning Routine
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/images/img-2.jpg
+        alt: Le matin - Morning Routine
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/audio-segments/page2.mp3
+      - type: text
+        text: Je me réveille sans réveil. Je me sens plein d'énergie. Je prends une douche chaude. Puis, je prépare le petit déjeuner. Je mange des crêpes avec du miel et bois du jus d'orange frais. Délicieux.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: I wake up without an alarm. I feel full of energy. I take a warm shower. Then, I make breakfast. I eat pancakes with honey and drink fresh orange juice. Delicious!
+  - title: Sortie au parc - Going to the Park
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/images/img-3.jpg
+        alt: Sortie au parc - Going to the Park
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/audio-segments/page3.mp3
+      - type: text
+        text: Après le petit déjeuner, je sors. Le temps est superbe. Je monte mon vélo jusqu'au parc. J'écoute de la musique et profite de l'air frais. Plus tard, je me détends sur un banc dans le parc. Je lis un bon livre.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: After breakfast, I go outside. The weather is beautiful. I ride my bike to the park. I listen to music and enjoy the fresh air. Later, I relax on a bench in the park. I read a good book.
+  - title: Tennis avec Jack - Tennis with Jack
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/images/img-4.jpg
+        alt: Tennis avec Jack - Tennis with Jack
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/audio-segments/page4.mp3
+      - type: text
+        text: L'après-midi, je prends ma raquette de tennis et je vais au cours. Mon ami Jack m'y attend. Nous jouons au tennis pendant une heure. Nous courons beaucoup et frappons la balle avec force.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: In the afternoon, I grab my tennis racket and head to practice. My friend Jack is waiting for me there. We play tennis for an hour. We run around a lot and hit the ball with all our strength.
+  - title: Au café - At the Café
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/images/img-5.jpg
+        alt: Au café - At the Café
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/audio-segments/page5.mp3
+      - type: text
+        text: C'est très amusant. Après le match, nous allons dans un petit café. Nous déjeunons et parlons de la vie.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: It's so much fun! After the game, we go to a little café. We have lunch and talk about life.
+  - title: Le dîner - Dinner Time
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/images/img-6.jpg
+        alt: Le dîner - Dinner Time
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/audio-segments/page6.mp3
+      - type: text
+        text: Ensuite, je rentre chez moi. Je prépare le dîner. Des pâtes avec des légumes. Je mets de la musique douce et j'apprécie cuisiner.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: Then, I go home. I make dinner. Pasta with vegetables. I play soft music and enjoy cooking.
+  - title: Jeux en ligne - Gaming with Friends
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/images/img-7.jpg
+        alt: Jeux en ligne - Gaming with Friends
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/audio-segments/page7.mp3
+      - type: text
+        text: Le soir, je m'assois à mon ordinateur. Je mets mes écouteurs. Je joue à des jeux en ligne avec mes amis. Nous rions beaucoup. C'est ma journée parfaite.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: In the evening, I sit down at my computer. I put on my headphones. I play online games with my friends. We laugh a lot. It's my perfect day.
+  - title: La réalité - Reality Check
+    content:
+      - type: image
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/images/img-8.jpg
+        alt: La réalité - Reality Check
+      - type: audio
+        path: /Users/benjaminwaller/Projects/H5P-LMS/h5p-cli-creator/.youtube-cache/Fhw6aoJ-2qE/audio-segments/page8.mp3
+      - type: text
+        text: Ça a l'air bien, n'est-ce pas ? Mais je me réveille au son de mon réveil. C'est lundi. Je saute du lit. Je n'ai pas le temps. Je mange rapidement deux sandwiches. Je cours au travail. Je travaille du matin au soir. Je suis assise à un ordinateur et bois trop de café. Pas de vélo, pas de tennis. Le soir, je rentre chez moi, fatiguée. Je ne cuisine pas. Je mange des nouilles dans une boîte. Ensuite, je m'assois sur le canapé et je regarde simplement la télévision. C'est ma vraie journée. Mais bon, peut-être que samedi sera meilleur.
+      - type: accordion
+        panels:
+          - title: English Translation
+            content: It sounds nice, doesn't it? But I wake up to the sound of my alarm. It's Monday. I jump out of bed. I don't have time. I quickly eat two sandwiches. I rush to work. I work from morning until evening. I sit at a computer and drink too much coffee. No biking, no tennis. In the evening, I come home, tired. I don't cook. I eat noodles from a box. Then, I sit on the couch and just watch TV. That's my real day. But maybe Saturday will be better.
+  - title: Comprehension Quiz
+    content:
+      - type: ai-singlechoiceset
+        title: "Quiz - Ma journée parfaite"
+        prompt: "Create 5 multiple choice questions about Liam's perfect day story. Questions should test understanding of the daily routine, activities, and the contrast between ideal and reality. Use simple French vocabulary appropriate for A1-A2 level learners. Remember to provide instructions in English but questions and answers in French with English translations."
+        questionCount: 5
+        distractorsPerQuestion: 3
+        difficulty: "easy"
+  - title: Vocabulaire Clé - Key Vocabulary
+    content:
+      - type: ai-accordion
+        title: "French Vocabulary from the Story"
+        prompt: "Create a glossary of 8 key French terms from Liam's story including: journée parfaite (perfect day), se réveiller (to wake up), vélo (bicycle), tennis, café, dîner (dinner), jeux en ligne (online games), and réalité (reality). For each term, provide a brief explanation in simple French with English translation in parentheses."
+        panelCount: 8
+        style: "glossary"

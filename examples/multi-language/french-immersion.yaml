@@ -1,0 +1,151 @@
+# French Story with Full Immersion (Monolingual)
+#
+# Use Case: Advanced French learners are ready for full immersion without English
+# scaffolding. All content and instructions are in French.
+#
+# Configuration:
+# - targetLanguage: "fr" - All content in French
+# - instructionalLanguage: not specified - Defaults to French (monolingual)
+# - includeTranslations: false - No English translations (pure immersion)
+#
+# Build this example:
+#   npm run build
+#   node dist/index.js interactivebook-ai ./examples/multi-language/french-immersion.yaml ./french-immersion.h5p
+
+title: "La Culture Française"
+language: fr
+description: "Histoire immersive en français sur la culture française pour apprenants avancés"
+
+# Global AI configuration for full French immersion
+aiConfig:
+  targetLanguage: "fr"           # All content in French
+  includeTranslations: false     # No English translations (immersion)
+  targetAudience: "high-school"
+  tone: "educational"
+
+chapters:
+  # ====================
+  # Chapitre 1: Introduction
+  # ====================
+  - title: "Introduction à la France"
+    content:
+      - type: text
+        title: "Bienvenue!"
+        text: |
+          Bienvenue dans cette exploration de la culture française!
+          Dans ce livre interactif, vous découvrirez les traditions,
+          la cuisine, l'art et l'histoire de la France.
+
+      - type: ai-text
+        prompt: "Écrivez une introduction engageante sur la richesse de la culture française. Mentionnez la gastronomie, l'art, l'architecture, la mode et la littérature française. Expliquez pourquoi la culture française est reconnue dans le monde entier."
+        title: "La Richesse Culturelle"
+
+  # ====================
+  # Chapitre 2: La Gastronomie Française
+  # ====================
+  - title: "La Gastronomie"
+    content:
+      - type: ai-text
+        prompt: "Décrivez l'importance de la gastronomie dans la culture française. Parlez des repas traditionnels (petit-déjeuner, déjeuner, dîner), des fromages français, des pâtisseries, et du concept de 'terroir'. Mentionnez quelques plats emblématiques comme le coq au vin, la ratatouille et la bouillabaisse."
+        title: "L'Art de la Table"
+
+      - type: ai-accordion
+        title: "Spécialités Régionales"
+        prompt: "Créez un glossaire des spécialités culinaires des différentes régions de France. Incluez la Bretagne (crêpes, galettes), la Normandie (camembert, cidre), la Provence (bouillabaisse, ratatouille), l'Alsace (choucroute, tarte flambée), et Lyon (quenelles, saucisson). Expliquez l'origine et les ingrédients principaux de chaque spécialité."
+        panelCount: 8
+        style: "glossary"
+
+  # ====================
+  # Chapitre 3: L'Art et l'Architecture
+  # ====================
+  - title: "L'Art et l'Architecture"
+    content:
+      - type: ai-text
+        prompt: "Expliquez l'influence de la France dans l'histoire de l'art. Parlez de l'impressionnisme (Monet, Renoir), du post-impressionnisme (Van Gogh, Cézanne), et de l'art moderne (Picasso, Matisse). Mentionnez aussi l'architecture française avec des exemples comme Notre-Dame, le château de Versailles et la Tour Eiffel."
+        title: "Patrimoine Artistique"
+
+      - type: ai-singlechoiceset
+        title: "Quiz sur l'Art Français"
+        prompt: "Créez des questions à choix multiples sur les artistes français célèbres et leurs œuvres. Incluez des questions sur les mouvements artistiques (impressionnisme, cubisme, surréalisme), les monuments architecturaux français, et les périodes historiques de l'art français."
+        questionCount: 6
+        distractorsPerQuestion: 3
+        difficulty: "medium"
+
+  # ====================
+  # Chapitre 4: Les Traditions et Fêtes
+  # ====================
+  - title: "Traditions et Célébrations"
+    content:
+      - type: ai-accordion
+        title: "Fêtes Françaises"
+        prompt: "Créez une FAQ sur les fêtes et traditions françaises. Incluez le 14 juillet (Fête Nationale), la galette des rois (Épiphanie), la Chandeleur (crêpes), Pâques, Noël, et le Nouvel An. Expliquez les traditions associées à chaque fête, les plats typiques, et les coutumes régionales."
+        panelCount: 6
+        style: "faq"
+
+      - type: dialogcards
+        title: "Expressions Traditionnelles"
+        cards:
+          - front: "Bon appétit!"
+            back: "Expression utilisée avant de manger pour souhaiter un bon repas. On répond souvent 'Merci, à toi aussi!' ou 'Merci, vous de même!'"
+
+          - front: "Bonne année!"
+            back: "Vœux du Nouvel An. On peut aussi dire 'Meilleurs vœux!' ou 'Bonne santé!'"
+
+          - front: "Joyeuses Pâques!"
+            back: "Salutation pour la fête de Pâques. Tradition des œufs en chocolat et des cloches."
+
+          - front: "Bonne fête!"
+            back: "Souhait pour la fête d'une personne, qui correspond au saint patron de son prénom."
+
+          - front: "Santé!"
+            back: "Toast porté en levant son verre avant de boire. Équivalent de 'Cheers!' en anglais."
+
+  # ====================
+  # Chapitre 5: La Langue Française
+  # ====================
+  - title: "La Francophonie"
+    content:
+      - type: ai-text
+        prompt: "Expliquez le concept de la Francophonie et l'importance du français dans le monde. Mentionnez les pays où le français est langue officielle (France, Belgique, Suisse, Canada, pays d'Afrique), le nombre de locuteurs francophones, et l'influence de la langue française dans les domaines de la diplomatie, de la culture et des sciences."
+        title: "Le Français dans le Monde"
+
+      - type: ai-accordion
+        title: "Expressions Idiomatiques"
+        prompt: "Créez un glossaire d'expressions idiomatiques françaises courantes avec leurs explications. Incluez des expressions comme 'avoir le cafard' (être triste), 'poser un lapin' (ne pas venir à un rendez-vous), 'coûter les yeux de la tête' (très cher), 'tomber dans les pommes' (s'évanouir), et 'avoir un chat dans la gorge' (être enroué). Expliquez l'origine quand elle est connue."
+        panelCount: 8
+        style: "glossary"
+
+  # ====================
+  # Chapitre 6: Évaluation Finale
+  # ====================
+  - title: "Évaluation"
+    content:
+      - type: text
+        title: "Testez vos connaissances!"
+        text: |
+          Vous avez exploré la culture française à travers sa gastronomie,
+          son art, ses traditions et sa langue. Maintenant, testez ce que
+          vous avez appris avec ce quiz complet!
+
+      - type: ai-singlechoiceset
+        title: "Quiz Final sur la Culture Française"
+        prompt: "Créez un quiz complet sur tous les aspects de la culture française abordés: gastronomie (plats régionaux, fromages), art et architecture (artistes, monuments), traditions et fêtes, et expressions idiomatiques. Incluez des questions de différents niveaux de difficulté mêlant faits culturels et compréhension approfondie."
+        questionCount: 10
+        distractorsPerQuestion: 3
+        difficulty: "medium"
+
+      - type: text
+        title: "Félicitations!"
+        text: |
+          Bravo! Vous avez terminé cette exploration de la culture française!
+
+          Vous avez découvert:
+          ✓ La richesse de la gastronomie française
+          ✓ L'importance de l'art et de l'architecture
+          ✓ Les traditions et fêtes françaises
+          ✓ La francophonie et les expressions idiomatiques
+
+          Continuez à explorer la culture française à travers la littérature,
+          le cinéma, la musique et les voyages!
+
+          Bonne continuation dans votre apprentissage du français!

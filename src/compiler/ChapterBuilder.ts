@@ -22,13 +22,15 @@ export class ChapterBuilder {
    * @param mediaFilesArray Parent array to add media files to
    * @param initialImageCounter Starting image counter value
    * @param initialAudioCounter Starting audio counter value
+   * @param audioAutoplay Enable automatic audio playback (from book config)
    */
   constructor(
     private chapterTitle: string,
     private chaptersArray: any[],
     private mediaFilesArray: MediaFile[],
     initialImageCounter: number,
-    initialAudioCounter: number
+    initialAudioCounter: number,
+    private audioAutoplay: boolean = false
   ) {
     this.localImageCounter = initialImageCounter;
     this.localAudioCounter = initialAudioCounter;
@@ -221,7 +223,7 @@ export class ChapterBuilder {
         playerMode: "full",
         fitToWrapper: false,
         controls: true,
-        autoplay: false,
+        autoplay: this.audioAutoplay,
         audioNotSupported: "Your browser does not support this audio",
         playAudio: "Play audio",
         pauseAudio: "Pause audio"

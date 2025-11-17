@@ -1,6 +1,7 @@
 import { ContentHandler } from "../ContentHandler";
 import { HandlerContext } from "../HandlerContext";
 import { AIPromptBuilder } from "../../ai/AIPromptBuilder";
+import { JSONValidator } from "../../ai/JSONValidator";
 
 /**
  * AI-generated essay content from a single prompt
@@ -333,8 +334,8 @@ Return ONLY the JSON object with no additional text or markdown code blocks.`;
         logger.log(`      AI response length: ${response.length} characters`);
       }
 
-      // Parse and validate AI response
-      return this.parseAIResponse(response);
+      // Parse and validate AI response using JSONValidator
+      return this.parseAIResponse(response, logger, options);
     } catch (error) {
       logger.log(`      ⚠ AI essay generation failed: ${error.message}`);
       logger.log(`      Using fallback content`);
@@ -345,17 +346,24 @@ Return ONLY the JSON object with no additional text or markdown code blocks.`;
   }
 
   /**
-   * Parses and validates AI response
+   * Parses and validates AI response using JSONValidator
    */
-  private parseAIResponse(response: string): EssayResult {
-    // Strip markdown code fences
-    const cleaned = response.trim()
-      .replace(/^```json\n?/, "")
-      .replace(/\n?```$/, "")
-      .trim();
+  private parseAIResponse(response: string, logger: any, options: any): EssayResult {
+    // Strip markdown code fences and extract JSON using JSONValidator
+    const cleaned = JSONValidator.stripMarkdown(response);
+    const extracted = JSONValidator.extractJSON(cleaned);
+
+    // Validate JSON completeness before parsing
+    if (!JSONValidator.validateCompleteJSON(extracted)) {
+      if (JSONValidator.isLikelyTruncated(extracted)) {
+        throw new Error("Incomplete JSON structure (likely truncated response from AI)");
+      } else {
+        throw new Error("Malformed JSON structure (syntax errors in AI response)");
+      }
+    }
 
     // Parse JSON
-    const data = JSON.parse(cleaned);
+    const data = JSON.parse(extracted);
 
     // Validate required fields
     if (!data.taskDescription || typeof data.taskDescription !== "string") {

@@ -1,0 +1,111 @@
+# French Beginner Story - Real World Test Case
+# Demonstrates: Multi-language AI + Text-based page breaks + Custom images + Audio autoplay
+#
+# Video: "My Perfect Day" by Liam (French A1-A2)
+# Duration: 3:04 (trimmed from 0:19 to 3:23)
+# 8 pages with custom images
+#
+# Features tested:
+# - targetLanguage: "fr" (French content)
+# - instructionalLanguage: "en" (English instructions for beginners)
+# - includeTranslations: true (French with English translations)
+# - audioAutoplay: true (auto-play for language learning)
+# - Text-based page breaks (8 pages from transcript)
+# - Custom images (8 images in .youtube-cache/Fhw6aoJ-2qE_OLD/images/)
+# - AI-generated quiz questions in French with English instructions
+#
+# Build command:
+#   npm run build
+#   node dist/index.js youtube-extract examples/youtube-stories/french-perfect-day-DEMO.yaml --output examples/youtube-stories/output/yaml/french-perfect-day-DEMO.yaml
+
+title: "Ma journée parfaite - My Perfect Day"
+language: fr
+description: "French beginner story (A1-A2) about Liam's perfect day vs reality"
+audioAutoplay: true  # Auto-play audio for language learning
+
+# Global AI configuration - English instructions for French beginners
+aiConfig:
+  targetLanguage: "fr"           # Content in French
+  instructionalLanguage: "en"    # Instructions in English (scaffolding)
+  includeTranslations: true      # Add English translations for learners
+  targetAudience: "esl-beginner"
+  tone: "friendly"
+
+# YouTube source configuration
+source:
+  type: youtube
+  url: "https://www.youtube.com/watch?v=Fhw6aoJ-2qE"
+  startTime: "00:19"  # Skip intro
+  endTime: "03:23"    # Skip outro
+
+# Use text-based page break workflow
+transcriptSource: ".youtube-cache/Fhw6aoJ-2qE_OLD/full-transcript-edited.txt"
+matchingMode: "tolerant"
+
+# Translation configuration
+translation:
+  enabled: true
+  targetLanguage: en
+  style: collapsible
+
+# Custom images for each page
+images:
+  - path: ".youtube-cache/Fhw6aoJ-2qE_OLD/images/img-1.jpg"
+    page: 1
+    alt: "Liam introduces himself - young man smiling"
+  - path: ".youtube-cache/Fhw6aoJ-2qE_OLD/images/img-2.jpg"
+    page: 2
+    alt: "Morning routine - breakfast with crepes and orange juice"
+  - path: ".youtube-cache/Fhw6aoJ-2qE_OLD/images/img-3.jpg"
+    page: 3
+    alt: "Cycling to the park - beautiful weather"
+  - path: ".youtube-cache/Fhw6aoJ-2qE_OLD/images/img-4.jpg"
+    page: 4
+    alt: "Playing tennis with Jack"
+  - path: ".youtube-cache/Fhw6aoJ-2qE_OLD/images/img-5.jpg"
+    page: 5
+    alt: "Having lunch at a café"
+  - path: ".youtube-cache/Fhw6aoJ-2qE_OLD/images/img-6.jpg"
+    page: 6
+    alt: "Cooking pasta with vegetables for dinner"
+  - path: ".youtube-cache/Fhw6aoJ-2qE_OLD/images/img-7.jpg"
+    page: 7
+    alt: "Playing online games with friends"
+  - path: ".youtube-cache/Fhw6aoJ-2qE_OLD/images/img-8.jpg"
+    page: 8
+    alt: "Reality - tired after work, eating instant noodles"
+
+# Custom AI-generated content (demonstrates multi-language AI)
+customContent:
+  # Chapter 1: Comprehension Quiz (English instructions, French content)
+  - type: ai-singlechoiceset
+    chapterIndex: 0
+    title: "Comprehension Quiz"
+    prompt: "Create 5 multiple choice questions about Liam's perfect day story. Questions should test understanding of the daily routine, activities, and the contrast between ideal and reality. Use simple French vocabulary appropriate for A1-A2 level learners."
+    questionCount: 5
+    distractorsPerQuestion: 3
+    difficulty: "easy"
+
+  # Chapter 2: Vocabulary Review (AI-generated accordion with French terms)
+  - type: ai-accordion
+    chapterIndex: 0
+    title: "Vocabulaire Clé - Key Vocabulary"
+    prompt: "Create a glossary of 8 key French terms from Liam's story including: journée parfaite (perfect day), se réveiller (to wake up), vélo (bicycle), tennis, café, dîner (dinner), jeux en ligne (online games), and réalité (reality). For each term, provide a brief explanation in simple French with English translation."
+    panelCount: 8
+    style: "glossary"
+
+  # Chapter 3: Grammar Practice (Fill in the blanks - French verbs)
+  - type: ai-blanks
+    chapterIndex: 0
+    title: "Verbes - Verb Practice"
+    prompt: "Create 5 fill-in-the-blank sentences using French verbs from the story (se réveiller, prendre, manger, jouer, travailler). Each sentence should have one blank for a verb conjugation. Include hints in English for beginner learners."
+    sentenceCount: 5
+    blanksPerSentence: 1
+    difficulty: "easy"
+
+  # Chapter 4: Discussion Questions (AI-generated essay prompts)
+  - type: ai-essay
+    chapterIndex: 0
+    title: "Réflexion - Reflection"
+    prompt: "Create an essay prompt asking students to describe their own perfect day in French. Provide clear instructions in English about what to include (morning routine, activities, meals, evening). Encourage use of vocabulary from the story."
+    keywords: "journée parfaite, routine, activités, loisirs"

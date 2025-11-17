@@ -8,27 +8,39 @@ import {
 } from "./types";
 import { AIConfiguration } from "../compiler/types";
 import { AIPromptBuilder } from "./AIPromptBuilder";
+import { JSONValidator } from "./JSONValidator";
 
 type AIProvider = "anthropic" | "google";
+
+// Retry configuration constants
+const MAX_RETRIES = 3;
+const BACKOFF_MS = [1000, 2000, 4000]; // 1s, 2s, 4s
+const INITIAL_MAX_TOKENS = 2048;
+const MAX_TOKEN_LIMIT = 8192;
 
 /**
  * QuizGenerator uses AI (Claude or Gemini) to generate multiple-choice quiz questions
  * from source text and format them as H5P.MultipleChoice content.
  *
  * Phase 5: Integrated with AIConfiguration for reading level-appropriate quiz generation.
+ * Phase 6: Added robust JSON parsing with retry logic and progressive degradation.
  */
 export class QuizGenerator {
   private anthropic?: Anthropic;
   private gemini?: GoogleGenerativeAI;
   private provider: AIProvider;
+  private verbose: boolean;
 
   /**
    * Creates a new QuizGenerator instance.
    * Auto-detects provider based on available API keys.
    * @param provider AI provider to use ("anthropic" or "google"). Auto-detected if not specified.
    * @param apiKey API key (defaults to ANTHROPIC_API_KEY or GOOGLE_API_KEY environment variable)
+   * @param verbose Enable verbose logging for debugging (default: false)
    */
-  constructor(provider?: AIProvider, apiKey?: string) {
+  constructor(provider?: AIProvider, apiKey?: string, verbose: boolean = false) {
+    this.verbose = verbose;
+
     // Auto-detect provider based on available API keys if not specified
     if (!provider) {
       if (process.env.GOOGLE_API_KEY) {
@@ -55,6 +67,10 @@ export class QuizGenerator {
         throw new Error("Google API key required. Set GOOGLE_API_KEY environment variable.");
       }
       this.gemini = new GoogleGenerativeAI(key);
+    }
+
+    if (this.verbose) {
+      console.log(`[VERBOSE] QuizGenerator initialized with provider: ${this.provider}`);
     }
   }
 
@@ -333,52 +349,196 @@ Return ONLY a JSON array with this exact format (no additional text):
   }
 
   /**
-   * Generates raw AI content using the configured provider.
+   * Generates raw AI content using the configured provider with robust retry logic.
+   *
+   * Phase 6: Implements comprehensive error handling:
+   * - Maximum 3 retry attempts with exponential backoff (1s, 2s, 4s)
+   * - Truncation detection and progressive token increase (2048 → 4096 → 8192)
+   * - Provider-specific JSON cleaning (aggressive for Gemini, minimal for Claude)
+   * - Validation pipeline: stripMarkdown → extractJSON → validateCompleteJSON → parse
+   * - Verbose logging for debugging (when enabled)
+   *
    * This is a lower-level method that can be used by other handlers
    * (e.g., AIAccordionHandler) to generate custom content.
    *
    * @param systemPrompt System instructions for the AI (optional, only used with Claude)
    * @param userPrompt The user's prompt/request
-   * @returns Raw text response from the AI
-   * @throws Error if API call fails
+   * @returns Raw text response from the AI (validated JSON)
+   * @throws Error if API call fails or response cannot be parsed after all retries
    */
   public async generateRawContent(systemPrompt: string, userPrompt: string): Promise<string> {
-    try {
-      if (this.provider === "anthropic" && this.anthropic) {
-        const message = await this.anthropic.messages.create({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 2048,
-          system: systemPrompt,
-          messages: [
-            {
-              role: "user",
-              content: userPrompt
-            }
-          ]
-        });
+    let maxTokens = INITIAL_MAX_TOKENS;
+    let lastError: Error | null = null;
+    let lastResponse = "";
 
-        // Extract text from Claude's response
-        return message.content
-          .filter((block) => block.type === "text")
-          .map((block) => (block as any).text)
-          .join("");
-      } else if (this.provider === "google" && this.gemini) {
-        // Gemini doesn't have separate system prompts, combine them
-        const combinedPrompt = systemPrompt
-          ? `${systemPrompt}\n\n${userPrompt}`
-          : userPrompt;
-
-        const model = this.gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
-        const result = await model.generateContent(combinedPrompt);
-        return result.response.text();
-      } else {
-        throw new Error("No AI provider initialized");
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new Error(`AI content generation failed: ${error.message}`);
-      }
-      throw new Error("AI content generation failed: Unknown error");
+    if (this.verbose) {
+      console.log(`[VERBOSE] AI Provider: ${this.provider}`);
+      console.log(`[VERBOSE] Starting content generation with max_tokens: ${maxTokens}`);
     }
+
+    // Retry loop with exponential backoff
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        if (this.verbose && attempt > 0) {
+          console.log(`[VERBOSE] Retry attempt ${attempt + 1}/${MAX_RETRIES} with max_tokens: ${maxTokens}`);
+        }
+
+        // Make API call to provider
+        let responseText: string;
+
+        if (this.provider === "anthropic" && this.anthropic) {
+          const message = await this.anthropic.messages.create({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: maxTokens,
+            system: systemPrompt,
+            messages: [
+              {
+                role: "user",
+                content: userPrompt
+              }
+            ]
+          });
+
+          // Extract text from Claude's response
+          responseText = message.content
+            .filter((block) => block.type === "text")
+            .map((block) => (block as any).text)
+            .join("");
+        } else if (this.provider === "google" && this.gemini) {
+          // Gemini doesn't have separate system prompts, combine them
+          const combinedPrompt = systemPrompt
+            ? `${systemPrompt}\n\n${userPrompt}`
+            : userPrompt;
+
+          const model = this.gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
+          const result = await model.generateContent(combinedPrompt);
+          responseText = result.response.text();
+        } else {
+          throw new Error("No AI provider initialized");
+        }
+
+        lastResponse = responseText;
+
+        if (this.verbose) {
+          const preview = responseText.substring(0, 500);
+          console.log(`[VERBOSE] Raw response (first 500 chars): ${preview}${responseText.length > 500 ? "..." : ""}`);
+        }
+
+        // Validation pipeline
+        // Step 1: Strip markdown (provider-specific)
+        let cleaned = responseText;
+        if (this.provider === "google") {
+          // Gemini: Aggressive markdown stripping
+          if (this.verbose) {
+            console.log(`[VERBOSE] Applying aggressive markdown stripping (Gemini)`);
+          }
+          cleaned = JSONValidator.stripMarkdown(responseText);
+        } else {
+          // Claude: Minimal cleaning (more reliable)
+          if (this.verbose) {
+            console.log(`[VERBOSE] Applying minimal markdown stripping (Claude)`);
+          }
+          cleaned = JSONValidator.stripMarkdown(responseText);
+        }
+
+        if (this.verbose) {
+          const cleanedPreview = cleaned.substring(0, 200);
+          console.log(`[VERBOSE] After stripMarkdown: ${cleanedPreview}${cleaned.length > 200 ? "..." : ""}`);
+        }
+
+        // Step 2: Extract JSON
+        const extracted = JSONValidator.extractJSON(cleaned);
+
+        if (this.verbose) {
+          const extractedPreview = extracted.substring(0, 200);
+          console.log(`[VERBOSE] After extractJSON: ${extractedPreview}${extracted.length > 200 ? "..." : ""}`);
+        }
+
+        // Step 3: Validate completeness
+        const isComplete = JSONValidator.validateCompleteJSON(extracted);
+
+        if (this.verbose) {
+          console.log(`[VERBOSE] Validation: Complete JSON ${isComplete ? "✓" : "✗"}`);
+        }
+
+        if (!isComplete) {
+          throw new Error("Incomplete JSON structure (unbalanced braces/brackets)");
+        }
+
+        // Step 4: Parse JSON
+        try {
+          JSON.parse(extracted);
+
+          if (this.verbose) {
+            console.log(`[VERBOSE] Parse: Success ✓`);
+            if (attempt > 0) {
+              console.log(`[VERBOSE] Success on attempt ${attempt + 1}/${MAX_RETRIES}`);
+            }
+          }
+
+          // Success! Return extracted JSON
+          return extracted;
+        } catch (parseError) {
+          throw new Error(`JSON parse failed: ${parseError instanceof Error ? parseError.message : "Unknown error"}`);
+        }
+
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error("Unknown error");
+
+        // Check if this is a permanent error (don't retry)
+        const errorMessage = lastError.message.toLowerCase();
+        if (
+          errorMessage.includes("api key") ||
+          errorMessage.includes("quota exceeded") ||
+          errorMessage.includes("authentication") ||
+          errorMessage.includes("authorization")
+        ) {
+          if (this.verbose) {
+            console.log(`[VERBOSE] Permanent error detected, not retrying: ${lastError.message}`);
+          }
+          throw lastError;
+        }
+
+        // Log retry reason
+        if (this.verbose) {
+          console.log(`[VERBOSE] Retry attempt ${attempt + 1}/${MAX_RETRIES} (reason: ${lastError.message})`);
+        }
+
+        // Check if response was truncated
+        const isTruncated = lastResponse && JSONValidator.isLikelyTruncated(lastResponse);
+
+        if (isTruncated) {
+          // Progressive degradation: double max_tokens for next retry (capped at 8192)
+          const newMaxTokens = Math.min(maxTokens * 2, MAX_TOKEN_LIMIT);
+          if (this.verbose) {
+            console.log(`[VERBOSE] Truncation detected, increasing max_tokens: ${maxTokens} → ${newMaxTokens}`);
+          }
+          maxTokens = newMaxTokens;
+        } else {
+          // Malformed JSON (not truncated): retry with same parameters
+          if (this.verbose) {
+            console.log(`[VERBOSE] Malformed JSON (not truncated), retrying with same max_tokens: ${maxTokens}`);
+          }
+        }
+
+        // If this is not the last attempt, wait with exponential backoff
+        if (attempt < MAX_RETRIES - 1) {
+          const backoffMs = BACKOFF_MS[attempt];
+          if (this.verbose) {
+            console.log(`[VERBOSE] Waiting ${backoffMs}ms before retry...`);
+          }
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
+        }
+      }
+    }
+
+    // All retries failed
+    if (this.verbose) {
+      console.log(`[VERBOSE] All ${MAX_RETRIES} retries failed, throwing error`);
+    }
+
+    throw new Error(
+      `AI content generation failed after ${MAX_RETRIES} attempts: ${lastError?.message || "Unknown error"}`
+    );
   }
 }
