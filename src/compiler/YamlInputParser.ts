@@ -204,7 +204,8 @@ export type AnyContentItem =
   | import("../handlers/embedded/TrueFalseHandler").TrueFalseContent
   | import("../handlers/ai/AITrueFalseHandler").AITrueFalseContent
   | import("../handlers/embedded/CrosswordHandler").CrosswordContent
-  | import("../handlers/ai/AICrosswordHandler").AICrosswordContent;
+  | import("../handlers/ai/AICrosswordHandler").AICrosswordContent
+  | import("../handlers/ai/AIQuestionSetHandler").AIQuestionSetContent;
 
 /**
  * Chapter definition from YAML
@@ -328,6 +329,46 @@ export interface BookDefinition {
    * Added in Phase 5: AI Configuration System
    */
   aiConfig?: AIConfiguration;
+}
+
+/**
+ * Standalone content definition (single H5P content item)
+ *
+ * Alternative to BookDefinition for creating standalone H5P content
+ * without the Interactive Book wrapper. Used for content types like:
+ * - Flashcards
+ * - Dialog Cards
+ * - Single Choice Set
+ * - Question Set
+ * - Accordion
+ * - etc.
+ */
+export interface StandaloneDefinition {
+  content: AnyContentItem;
+  title?: string;
+  description?: string;
+  language?: string;
+  /**
+   * Optional AI configuration for the standalone content item.
+   * Applies to AI-generated content types.
+   */
+  aiConfig?: AIConfiguration;
+}
+
+/**
+ * Union type for all H5P definitions (Book or Standalone)
+ */
+export type H5PDefinition = BookDefinition | StandaloneDefinition;
+
+/**
+ * Type guard to check if definition is a StandaloneDefinition
+ * @param definition H5P definition to check
+ * @returns true if definition is StandaloneDefinition, false if BookDefinition
+ */
+export function isStandaloneDefinition(
+  definition: H5PDefinition
+): definition is StandaloneDefinition {
+  return "content" in definition && !("chapters" in definition);
 }
 
 /**

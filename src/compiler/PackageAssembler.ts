@@ -329,7 +329,9 @@ export class PackageAssembler {
             minorVersion,
             patchVersion: 0,  // Not critical for h5p.json
             title: libName.replace('H5P.', ''),
-            runnable: 0
+            runnable: 0,
+            semantics: null,  // Layout libraries don't need semantics
+            libraryDirectory: fullLibName
           });
           break;
         }

@@ -267,6 +267,27 @@ export class ChapterBuilder {
   }
 
   /**
+   * Adds content directly to chapter without Row wrapper.
+   * Used for content types that shouldn't be wrapped (QuestionSet, etc.)
+   * @param content H5P content structure
+   * @returns This builder for method chaining
+   */
+  public addDirectContent(content: any): this {
+    // Ensure content has subContentId
+    const contentWithId = content.subContentId
+      ? content
+      : {
+          params: content.params,
+          library: content.library,
+          metadata: content.metadata,
+          subContentId: randomUUID()
+        };
+
+    this.chapterContent.push(contentWithId);
+    return this;
+  }
+
+  /**
    * Initializes the chapter by adding it to the parent chapters array.
    * Must be called before adding content to ensure chapterContent reference is in place.
    */

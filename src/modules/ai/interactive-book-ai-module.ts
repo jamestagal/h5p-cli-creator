@@ -153,7 +153,7 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
 
       // Step 1: Parse YAML input
       if (verbose) console.log("Step 1: Parsing YAML input...");
-      const definition = YamlInputParser.parseYamlFile(path.resolve(yamlFile));
+      const definition = YamlInputParser.parse(path.resolve(yamlFile));
 
       if (verbose) {
         const contentType = 'chapters' in definition ? 'Interactive Book' : 'Standalone Content';
@@ -196,11 +196,7 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
       console.log("✅ Success!");
       console.log(`📦 Generated: ${outputPath}`);
       console.log(`   - Title: ${definition.title}`);
-      if ('chapters' in definition) {
-        console.log(`   - Chapters: ${definition.chapters.length}`);
-      } else {
-        console.log(`   - Type: Standalone ${definition.content.type}`);
-      }
+      console.log(`   - Chapters: ${definition.chapters.length}`);
       console.log();
 
     } catch (error) {

@@ -249,7 +249,7 @@ ${toneGuidance}
 
       // TRANSLATIONS instruction (only when enabled)
       if (config.includeTranslations && config.targetLanguage !== "en") {
-        systemPrompt += `\n\nTRANSLATIONS: Include English translations in parentheses after ${targetLangName} terms for language learners. Format: 'Term (translation)'.`;
+        systemPrompt += `\n\nTRANSLATIONS: Include English translations in parentheses after ${targetLangName} terms for language learners. Format: 'Term (translation)'. IMPORTANT: For fill-in-the-blank, drag-and-drop, and matching activities, only include translations in the question/instructions text, NOT in the answer options or blanks themselves (students should practice the ${targetLangName} term without translation hints in answers).`;
       }
     }
 

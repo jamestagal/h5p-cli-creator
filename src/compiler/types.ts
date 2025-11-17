@@ -332,6 +332,91 @@ export interface AIConfiguration {
 }
 
 /**
+ * Library dependency specification
+ */
+export interface LibraryDependency {
+  machineName: string;
+  majorVersion: number;
+  minorVersion: number;
+}
+
+/**
+ * Library.json structure from H5P packages
+ */
+export interface LibraryJson {
+  machineName: string;
+  title: string;
+  majorVersion: number;
+  minorVersion: number;
+  patchVersion: number;
+  runnable?: number;
+  fullscreen?: number;
+  embedTypes?: string[];
+  preloadedJs?: Array<{ path: string }>;
+  preloadedCss?: Array<{ path: string }>;
+  preloadedDependencies?: LibraryDependency[];
+  editorDependencies?: LibraryDependency[];
+  dynamicDependencies?: LibraryDependency[];
+}
+
+/**
+ * Complete library metadata including semantics
+ */
+export interface LibraryMetadata extends LibraryJson {
+  semantics: any;
+  libraryDirectory: string;
+}
+
+/**
+ * Semantic field definition for H5P content validation
+ */
+export interface FieldDefinition {
+  name: string;
+  type: string;
+  label?: string;
+  description?: string;
+  importance?: string;
+  optional?: boolean;
+  widget?: string;
+  field?: FieldDefinition;
+  fields?: FieldDefinition[];
+  entity?: string;
+  min?: number;
+  max?: number;
+  options?: any[];
+  default?: any;
+  pattern?: string;
+  common?: any;
+}
+
+/**
+ * Semantic schema structure
+ */
+export interface SemanticSchema {
+  fields: FieldDefinition[];
+}
+
+/**
+ * Validation error details
+ */
+export interface ValidationError {
+  path?: string;
+  fieldPath?: string;
+  message: string;
+  type?: string;
+  expectedType?: string;
+  actualType?: string;
+}
+
+/**
+ * Validation result with errors
+ */
+export interface ValidationResult {
+  valid: boolean;
+  errors: ValidationError[];
+}
+
+/**
  * Compiler options for H5P package generation
  *
  * Re-exported from H5pCompiler for convenience
@@ -347,5 +432,4 @@ export {
   BookDefinition,
   ChapterDefinition,
   AnyContentItem,
-  ContentType,
 } from "./YamlInputParser";

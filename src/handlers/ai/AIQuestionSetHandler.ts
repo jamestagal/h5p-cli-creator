@@ -495,7 +495,7 @@ export class AIQuestionSetHandler implements ContentHandler {
         subContentId: randomUUID()
       };
 
-      chapterBuilder.addCustomContent(questionSetContent);
+      chapterBuilder.addDirectContent(questionSetContent);
 
       if (options.verbose) {
         logger.log(`      ✓ QuestionSet complete with ${questions.length} questions`);
