@@ -1,0 +1,75 @@
+title: "Vietnamese Greetings Quiz"
+language: vi
+description: "Comprehensive assessment with mixed question types"
+
+# Global AI configuration
+aiConfig:
+  targetLanguage: "vi"
+  instructionalLanguage: "en"
+  includeTranslations: true
+  targetAudience: "esl-beginner"
+  tone: "educational"
+
+chapters:
+  - title: "Greetings Assessment"
+    content:
+      - type: ai-questionset
+        title: "Vietnamese Greetings Quiz"
+
+        # Intro page
+        introPage:
+          showIntro: true
+          title: "Vietnamese Greetings Assessment"
+          introduction: |
+            <p>This quiz tests your understanding of Vietnamese greetings
+            and cultural etiquette. You need 70% to pass.</p>
+          startButtonText: "Begin Quiz"
+
+        # Quiz settings
+        progressType: "textual"
+        passPercentage: 70
+
+        # Questions (mixed types)
+        questions:
+          - type: ai-quiz
+            prompt: "Create a question about when to use 'Xin chào' vs 'Chào buổi sáng'"
+            title: "Greeting Context"
+            questionCount: 1
+
+          - type: ai-blanks
+            prompt: "Create a fill-in-the-blank about Vietnamese greeting phrases"
+            sentenceCount: 2
+            difficulty: "easy"
+
+          - type: ai-dragtext
+            prompt: "Create drag-the-words about Vietnamese cultural etiquette"
+            sentenceCount: 1
+            includeDistractors: true
+
+          - type: ai-truefalse
+            prompt: "Create true/false about Vietnamese formal vs informal greetings"
+            questionCount: 2
+
+          - type: ai-essay
+            prompt: "Ask student to explain when to use formal Vietnamese greetings"
+            title: "Cultural Understanding"
+
+          - type: ai-singlechoiceset
+            prompt: "Create questions matching Vietnamese phrases to English meanings"
+            questionCount: 3
+            distractorsPerQuestion: 2
+
+        # End game
+        endGame:
+          showResults: true
+          message: "Quiz completed! Here's how you did:"
+          overallFeedback:
+            - from: 0
+              to: 49
+              feedback: "Keep practicing! Review the lesson and try again."
+            - from: 50
+              to: 79
+              feedback: "Good job! You understand the basics."
+            - from: 80
+              to: 100
+              feedback: "Excellent! You've mastered Vietnamese greetings!"

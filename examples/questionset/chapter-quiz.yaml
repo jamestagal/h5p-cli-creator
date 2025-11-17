@@ -1,0 +1,112 @@
+title: "Photosynthesis Interactive Book"
+language: en
+description: "Biology chapter with end-of-chapter assessment"
+
+aiConfig:
+  targetLanguage: "en"
+  targetAudience: "high-school"
+  tone: "educational"
+
+chapters:
+  - title: "Chapter 1: What is Photosynthesis?"
+    content:
+      - type: ai-text
+        prompt: "Explain what photosynthesis is and why it's important for life on Earth"
+        title: "Introduction to Photosynthesis"
+
+      - type: ai-text
+        prompt: "Explain the chemical equation for photosynthesis and what each component means"
+        title: "The Photosynthesis Equation"
+
+  - title: "Chapter 2: The Process of Photosynthesis"
+    content:
+      - type: ai-text
+        prompt: "Explain the light-dependent reactions in photosynthesis"
+        title: "Light-Dependent Reactions"
+
+      - type: ai-text
+        prompt: "Explain the light-independent reactions (Calvin Cycle) in photosynthesis"
+        title: "Light-Independent Reactions"
+
+  - title: "Chapter Assessment"
+    content:
+      - type: ai-questionset
+        title: "Photosynthesis Comprehensive Quiz"
+
+        introPage:
+          showIntro: true
+          title: "Chapter Assessment: Photosynthesis"
+          introduction: |
+            <p>This comprehensive quiz covers everything you've learned about photosynthesis.
+            Answer all questions carefully. You need 80% to pass.</p>
+            <p><strong>Topics covered:</strong></p>
+            <ul>
+              <li>Basic concepts and importance</li>
+              <li>Chemical equations</li>
+              <li>Light-dependent reactions</li>
+              <li>Calvin Cycle</li>
+            </ul>
+          startButtonText: "Start Assessment"
+
+        progressType: "textual"
+        passPercentage: 80
+
+        questions:
+          # Conceptual understanding
+          - type: ai-quiz
+            prompt: "Create a question about the overall purpose and importance of photosynthesis"
+            title: "Conceptual Understanding"
+            questionCount: 1
+
+          # Equation knowledge
+          - type: ai-blanks
+            prompt: "Create fill-in-the-blank about the chemical equation for photosynthesis: 6CO2 + 6H2O → C6H12O6 + 6O2"
+            sentenceCount: 1
+            difficulty: "medium"
+
+          # Process details
+          - type: ai-dragtext
+            prompt: "Create drag-words about the light-dependent reactions and where they occur in chloroplasts"
+            sentenceCount: 2
+            includeDistractors: true
+
+          # True/False factual
+          - type: ai-truefalse
+            prompt: "Create true/false statements about the Calvin Cycle and light-independent reactions"
+            questionCount: 3
+            difficulty: "medium"
+
+          # Application question
+          - type: ai-essay
+            prompt: "Ask students to explain what would happen to a plant if it couldn't perform the light-dependent reactions"
+            title: "Critical Thinking"
+
+          # Vocabulary/terminology
+          - type: ai-singlechoiceset
+            prompt: "Create questions matching photosynthesis terminology (chlorophyll, stroma, thylakoid, ATP) to their definitions"
+            questionCount: 4
+            distractorsPerQuestion: 2
+
+          # Synthesis question
+          - type: ai-quiz
+            prompt: "Create a question requiring students to synthesize knowledge about how light-dependent and light-independent reactions work together"
+            questionCount: 1
+            aiConfig:
+              targetAudience: "college"  # Make this one more challenging
+
+        endGame:
+          showResults: true
+          message: "Assessment complete! Your score: @score of @total points"
+          overallFeedback:
+            - from: 0
+              to: 59
+              feedback: "You need more practice. Review the chapter content and retake the quiz."
+            - from: 60
+              to: 79
+              feedback: "Good effort! You understand the basics, but review the areas where you struggled."
+            - from: 80
+              to: 89
+              feedback: "Well done! You have a solid understanding of photosynthesis."
+            - from: 90
+              to: 100
+              feedback: "Excellent work! You've mastered the photosynthesis chapter!"
