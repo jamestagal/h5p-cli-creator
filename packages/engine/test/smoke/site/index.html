@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>smoke</title>
+<div id="h5p-container"></div>
+<script src="/h5p-standalone/main.bundle.js"></script>
+<script>
+  const pkg = new URLSearchParams(location.search).get("pkg");
+  new H5PStandalone.H5P(document.getElementById("h5p-container"), {
+    h5pJsonPath: "/packages/" + pkg,
+    frameJs: "/h5p-standalone/frame.bundle.js",
+    frameCss: "/h5p-standalone/styles/h5p.css"
+  })
+    .then(() => {
+      document.body.dataset.ready = "1";
+    })
+    .catch((e) => {
+      document.body.dataset.error = String(e);
+    });
+</script>
