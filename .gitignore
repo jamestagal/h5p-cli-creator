@@ -27,3 +27,6 @@ examples/*.h5p
 
 # Jest coverage output
 coverage/
+
+# Playwright output
+test-results/

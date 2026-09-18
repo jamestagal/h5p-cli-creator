@@ -153,7 +153,8 @@ short-lived, revision-bound access token embedded as a **path segment**
 tags, none of which pass through a page-level `fetch` wrapper, so a query-string token never
 reaches them (they 403) while a path-embedded token rides along automatically on every
 `h5pJsonPath`-relative URL the library derives. CORS should mirror the preview server used here:
-`Access-Control-Allow-Origin` echoing the app origin for real-origin requests (never `*`, since the
-token must not be readable by other origins), and the preview origin must never issue
+`Access-Control-Allow-Origin` answering with a fixed, allowlisted app origin (or `null` for
+opaque-origin requests), never reflecting an arbitrary `Origin` request header and never `*`, since
+the token must not be readable by other origins, and the preview origin must never issue
 `Set-Cookie` and must reject any `Cookie` header it happens to receive as irrelevant to
 authorization (only the token is checked).

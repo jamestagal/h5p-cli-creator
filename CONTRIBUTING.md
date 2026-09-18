@@ -2,6 +2,17 @@
 
 Thank you for your interest in contributing to h5p-cli-creator! This document provides guidelines for contributing new content type handlers, bug fixes, and improvements.
 
+## Repository layout
+
+This is a pnpm workspace monorepo: `packages/shared` (the activity contract), `packages/engine`
+(the new generation engine's registry, validator, handlers and assembler), `apps/cli` (`leap`, the
+CLI on the new engine), `apps/cli-legacy` (the original `h5p-cli-creator` tool this guide's handler
+walkthrough covers, frozen — bug fixes only, no new features), `tools/fetch-libraries` and
+`tools/preview-spike`, and `libraries/` (the locked library cache). **New engine work (content-type
+handlers, validators, the compiler) goes in `packages/engine`, not `apps/cli-legacy`.** Every
+`src/…` and `tests/…` path below this section is relative to `apps/cli-legacy/`. Use `pnpm`, not
+`npm`, for every command.
+
 ## Table of Contents
 
 - [Getting Started](#getting-started)
@@ -37,29 +48,29 @@ git remote add upstream https://github.com/sr258/h5p-cli-creator.git
 
 4. Install dependencies:
 ```bash
-npm install
+pnpm install
 ```
 
 5. Build the project:
 ```bash
-npm run build
+pnpm run build
 ```
 
 ### Running Tests
 
 Run all tests:
 ```bash
-npm test
+pnpm test
 ```
 
 Run specific test file:
 ```bash
-npm test -- tests/handlers/core/TextHandler.test.ts
+pnpm test -- apps/cli-legacy/tests/handlers/core/TextHandler.test.ts
 ```
 
 Run tests in watch mode:
 ```bash
-npm test -- --watch
+pnpm test -- --watch
 ```
 
 ## Development Workflow
@@ -122,7 +133,7 @@ Follow this step-by-step process to create a new content type handler.
 
 ### Step 2: Write Tests First
 
-Create a test file in `tests/handlers/your-category/YourHandler.test.ts`:
+Create a test file in `apps/cli-legacy/tests/handlers/your-category/YourHandler.test.ts`:
 
 ```typescript
 import { YourHandler } from "../../../src/handlers/your-category/YourHandler";
@@ -200,7 +211,7 @@ describe("YourHandler", () => {
 
 ### Step 3: Create the Handler Class
 
-Create `src/handlers/your-category/YourHandler.ts`:
+Create `apps/cli-legacy/src/handlers/your-category/YourHandler.ts`:
 
 ```typescript
 import { ContentHandler } from "../ContentHandler";
@@ -264,7 +275,7 @@ export class YourHandler implements ContentHandler {
 
 ### Step 4: Register the Handler
 
-Add your handler to `src/modules/ai/interactive-book-ai-module.ts`:
+Add your handler to `apps/cli-legacy/src/modules/ai/interactive-book-ai-module.ts`:
 
 ```typescript
 import { YourHandler } from "../../handlers/your-category/YourHandler";
@@ -275,7 +286,7 @@ handlerRegistry.register(new YourHandler());
 
 ### Step 5: Update TypeScript Types
 
-Add your content type to `src/compiler/YamlInputParser.ts`:
+Add your content type to `apps/cli-legacy/src/compiler/YamlInputParser.ts`:
 
 ```typescript
 export type ContentType = "text" | "image" | "audio" | "your-type" | ...;
@@ -305,7 +316,7 @@ Update the following files:
 
 1. Run your handler tests:
 ```bash
-npm test -- tests/handlers/your-category/YourHandler.test.ts
+pnpm test -- apps/cli-legacy/tests/handlers/your-category/YourHandler.test.ts
 ```
 
 2. Create a test YAML file in `examples/`:
@@ -321,7 +332,7 @@ chapters:
 
 3. Generate an .h5p file:
 ```bash
-npm run build
+pnpm run build
 node ./dist/index.js interactivebook-ai ./examples/your-test.yaml ./test-output.h5p --verbose
 ```
 
@@ -344,7 +355,7 @@ All contributions must include tests. Aim for:
 ### Running Coverage Report
 
 ```bash
-npm test -- --coverage
+pnpm test -- --coverage
 ```
 
 ## Code Style Guidelines
@@ -378,13 +389,13 @@ public validate(item: any): { valid: boolean; error?: string }
 ### File Organization
 
 ```
-src/
+apps/cli-legacy/src/
 ├── handlers/
 │   ├── core/           # Basic content types (text, image, audio)
 │   ├── ai/             # AI-powered types (quiz, ai-text)
 │   ├── embedded/       # Embedded H5P types (flashcards, dialogcards)
 │   └── your-category/  # Your new handlers
-tests/
+apps/cli-legacy/tests/
 ├── handlers/
 │   └── your-category/  # Tests mirror src structure
 ```
@@ -394,7 +405,7 @@ tests/
 We use TypeScript's default formatting. Before committing:
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 This will catch any TypeScript errors.
@@ -403,8 +414,8 @@ This will catch any TypeScript errors.
 
 ### Before Submitting
 
-1. ✅ All tests pass: `npm test`
-2. ✅ TypeScript compiles: `npm run build`
+1. ✅ All tests pass: `pnpm test`
+2. ✅ TypeScript compiles: `pnpm run build`
 3. ✅ Documentation updated (README, guides, examples)
 4. ✅ Commits follow conventional commit format
 5. ✅ Branch is up to date with upstream main
@@ -496,8 +507,8 @@ By contributing, you agree that your contributions will be licensed under the sa
 imports, so a file can only join the list once everything it imports is already strict-clean; check
 with `npx tsc -p tsconfig.strict.json --listFilesOnly | grep /src/` that adding a file does not
 drag others in. Every change to a file not yet in that list must add it (and make it strict-clean,
-`npm run typecheck:strict`) if its imports allow; otherwise leave a one-line note in the PR naming
-the blocking import. New leaf files are always added. The goal is for the list to become `src/**/*`,
+`pnpm run typecheck:strict`) if its imports allow; otherwise leave a one-line note in the PR naming
+the blocking import. New leaf files are always added. The goal is for the list to become `apps/cli-legacy/src/**/*`,
 at which point `strict: true` moves into `tsconfig.json` and the strict file is deleted.
 
 Thank you for contributing to h5p-cli-creator! 🎉

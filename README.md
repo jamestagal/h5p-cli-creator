@@ -6,6 +6,24 @@ This is a command line utility that allows you to mass create H5P content from i
 > phase plans are in `docs/superpowers/`. The CLI keeps working throughout; see the compatibility
 > boundary in the design's §2.1a.
 
+## Repository layout
+
+This is a pnpm workspace monorepo:
+
+- `packages/shared` — the Zod activity contract shared by the engine and its callers.
+- `packages/engine` — the registry, validator, handlers, assembler and public API for the new generation engine.
+- `apps/cli` — `leap`, the CLI on the new engine (currently just `leap flashcards`).
+- `apps/cli-legacy` — the original `h5p-cli-creator` tool, frozen (bug fixes only). **The rest of this
+  README, and `CONTRIBUTING.md`'s handler-development guide, document this legacy CLI**; its own
+  docs and examples live under `apps/cli-legacy/` (`apps/cli-legacy/docs`, `apps/cli-legacy/examples`).
+- `tools/fetch-libraries` — resolves and caches H5P content-type libraries into `libraries/`.
+- `tools/preview-spike` — throwaway spike code, not part of the shipped product.
+- `libraries/` — the locked library cache (`libraries.lock.json`) used at compile time.
+
+Use `pnpm` (not `npm`) for every command in this repo. `pnpm verify` runs build, typecheck, lint,
+test and the engine's Playwright smoke suite in one shot, and assumes you've already run
+`pnpm install --frozen-lockfile`.
+
 ## Handler-Based Architecture
 
 This project uses a **handler-based plugin architecture** that makes it easy to add new content types without modifying core compiler code. Each content type is implemented as a self-contained handler that:
@@ -100,11 +118,15 @@ return new Response(h5pBuffer, {
 For complete API integration instructions, see the [API Integration Guide](docs/developer-guides/api-integration.md).
 
 ## Run
+
+This section documents `apps/cli-legacy` (see Repository layout above); its commands are run from
+that directory.
+
 * Install [NodeJS](https://nodejs.org/)
 * [clone this repository](https://help.github.com/articles/cloning-a-repository/) into a directory on your computer
-* Execute these commands from the command line at the directory you've cloned into:
-* `npm install` to install dependencies
-* `npm run build` to transpile typescript to javascript
+* Execute these commands from the command line at `apps/cli-legacy/`:
+* `pnpm install` to install dependencies
+* `pnpm run build` to transpile typescript to javascript
 * `node ./dist/index.js --help` to get help
 * `node ./dist/index.js flashcards --help` to get help for creating flashcards
 * `node ./dist/index.js dialogcards --help` to get help for creating dialog cards
@@ -1410,7 +1432,7 @@ When you upload an H5P package to a platform (h5p.com, Moodle, WordPress, etc.),
 **Step 4: Rebuild and Verify**
 ```bash
 # Rebuild package
-npm run build
+pnpm run build
 node ./dist/index.js interactivebook-ai ./examples/your-file.yaml ./output.h5p
 
 # Verify versions in h5p.json
