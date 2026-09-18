@@ -81,7 +81,7 @@ describe("Handler-Based Content Processing", () => {
       await handler!.process(mockContext, item);
     }
 
-    expect(mockChapterBuilder.addTextPage).toHaveBeenCalledWith("Intro", "Hello world");
+    expect(mockChapterBuilder.addTextPage).toHaveBeenCalledWith("Intro", "Hello world", true);
     expect(mockChapterBuilder.addImagePage).toHaveBeenCalledWith("Figure 1", "/test/image.jpg", "Test image");
     expect(mockChapterBuilder.addAudioPage).toHaveBeenCalledWith("Audio 1", "/test/audio.mp3");
   });
@@ -113,7 +113,7 @@ describe("Handler-Based Content Processing", () => {
     expect(mockContext.logger.log).toHaveBeenCalledWith(
       expect.stringContaining("Adding text page")
     );
-    expect(mockChapterBuilder.addTextPage).toHaveBeenCalledWith("Test Title", "Test content");
+    expect(mockChapterBuilder.addTextPage).toHaveBeenCalledWith("Test Title", "Test content", true);
   });
 
   test("should validate all content types correctly", () => {

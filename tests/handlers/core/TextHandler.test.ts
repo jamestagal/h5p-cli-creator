@@ -47,7 +47,8 @@ describe("TextHandler", () => {
 
       expect(mockChapterBuilder.addTextPage).toHaveBeenCalledWith(
         "Test Page",
-        "This is test content"
+        "This is test content",
+        true
       );
     });
 
@@ -61,7 +62,8 @@ describe("TextHandler", () => {
 
       expect(mockChapterBuilder.addTextPage).toHaveBeenCalledWith(
         "",
-        "Content without title"
+        "Content without title",
+        true
       );
     });
 
