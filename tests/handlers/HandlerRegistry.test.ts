@@ -11,7 +11,6 @@ describe("HandlerRegistry", () => {
     registry = HandlerRegistry.getInstance();
 
     // Clear any registered handlers from previous tests
-    // @ts-ignore - accessing private property for testing
     registry["handlers"].clear();
 
     // Create mock handler

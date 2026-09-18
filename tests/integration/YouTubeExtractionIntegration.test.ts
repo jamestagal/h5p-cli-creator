@@ -51,7 +51,7 @@ describe("YouTube Extraction Integration Tests", () => {
     mockExec = require("child_process").exec;
 
     // Default behavior: all commands succeed
-    mockExec.mockImplementation((cmd: string, callback: Function) => {
+    mockExec.mockImplementation((cmd: string, callback: (...args: unknown[]) => void) => {
       if (cmd.includes("--dump-json")) {
         callback(null, {
           stdout: JSON.stringify({ duration: 1200, title: "Test Video" }),
@@ -114,7 +114,7 @@ describe("YouTube Extraction Integration Tests", () => {
       (fsExtra.existsSync as jest.Mock).mockReturnValue(true);
 
       // Mock ffmpeg creating output files
-      mockExec.mockImplementation((command: string, callback: Function) => {
+      mockExec.mockImplementation((command: string, callback: (...args: unknown[]) => void) => {
         const outputMatch = command.match(/"([^"]+\.mp3)"$/);
         if (outputMatch) {
           const outputPath = outputMatch[1];
@@ -158,7 +158,7 @@ describe("YouTube Extraction Integration Tests", () => {
       // Trimmed duration: 480 seconds = 8 minutes
 
       // Mock video metadata (20-minute video)
-      mockExec.mockImplementation((cmd: string, callback: Function) => {
+      mockExec.mockImplementation((cmd: string, callback: (...args: unknown[]) => void) => {
         if (cmd.includes("--dump-json")) {
           callback(null, {
             stdout: JSON.stringify({ duration: 1200, title: "Test Video" }),
@@ -211,7 +211,7 @@ describe("YouTube Extraction Integration Tests", () => {
       const endTime = "10:00"; // Skip 10-minute outro
 
       // Mock full video metadata
-      mockExec.mockImplementation((cmd: string, callback: Function) => {
+      mockExec.mockImplementation((cmd: string, callback: (...args: unknown[]) => void) => {
         if (cmd.includes("--dump-json")) {
           callback(null, {
             stdout: JSON.stringify({ duration: 1200, title: "Test Video" }),
@@ -255,7 +255,7 @@ describe("YouTube Extraction Integration Tests", () => {
       const endTime = "20:00"; // Exact video duration
 
       // Mock video metadata (20-minute video)
-      mockExec.mockImplementation((cmd: string, callback: Function) => {
+      mockExec.mockImplementation((cmd: string, callback: (...args: unknown[]) => void) => {
         if (cmd.includes("--dump-json")) {
           callback(null, {
             stdout: JSON.stringify({ duration: 1200, title: "Test Video" }),
@@ -304,7 +304,7 @@ describe("YouTube Extraction Integration Tests", () => {
       const endTime = "00:10"; // 5-second clip
 
       // Mock video metadata
-      mockExec.mockImplementation((cmd: string, callback: Function) => {
+      mockExec.mockImplementation((cmd: string, callback: (...args: unknown[]) => void) => {
         if (cmd.includes("--dump-json")) {
           callback(null, {
             stdout: JSON.stringify({ duration: 300, title: "Test Video" }),
@@ -352,7 +352,7 @@ describe("YouTube Extraction Integration Tests", () => {
       const url = "https://www.youtube.com/watch?v=TEST_NO_RANGE";
 
       // Mock video metadata
-      mockExec.mockImplementation((cmd: string, callback: Function) => {
+      mockExec.mockImplementation((cmd: string, callback: (...args: unknown[]) => void) => {
         if (cmd.includes("--dump-json")) {
           callback(null, {
             stdout: JSON.stringify({ duration: 600, title: "Test Video" }),
@@ -415,7 +415,7 @@ describe("YouTube Extraction Integration Tests", () => {
       const endTime = "10:00"; // Invalid: startTime > endTime
 
       // Mock video metadata
-      mockExec.mockImplementation((cmd: string, callback: Function) => {
+      mockExec.mockImplementation((cmd: string, callback: (...args: unknown[]) => void) => {
         if (cmd.includes("--dump-json")) {
           callback(null, {
             stdout: JSON.stringify({ duration: 1200, title: "Test Video" }),

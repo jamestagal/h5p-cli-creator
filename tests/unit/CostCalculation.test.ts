@@ -50,7 +50,7 @@ describe("Cost Calculation and Transparency", () => {
     mockExec = require("child_process").exec;
 
     // Default behavior: all commands succeed
-    mockExec.mockImplementation((cmd: string, callback: Function) => {
+    mockExec.mockImplementation((cmd: string, callback: (...args: unknown[]) => void) => {
       callback(null, { stdout: JSON.stringify({ duration: 1200, title: "Test Video" }), stderr: "" });
     });
 
@@ -152,7 +152,7 @@ describe("Cost Calculation and Transparency", () => {
       // Savings: $0.072
 
       // Mock full video duration (20 minutes)
-      mockExec.mockImplementation((cmd: string, callback: Function) => {
+      mockExec.mockImplementation((cmd: string, callback: (...args: unknown[]) => void) => {
         if (cmd.includes("--dump-json")) {
           callback(null, {
             stdout: JSON.stringify({ duration: 1200, title: "Test Video" }),

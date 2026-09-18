@@ -37,7 +37,7 @@ export class DialogCardsCreator extends ContentCreator<H5PDialogCardsContent> {
   protected async addContent(
     contentObject: H5PDialogCardsContent
   ): Promise<void> {
-    contentObject.dialogs = new Array();
+    contentObject.dialogs = [];
 
     let imageCounter = 0;
     let audioCounter = 0;
@@ -60,7 +60,7 @@ export class DialogCardsCreator extends ContentCreator<H5PDialogCardsContent> {
           } else {
             ret = await H5pImage.fromDownload(line.image);
           }
-          let filename = this.getFilenameForImage(
+          const filename = this.getFilenameForImage(
             imageCounter++,
             ret.extension
           );
@@ -88,7 +88,7 @@ export class DialogCardsCreator extends ContentCreator<H5PDialogCardsContent> {
           } else {
             ret = await H5pAudio.fromDownload(line.audio);
           }
-          let filename = this.getFilenameForAudio(
+          const filename = this.getFilenameForAudio(
             audioCounter++,
             ret.extension
           );

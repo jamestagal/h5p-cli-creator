@@ -209,7 +209,7 @@ I hope this helps with your lesson! Let me know if you need any adjustments.`;
       // First attempt - truncated
       let response = responses[attempt];
       let extracted = JSONValidator.extractJSON(response);
-      let isTruncated = JSONValidator.isLikelyTruncated(extracted);
+      const isTruncated = JSONValidator.isLikelyTruncated(extracted);
 
       expect(isTruncated).toBe(true); // Should trigger retry
 

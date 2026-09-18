@@ -31,13 +31,6 @@ jest.mock("chalk", () => ({
 // Mock child_process
 jest.mock("child_process");
 
-// Mock youtube-transcript
-jest.mock("youtube-transcript", () => ({
-  YoutubeTranscript: {
-    fetchTranscript: jest.fn()
-  }
-}));
-
 import { YouTubeExtractor } from "../../src/services/YouTubeExtractor";
 import { WhisperTranscriptionService } from "../../src/services/transcription/WhisperTranscriptionService";
 import { TranscriptMatcher } from "../../src/services/TranscriptMatcher";

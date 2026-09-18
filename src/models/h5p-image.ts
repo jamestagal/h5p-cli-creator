@@ -19,11 +19,11 @@ export class H5pImage extends H5pContent {
     buffer: Buffer;
     extension: string;
   }> {
-    let response = await axios.get(url, { responseType: "arraybuffer" });
+    const response = await axios.get(url, { responseType: "arraybuffer" });
     if (response.status !== 200) {
       throw new Error(`Error: Could not download image at ${url}!`);
     }
-    let i = new H5pImage();
+    const i = new H5pImage();
     i.mime = response.headers["content-type"];
     i.copyright.license = "U";
     const buffer = toBuffer(response.data);
@@ -42,7 +42,7 @@ export class H5pImage extends H5pContent {
     buffer: Buffer;
     extension: string;
   }> {
-    let i = new H5pImage();
+    const i = new H5pImage();
     i.mime = lookup(path) || "image";
     i.copyright.license = "U";
     const buffer = fs.readFileSync(path);

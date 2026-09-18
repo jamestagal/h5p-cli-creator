@@ -30,7 +30,7 @@ describe("AudioSplitter - Cache Directory Organization", () => {
     jest.clearAllMocks();
 
     // Mock exec to simulate successful ffmpeg execution AND create output files
-    childProcess.exec.mockImplementation((command: string, callback: Function) => {
+    childProcess.exec.mockImplementation((command: string, callback: (...args: unknown[]) => void) => {
       // Extract output path from ffmpeg command
       const outputMatch = command.match(/"([^"]+\.mp3)"$/);
       if (outputMatch) {

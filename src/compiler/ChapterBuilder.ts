@@ -328,7 +328,6 @@ export class ChapterBuilder {
     // Update parent counters synchronously so next chapter gets correct starting values
     if (this.finalizeCallback) {
       this.finalizeCallback(this.localImageCounter, this.localAudioCounter);
-    } else {
     }
   }
 

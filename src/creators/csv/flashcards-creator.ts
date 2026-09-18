@@ -28,7 +28,7 @@ export class FlashcardsCreator extends ContentCreator<H5pFlashcardsContent> {
   protected async addContent(
     contentObject: H5pFlashcardsContent
   ): Promise<void> {
-    contentObject.cards = new Array();
+    contentObject.cards = [];
 
     let imageCounter = 0;
 
@@ -50,7 +50,7 @@ export class FlashcardsCreator extends ContentCreator<H5pFlashcardsContent> {
           } else {
             ret = await H5pImage.fromDownload(line.image);
           }
-          let filename = this.getFilenameForImage(
+          const filename = this.getFilenameForImage(
             imageCounter++,
             ret.extension
           );

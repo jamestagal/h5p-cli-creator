@@ -53,7 +53,7 @@ export class LanguageStrings {
    * @returns language strings including their name and value
    */
   public getAll(): Array<{ name: string, value: string }> {
-    const list: Array<{ name: string, value: string }> = new Array();
+    const list: Array<{ name: string, value: string }> = [];
 
     for (const key in this.semantics) {
       if (this.semantics[key].name !== undefined && this.semantics[key].common === true) {

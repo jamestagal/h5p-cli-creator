@@ -51,7 +51,7 @@ describe("YouTubeExtractor - Audio Trimming", () => {
     mockExec = require("child_process").exec;
 
     // Default behavior: all commands succeed
-    mockExec.mockImplementation((cmd: string, callback: Function) => {
+    mockExec.mockImplementation((cmd: string, callback: (...args: unknown[]) => void) => {
       callback(null, { stdout: "", stderr: "" });
     });
 
@@ -72,7 +72,7 @@ describe("YouTubeExtractor - Audio Trimming", () => {
 
       // Track ffmpeg commands
       let ffmpegCommand = "";
-      mockExec.mockImplementation((cmd: string, callback: Function) => {
+      mockExec.mockImplementation((cmd: string, callback: (...args: unknown[]) => void) => {
         if (cmd.includes("ffmpeg") && cmd.includes("-ss")) {
           ffmpegCommand = cmd;
         }
@@ -127,7 +127,7 @@ describe("YouTubeExtractor - Audio Trimming", () => {
 
       // Mock execAsync and capture command
       let capturedCommand = "";
-      mockExec.mockImplementation((cmd: string, callback: Function) => {
+      mockExec.mockImplementation((cmd: string, callback: (...args: unknown[]) => void) => {
         if (cmd.includes("-ss")) {
           capturedCommand = cmd;
         }
@@ -151,7 +151,7 @@ describe("YouTubeExtractor - Audio Trimming", () => {
 
       // Mock execAsync and capture command
       let capturedCommand = "";
-      mockExec.mockImplementation((cmd: string, callback: Function) => {
+      mockExec.mockImplementation((cmd: string, callback: (...args: unknown[]) => void) => {
         if (cmd.includes("-ss")) {
           capturedCommand = cmd;
         }
@@ -182,7 +182,7 @@ describe("YouTubeExtractor - Audio Trimming", () => {
       (fsExtra.existsSync as jest.Mock).mockReturnValue(true);
 
       // Mock execAsync to fail for ffmpeg trimming command
-      mockExec.mockImplementation((cmd: string, callback: Function) => {
+      mockExec.mockImplementation((cmd: string, callback: (...args: unknown[]) => void) => {
         if (cmd.includes("ffmpeg") && cmd.includes("-ss")) {
           callback(new Error("ffmpeg processing failed"), null);
         } else {
@@ -208,7 +208,7 @@ describe("YouTubeExtractor - Audio Trimming", () => {
 
       // Track execAsync calls
       const execCalls: string[] = [];
-      mockExec.mockImplementation((cmd: string, callback: Function) => {
+      mockExec.mockImplementation((cmd: string, callback: (...args: unknown[]) => void) => {
         execCalls.push(cmd);
         callback(null, { stdout: "", stderr: "" });
       });

@@ -18,7 +18,7 @@ try {
     .command(new YouTubeExtractModule())
     .command(new YouTubeExtractTranscriptModule())
     .command(new YouTubeValidateTranscriptModule())
-    .help().argv;
+    .help().parse();
 } catch (error) {
   console.error(error);
 }

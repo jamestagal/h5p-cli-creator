@@ -55,15 +55,15 @@ export class InteractiveBookModule implements yargs.CommandModule {
     csvfile = csvfile.trim();
     outputfile = outputfile.trim();
 
-    let csv = fs.readFileSync(csvfile, encoding);
-    let csvParsed = papa.parse(csv, {
+    const csv = fs.readFileSync(csvfile, encoding);
+    const csvParsed = papa.parse(csv, {
       header: true,
       delimiter,
       skipEmptyLines: true,
     });
 
-    let h5pPackage = await H5pPackage.createFromHub("H5P.InteractiveBook", language);
-    let bookCreator = new InteractiveBookCreator(
+    const h5pPackage = await H5pPackage.createFromHub("H5P.InteractiveBook", language);
+    const bookCreator = new InteractiveBookCreator(
       h5pPackage,
       csvParsed.data as any,
       titleOverride,

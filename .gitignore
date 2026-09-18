@@ -24,3 +24,6 @@ examples/*.h5p
 *.bak
 *.bak2
 *.backup
+
+# Jest coverage output
+coverage/

@@ -1,5 +1,7 @@
 import { YamlInputParser } from "../../src/compiler/YamlInputParser";
 import * as path from "path";
+import * as fs from "fs";
+import * as os from "os";
 
 describe("YamlInputParser - Blanks Type System Integration", () => {
   describe("ContentType union - Blanks type aliases", () => {
@@ -276,9 +278,6 @@ chapters:
 `;
 
     it("parseYamlString and parseYamlFile agree", async () => {
-      const fs = require("fs");
-      const os = require("os");
-      const path = require("path");
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yip-"));
       const file = path.join(dir, "book.yaml");
       fs.writeFileSync(file, yaml);

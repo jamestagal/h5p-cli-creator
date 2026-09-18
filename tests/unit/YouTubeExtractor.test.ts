@@ -35,11 +35,6 @@ jest.mock("chalk", () => ({
 // Mock system calls and external dependencies
 jest.mock("child_process");
 jest.mock("fs-extra");
-jest.mock("youtube-transcript", () => ({
-  YoutubeTranscript: {
-    fetchTranscript: jest.fn()
-  }
-}));
 
 // Mock WhisperTranscriptionService
 jest.mock("../../src/services/transcription/WhisperTranscriptionService");

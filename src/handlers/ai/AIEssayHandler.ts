@@ -271,7 +271,7 @@ export class AIEssayHandler implements ContentHandler {
       const systemPrompt = AIPromptBuilder.buildSystemPrompt(resolvedConfig);
 
       // Build difficulty-specific guidance
-      let difficultyGuidance = this.getDifficultyGuidance(difficulty);
+      const difficultyGuidance = this.getDifficultyGuidance(difficulty);
 
       // Build user prompt
       const alternativesInstruction = includeAlternatives

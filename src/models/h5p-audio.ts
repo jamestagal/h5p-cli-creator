@@ -16,11 +16,11 @@ export class H5pAudio extends H5pContent {
   public static async fromDownload(
     url: string
   ): Promise<{ audio: H5pAudio; buffer: Buffer; extension: string }> {
-    let response = await axios.get(url, { responseType: "arraybuffer" });
+    const response = await axios.get(url, { responseType: "arraybuffer" });
     if (response.status !== 200) {
       throw new Error(`Error: Could not download audio at ${url}!`);
     }
-    let a = new H5pAudio();
+    const a = new H5pAudio();
     a.mime = response.headers["content-type"].replace(
       "audio/mp3",
       "audio/mpeg"
@@ -36,7 +36,7 @@ export class H5pAudio extends H5pContent {
   public static async fromLocalFile(
     path: string
   ): Promise<{ audio: H5pAudio; buffer: Buffer; extension: string }> {
-    let a = new H5pAudio();
+    const a = new H5pAudio();
     a.mime = (lookup(path) || "image").replace("audio/mp3", "audio/mpeg");
     a.copyright.license = "U";
     const buffer = fs.readFileSync(path);
