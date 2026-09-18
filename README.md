@@ -2,6 +2,10 @@
 
 This is a command line utility that allows you to mass create H5P content from input files using the command line. It is written in TypeScript and runs on NodeJS, meaning it's platform independent. Currently, it supports the **Flashcards**, **Dialog Cards**, **Interactive Book**, and **YouTube Story Extraction** content types, but you can use the infrastructure provided here to add functionality for other content types. Pull requests are welcomed!
 
+> **Status (Sep 2026):** this CLI is being turned into a hosted generation service. The design and
+> phase plans are in `docs/superpowers/`. The CLI keeps working throughout; see the compatibility
+> boundary in the design's §2.1a.
+
 ## Handler-Based Architecture
 
 This project uses a **handler-based plugin architecture** that makes it easy to add new content types without modifying core compiler code. Each content type is implemented as a self-contained handler that:
