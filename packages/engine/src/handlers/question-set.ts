@@ -1,5 +1,5 @@
 import type { QuestionSetSpec } from "@leaplearn/shared";
-import { resolveLibraryKey, type ActivityHandler, type BuildContext } from "./handler.js";
+import { requireHandler, resolveLibraryKey, type ActivityHandler, type BuildContext } from "./handler.js";
 import type { H5PContent } from "../params.js";
 import { sanitizeHtml, escapeHtml } from "../html.js";
 
@@ -7,10 +7,10 @@ export function createQuestionSetHandler(children: Map<string, ActivityHandler>)
   return {
     type: "questionSet",
     mainLibrary: "H5P.QuestionSet",
-    requiredLibraries: (spec) => ["H5P.QuestionSet", ...new Set(spec.children.flatMap((c) => children.get(c.type)!.requiredLibraries(c as never)))],
+    requiredLibraries: (spec) => ["H5P.QuestionSet", ...new Set(spec.children.flatMap((c) => requireHandler(children, c.type).requiredLibraries(c as never)))],
     build(spec, ctx): H5PContent {
       const questions = spec.children.map((child, i) => {
-        const h = children.get(child.type)!;
+        const h = requireHandler(children, child.type);
         const childCtx: BuildContext = { ...ctx, ids: ctx.ids.scope(`questions/${i}`) };
         return { ...h.build(child as never, childCtx), subContentId: ctx.ids.subContentId(`questions/${i}`) };
       });

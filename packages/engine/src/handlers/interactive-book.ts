@@ -1,6 +1,6 @@
 import type { InteractiveBookSpec, BookItem } from "@leaplearn/shared";
 import { EngineError } from "../errors.js";
-import { resolveLibraryKey, type ActivityHandler, type BuildContext } from "./handler.js";
+import { requireHandler, resolveLibraryKey, type ActivityHandler, type BuildContext } from "./handler.js";
 import type { H5PContent } from "../params.js";
 import { sanitizeHtml, escapeHtml } from "../html.js";
 
@@ -23,8 +23,7 @@ export function createInteractiveBookHandler(children: Map<string, ActivityHandl
       case "audio": case "video":
         throw new EngineError(`${item.type} pages are not implemented in phase 1`, "NOT_IMPLEMENTED");
       default: {
-        const h = children.get(item.type);
-        if (!h) throw new EngineError(`no handler for ${item.type}`, "HANDLER_MISSING");
+        const h = requireHandler(children, item.type);
         return h.build(item as never, { ...ctx, ids: ctx.ids.scope(path) });
       }
     }
@@ -46,7 +45,7 @@ export function createInteractiveBookHandler(children: Map<string, ActivityHandl
         if (it.type === "text") libs.add("H5P.AdvancedText");
         else if (it.type === "image") libs.add("H5P.Image");
         else if (it.type === "audio" || it.type === "video") continue;
-        else children.get(it.type)!.requiredLibraries(it as never).forEach((l) => libs.add(l));
+        else requireHandler(children, it.type).requiredLibraries(it as never).forEach((l) => libs.add(l));
       }
       return [...libs];
     },
