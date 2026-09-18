@@ -50,6 +50,8 @@ export function createInteractiveBookHandler(children: Map<string, ActivityHandl
       return [...libs];
     },
     build(spec, ctx): H5PContent {
+      if (spec.coverImageAssetId) throw new EngineError("book cover images are not implemented in phase 1", "NOT_IMPLEMENTED");
+
       const chapters = spec.chapters.map((ch, ci) => ({
         params: { content: ch.items.map((it, ii) => wrap(pageContent(it, ctx, `chapters/${ci}/items/${ii}`), ctx, `chapters/${ci}/items/${ii}`)) },
         library: lib(ctx, "H5P.Column"),

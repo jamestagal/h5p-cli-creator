@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { resolve } from "node:path";
-import { ActivitySpec } from "@leaplearn/shared";
+import { ActivitySpec, InteractiveBookSpec } from "@leaplearn/shared";
 import { EngineError } from "../src/errors.js";
 import { createRegistry, type LibraryRegistry } from "../src/registry.js";
 import { createHandlerRegistry } from "../src/handlers/index.js";
@@ -32,5 +32,23 @@ describe("container children without a phase-1 handler", () => {
     expect(buildError).toBeInstanceOf(EngineError);
     expect((buildError as EngineError).code).toBe("HANDLER_MISSING");
     expect((buildError as EngineError).message).toMatch(/trueFalse/);
+  });
+});
+
+describe("interactiveBook cover image", () => {
+  it("throws NOT_IMPLEMENTED when coverImageAssetId is set", () => {
+    const spec = InteractiveBookSpec.parse({
+      id: "book-cover", title: "Book with cover", type: "interactiveBook", coverImageAssetId: "asset-1",
+      chapters: [{ title: "C1", items: [{ type: "text", title: "Intro", html: "<p>x</p>" }] }]
+    });
+    const handlers = createHandlerRegistry();
+    const handler = handlers.get(spec.type)!;
+    const ctx: BuildContext = { registry: reg, ids: createIdFactory(spec.id, 1), assets: new Map(), mediaPaths: new Map() };
+
+    let buildError: unknown;
+    try { handler.build(spec as never, ctx); } catch (error) { buildError = error; }
+    expect(buildError).toBeInstanceOf(EngineError);
+    expect((buildError as EngineError).code).toBe("NOT_IMPLEMENTED");
+    expect((buildError as EngineError).message).toMatch(/cover image/);
   });
 });
