@@ -490,4 +490,14 @@ By contributing, you agree that your contributions will be licensed under the sa
 
 ---
 
+## Strict TypeScript migration
+
+`tsconfig.strict.json` lists the files that compile under `strict: true`. TypeScript follows
+imports, so a file can only join the list once everything it imports is already strict-clean; check
+with `npx tsc -p tsconfig.strict.json --listFilesOnly | grep /src/` that adding a file does not
+drag others in. Every change to a file not yet in that list must add it (and make it strict-clean,
+`npm run typecheck:strict`) if its imports allow; otherwise leave a one-line note in the PR naming
+the blocking import. New leaf files are always added. The goal is for the list to become `src/**/*`,
+at which point `strict: true` moves into `tsconfig.json` and the strict file is deleted.
+
 Thank you for contributing to h5p-cli-creator! 🎉

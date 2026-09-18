@@ -1,5 +1,5 @@
 import * as path from "path";
-import * as jszip from "jszip";
+import jszip from "jszip";
 import { PackageAssembler } from "../../src/compiler/PackageAssembler";
 import { LibraryRegistry } from "../../src/compiler/LibraryRegistry";
 import { ContentBuilder } from "../../src/compiler/ContentBuilder";

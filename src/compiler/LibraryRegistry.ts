@@ -1,6 +1,6 @@
 import axios from "axios";
 import * as fsExtra from "fs-extra";
-import * as jszip from "jszip";
+import jszip from "jszip";
 import * as path from "path";
 import { toBuffer } from "../helpers";
 import { LibraryMetadata, LibraryJson, LibraryDependency } from "./types";

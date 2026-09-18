@@ -1,5 +1,5 @@
 import axios from "axios";
-import * as imageSize from "buffer-image-size";
+import imageSize from "buffer-image-size";
 import { lookup } from "mime-types";
 import * as fs from "fs";
 

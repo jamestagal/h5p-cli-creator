@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noEmit": true
+  },
+  "include": [
+    "src/ai/JSONValidator.ts",
+    "src/ai/LanguageUtils.ts",
+    "src/helpers.ts",
+    "src/utils/timeRangeValidation.ts"
+  ]
+}

@@ -6,7 +6,9 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "build": "tsc"
+    "build": "tsc",
+    "typecheck:strict": "tsc -p tsconfig.strict.json",
+    "typecheck": "tsc --noEmit"
   },
   "author": "Sebastian Rettig",
   "license": "MIT",
@@ -16,7 +18,7 @@
     "@types/fluent-ffmpeg": "^2.1.28",
     "axios": "^0.25.0",
     "buffer-image-size": "^0.6.4",
-    "chalk": "^5.0.0",
+    "chalk": "^4.1.2",
     "dotenv": "^17.2.3",
     "fluent-ffmpeg": "^2.1.3",
     "fs-extra": "^10.0.0",

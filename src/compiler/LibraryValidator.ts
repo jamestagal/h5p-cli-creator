@@ -1,6 +1,6 @@
 import * as fsExtra from "fs-extra";
 import * as path from "path";
-import * as jszip from "jszip";
+import jszip from "jszip";
 
 /**
  * Library validation result for a single library

@@ -9,7 +9,7 @@ import { LibraryValidator } from "./LibraryValidator";
 import { HandlerContext } from "../handlers/HandlerContext";
 import { BookDefinition, AnyContentItem, H5PDefinition, isStandaloneDefinition, StandaloneDefinition, ContentType } from "./YamlInputParser";
 import { AIConfiguration } from "./types";
-import * as JSZip from "jszip";
+import JSZip from "jszip";
 
 /**
  * Compiler options for H5P package generation

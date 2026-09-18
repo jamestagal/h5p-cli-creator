@@ -1,4 +1,4 @@
-import * as jszip from "jszip";
+import jszip from "jszip";
 import * as path from "path";
 import * as fsExtra from "fs-extra";
 import { BookContent, MediaFile } from "./ContentBuilder";

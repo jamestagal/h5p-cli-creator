@@ -29,7 +29,7 @@ describe("WhisperTranscriptionService", () => {
     };
 
     // Mock fs.createReadStream
-    (fs.createReadStream as jest.Mock) = jest.fn().mockReturnValue(mockFileStream);
+    (fs.createReadStream as jest.Mock).mockReturnValue(mockFileStream);
 
     // Mock OpenAI client
     mockOpenAIInstance = {

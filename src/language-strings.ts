@@ -1,4 +1,4 @@
-import * as jszip from "jszip";
+import jszip from "jszip";
 
 import { H5pContent } from "./models/h5p-content";
 

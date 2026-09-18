@@ -1,4 +1,4 @@
-export function toBuffer(ab) {
+export function toBuffer(ab: ArrayBuffer): Buffer {
   const buf = Buffer.alloc(ab.byteLength);
   const view = new Uint8Array(ab);
   for (let i = 0; i < buf.length; ++i) {
