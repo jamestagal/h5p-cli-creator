@@ -1,0 +1,211 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden: blanks > builds params that validate, reference only locked libraries, and match the snapshot 1`] = `
+{
+  "library": "H5P.Blanks 1.14",
+  "metadata": {
+    "contentType": "Fill in the Blanks",
+    "license": "U",
+    "title": "PPE",
+  },
+  "params": {
+    "a11yCheck": "Check the answers. The responses will be marked as correct, incorrect, or unanswered.",
+    "a11yCheckingModeHeader": "Checking mode",
+    "a11yRetry": "Retry the task. Reset all responses and start the task over again.",
+    "a11yShowSolution": "Show the solution. The task will be marked with its correct solution.",
+    "answerIsCorrect": "':ans' is correct",
+    "answerIsWrong": "':ans' is wrong",
+    "answeredCorrectly": "Answered correctly",
+    "answeredIncorrectly": "Answered incorrectly",
+    "behaviour": {
+      "acceptSpellingErrors": false,
+      "autoCheck": false,
+      "caseSensitive": false,
+      "confirmCheckDialog": false,
+      "confirmRetryDialog": false,
+      "enableCheckButton": true,
+      "enableRetry": true,
+      "enableSolutionsButton": true,
+      "separateLines": false,
+      "showSolutionsRequiresInput": true,
+    },
+    "checkAnswer": "Check",
+    "confirmCheck": {
+      "body": "Are you sure?",
+      "cancelLabel": "Cancel",
+      "confirmLabel": "Finish",
+      "header": "Finish ?",
+    },
+    "confirmRetry": {
+      "body": "Are you sure?",
+      "cancelLabel": "Cancel",
+      "confirmLabel": "Confirm",
+      "header": "Retry ?",
+    },
+    "inputHasTipLabel": "Tip available",
+    "inputLabel": "Blank input @num of @total",
+    "notFilledOut": "Please fill in all blanks",
+    "overallFeedback": [
+      {
+        "feedback": "You got @score of @total blanks correct.",
+        "from": 0,
+        "to": 100,
+      },
+    ],
+    "questions": [
+      "<p>Before entering the site, put on your *hard hat/helmet* and *boots:Protects your feet*.</p>",
+    ],
+    "scoreBarLabel": "You got :num out of :total points",
+    "showSolutions": "Show solutions",
+    "solutionLabel": "Correct answer:",
+    "submitAnswer": "Submit",
+    "text": "<p>Fill the gaps.</p>",
+    "tipLabel": "Tip",
+    "tryAgain": "Try again",
+  },
+}
+`;
+
+exports[`golden: flashcards > builds params that validate, reference only locked libraries, and match the snapshot 1`] = `
+{
+  "library": "H5P.Flashcards 1.5",
+  "metadata": {
+    "contentType": "Flashcards",
+    "license": "U",
+    "title": "Tools",
+  },
+  "params": {
+    "answerShortText": "A:",
+    "cardAnnouncement": "Incorrect answer. Correct answer was @answer",
+    "cards": [
+      {
+        "answer": "Spanner",
+        "text": "Used to tighten hex nuts",
+        "tip": "Not a wrench",
+      },
+      {
+        "answer": "Saw",
+        "image": {
+          "copyright": {
+            "license": "U",
+          },
+          "mime": "image/jpeg",
+          "path": "images/fc-1-c2.jpg",
+        },
+        "imageAltText": "A hand saw",
+        "text": "Cuts timber",
+      },
+    ],
+    "caseSensitive": false,
+    "checkAnswerText": "Check",
+    "correctAnswerText": "Correct",
+    "defaultAnswerText": "Your answer",
+    "description": "Name the tool.",
+    "incorrectAnswerText": "Incorrect",
+    "next": "Next",
+    "ofCorrect": "@score of @total correct",
+    "pageAnnouncement": "Page @current of @total",
+    "previous": "Previous",
+    "progressText": "Card @card of @total",
+    "results": "Results",
+    "retry": "Retry",
+    "showResults": "Show results",
+    "showSolutionText": "Correct answer",
+    "showSolutionsRequiresInput": true,
+  },
+}
+`;
+
+exports[`golden: multi-choice > builds params that validate, reference only locked libraries, and match the snapshot 1`] = `
+{
+  "library": "H5P.MultiChoice 1.16",
+  "metadata": {
+    "contentType": "Multiple Choice",
+    "license": "U",
+    "title": "Safety signs",
+  },
+  "params": {
+    "UI": {
+      "a11yCheck": "Check the answers. The responses will be marked as correct, incorrect, or unanswered.",
+      "a11yRetry": "Retry the task. Reset all responses and start the task over again.",
+      "a11yShowSolution": "Show the solution. The task will be marked with its correct solution.",
+      "checkAnswerButton": "Check",
+      "correctAnswer": "Correct answer",
+      "feedbackAvailable": "Feedback available",
+      "noInput": "Please answer before viewing the solution",
+      "readFeedback": "Read feedback",
+      "scoreBarLabel": "You got :num out of :total points",
+      "shouldCheck": "Should have been checked",
+      "shouldNotCheck": "Should not have been checked",
+      "showSolutionButton": "Show solution",
+      "submitAnswerButton": "Submit",
+      "tipAvailable": "Tip available",
+      "tipsLabel": "Show tip",
+      "tryAgainButton": "Retry",
+      "wrongAnswer": "Wrong answer",
+    },
+    "answers": [
+      {
+        "correct": true,
+        "text": "<div>Blue circle</div>",
+        "tipsAndFeedback": {
+          "chosenFeedback": "Correct: blue circles are mandatory.",
+          "notChosenFeedback": "",
+          "tip": "",
+        },
+      },
+      {
+        "correct": false,
+        "text": "<div>Red circle with a bar</div>",
+        "tipsAndFeedback": {
+          "chosenFeedback": "That is a prohibition sign.",
+          "notChosenFeedback": "",
+          "tip": "",
+        },
+      },
+      {
+        "correct": false,
+        "text": "<div>Yellow triangle</div>",
+        "tipsAndFeedback": {
+          "chosenFeedback": "",
+          "notChosenFeedback": "",
+          "tip": "",
+        },
+      },
+    ],
+    "behaviour": {
+      "autoCheck": false,
+      "confirmCheckDialog": false,
+      "confirmRetryDialog": false,
+      "enableCheckButton": true,
+      "enableRetry": true,
+      "enableSolutionsButton": true,
+      "passPercentage": 100,
+      "randomAnswers": true,
+      "showScorePoints": true,
+      "showSolutionsRequiresInput": true,
+      "singlePoint": false,
+      "type": "auto",
+    },
+    "confirmCheck": {
+      "body": "Are you sure you wish to finish ?",
+      "cancelLabel": "Cancel",
+      "confirmLabel": "Finish",
+      "header": "Finish ?",
+    },
+    "confirmRetry": {
+      "body": "Are you sure you wish to retry ?",
+      "cancelLabel": "Cancel",
+      "confirmLabel": "Confirm",
+      "header": "Retry ?",
+    },
+    "overallFeedback": [
+      {
+        "from": 0,
+        "to": 100,
+      },
+    ],
+    "question": "<p>Which sign means <em>mandatory</em> action?</p>",
+  },
+}
+`;

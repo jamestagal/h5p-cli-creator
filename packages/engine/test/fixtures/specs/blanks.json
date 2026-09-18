@@ -1,0 +1,3 @@
+{ "id": "bl-1", "title": "PPE", "type": "blanks", "taskDescription": "Fill the gaps.",
+  "passage": "Before entering the site, put on your {{b1}} and {{b2}}.",
+  "blanks": [ { "id": "b1", "answers": ["hard hat", "helmet"] }, { "id": "b2", "answers": ["boots"], "tip": "Protects your feet" } ] }

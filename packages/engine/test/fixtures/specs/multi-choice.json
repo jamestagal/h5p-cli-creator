@@ -1,0 +1,8 @@
+{ "id": "mc-1", "title": "Safety signs", "type": "multiChoice",
+  "question": "<p>Which sign means <em>mandatory</em> action?</p>",
+  "answers": [
+    { "text": "Blue circle", "correct": true, "feedbackChosen": "Correct: blue circles are mandatory." },
+    { "text": "Red circle with a bar", "correct": false, "feedbackChosen": "That is a prohibition sign." },
+    { "text": "Yellow triangle", "correct": false }
+  ],
+  "provenance": { "conceptIds": ["c-signs"], "evidenceIds": ["e-12"], "criteriaIds": ["PC1.2"] } }
