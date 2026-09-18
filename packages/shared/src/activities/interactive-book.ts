@@ -7,17 +7,16 @@ import { BlanksSpec } from "./blanks.js";
 import { DragTextSpec } from "./drag-text.js";
 import { SingleChoiceSetSpec } from "./single-choice-set.js";
 import { EssaySpec } from "./essay.js";
-import { CrosswordSpec } from "./crossword.js";
 import { AccordionSpec } from "./accordion.js";
-import { FlashcardsSpec } from "./flashcards.js";
 import { DialogCardsSpec } from "./dialog-cards.js";
 import { SummarySpec } from "./summary.js";
 import { QuestionSetSpec } from "./question-set.js";
 
+/** H5P.Column 1.18 does not accept H5P.Flashcards or H5P.Crossword, so those types are excluded here. */
 export const BookItem = z.discriminatedUnion("type", [
   TextPage, ImagePage, AudioPage, VideoPage,
   MultiChoiceSpec, TrueFalseSpec, BlanksSpec, DragTextSpec, SingleChoiceSetSpec, EssaySpec,
-  CrosswordSpec, AccordionSpec, FlashcardsSpec, DialogCardsSpec, SummarySpec, QuestionSetSpec
+  AccordionSpec, DialogCardsSpec, SummarySpec, QuestionSetSpec
 ]);
 export type BookItem = z.infer<typeof BookItem>;
 

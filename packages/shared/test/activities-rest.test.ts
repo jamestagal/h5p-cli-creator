@@ -4,6 +4,8 @@ import { ActivitySpec, QuestionSetSpec, InteractiveBookSpec, ACTIVITY_TYPES, ass
 const base = { id: "x", title: "T" };
 const mc = { ...base, type: "multiChoice", question: "q", answers: [{ text: "a", correct: true }, { text: "b", correct: false }] };
 const cards = { ...base, type: "flashcards", cards: [{ id: "c1", front: "f", back: "b" }] };
+const tf = { ...base, type: "trueFalse", statement: "s", correct: true };
+const crossword = { ...base, type: "crossword", words: [{ id: "w1", answer: "cat", clue: "pet" }, { id: "w2", answer: "dog", clue: "pet" }] };
 
 describe("containers", () => {
   it("questionSet accepts multiChoice children and rejects flashcards", () => {
@@ -13,10 +15,14 @@ describe("containers", () => {
   it("interactiveBook accepts pages and activities but not another book", () => {
     const book = InteractiveBookSpec.parse({
       ...base, type: "interactiveBook",
-      chapters: [{ title: "C1", items: [{ type: "text", title: "Intro", html: "<p>x</p>" }, mc, cards] }]
+      chapters: [{ title: "C1", items: [{ type: "text", title: "Intro", html: "<p>x</p>" }, mc, tf] }]
     });
     expect(book.chapters[0]?.items).toHaveLength(3);
     expect(() => InteractiveBookSpec.parse({ ...base, type: "interactiveBook", chapters: [{ title: "C", items: [book] }] })).toThrow();
+  });
+  it("interactiveBook rejects flashcards and crossword, which H5P.Column 1.18 does not accept", () => {
+    expect(() => InteractiveBookSpec.parse({ ...base, type: "interactiveBook", chapters: [{ title: "C", items: [cards] }] })).toThrow();
+    expect(() => InteractiveBookSpec.parse({ ...base, type: "interactiveBook", chapters: [{ title: "C", items: [crossword] }] })).toThrow();
   });
   it("ActivitySpec discriminates on type", () => {
     expect(ActivitySpec.parse(mc).type).toBe("multiChoice");

@@ -61,7 +61,7 @@ One `ActivitySpec` is one exportable package. The table below fixes, per type, w
 | `dialogCards` | N cards (front, back, optional audio) | H5P.Dialogcards | — |
 | `summary` | N statement groups (one correct per group) | H5P.Summary | — |
 | `questionSet` | Ordered children, pass percentage, intro | H5P.QuestionSet | `multiChoice`, `trueFalse`, `blanks`, `dragText`, `essay` (subset of the library's permitted list; DragQuestion, MarkTheWords and MultiMediaChoice have no producer) |
-| `interactiveBook` | Ordered chapters of pages | H5P.InteractiveBook | Page types `text`, `image`, `audio`, `video` (embed URL or asset), and any type above except `interactiveBook` |
+| `interactiveBook` | Ordered chapters of pages | H5P.InteractiveBook | Page types `text`, `image`, `audio`, `video` (embed URL or asset), and any type above except `interactiveBook`, `flashcards` and `crossword` (H5P.Column 1.18, the chapter container, does not accept H5P.Flashcards or H5P.Crossword) |
 
 Because MultiChoice, TrueFalse and Essay hold one item each, the planner decides how many *specs* of those types to request, not how many items per spec. A "set of five multiple-choice questions" is five `multiChoice` specs, or one `questionSet` with five children, and the picker offers both. `singleChoiceSet` is offered only in its native multi-question form; internally its questions reuse the same question schema as `multiChoice` where that helps, but the picker has no second container concept.
 
