@@ -1,5 +1,5 @@
 import { AITextHandler } from "../../src/handlers/core/AITextHandler";
-import { QuizHandler } from "../../src/handlers/ai/QuizHandler";
+import { MultiChoiceHandler } from "../../src/handlers/ai/MultiChoiceHandler";
 import { AIPromptBuilder } from "../../src/ai/AIPromptBuilder";
 import { HandlerContext } from "../../src/handlers/HandlerContext";
 import { AITextContent, AIQuizContent } from "../../src/compiler/YamlInputParser";
@@ -7,7 +7,7 @@ import { AITextContent, AIQuizContent } from "../../src/compiler/YamlInputParser
 /**
  * Task Group 5.4.1: Handler Integration Tests
  *
- * These tests verify that AITextHandler and QuizHandler:
+ * These tests verify that AITextHandler and MultiChoiceHandler:
  * - Use book-level config when no item config provided
  * - Override with item-level config when provided
  * - Validate aiConfig fields correctly
@@ -224,13 +224,13 @@ describe("AITextHandler Integration with AIConfiguration", () => {
   });
 });
 
-describe("QuizHandler Integration with AIConfiguration", () => {
-  let handler: QuizHandler;
+describe("MultiChoiceHandler Integration with AIConfiguration", () => {
+  let handler: MultiChoiceHandler;
   let mockContext: HandlerContext;
   let mockQuizGenerator: any;
 
   beforeEach(() => {
-    handler = new QuizHandler();
+    handler = new MultiChoiceHandler();
     mockQuizGenerator = {
       generateH5pQuiz: jest.fn().mockResolvedValue([
         {

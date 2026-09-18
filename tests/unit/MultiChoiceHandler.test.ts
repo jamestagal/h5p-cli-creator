@@ -1,19 +1,19 @@
-import { QuizHandler } from "../../src/handlers/ai/QuizHandler";
+import { MultiChoiceHandler } from "../../src/handlers/ai/MultiChoiceHandler";
 import { HandlerContext } from "../../src/handlers/HandlerContext";
 
 /**
- * Unit tests for QuizHandler
+ * Unit tests for MultiChoiceHandler
  * Tests Task Group 2.3: AI-Powered Handlers
  */
-describe("QuizHandler", () => {
-  let handler: QuizHandler;
+describe("MultiChoiceHandler", () => {
+  let handler: MultiChoiceHandler;
   let mockContext: HandlerContext;
   let mockChapterBuilder: any;
   let mockQuizGenerator: any;
   let mockLogger: any;
 
   beforeEach(() => {
-    handler = new QuizHandler();
+    handler = new MultiChoiceHandler();
 
     mockChapterBuilder = {
       addTextPage: jest.fn(),

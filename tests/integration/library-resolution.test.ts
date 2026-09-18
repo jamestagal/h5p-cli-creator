@@ -3,7 +3,7 @@ import { TextHandler } from "../../src/handlers/core/TextHandler";
 import { ImageHandler } from "../../src/handlers/core/ImageHandler";
 import { AudioHandler } from "../../src/handlers/core/AudioHandler";
 import { AITextHandler } from "../../src/handlers/core/AITextHandler";
-import { QuizHandler } from "../../src/handlers/ai/QuizHandler";
+import { MultiChoiceHandler } from "../../src/handlers/ai/MultiChoiceHandler";
 import { BookDefinition } from "../../src/compiler/YamlInputParser";
 
 /**
@@ -23,7 +23,7 @@ describe("Dynamic Library Resolution", () => {
     registry.register(new ImageHandler());
     registry.register(new AudioHandler());
     registry.register(new AITextHandler());
-    registry.register(new QuizHandler());
+    registry.register(new MultiChoiceHandler());
   });
 
   test("should scan all content types in book and collect libraries", () => {

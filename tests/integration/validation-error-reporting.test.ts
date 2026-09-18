@@ -1,7 +1,7 @@
 import { TextHandler } from "../../src/handlers/core/TextHandler";
 import { ImageHandler } from "../../src/handlers/core/ImageHandler";
 import { AudioHandler } from "../../src/handlers/core/AudioHandler";
-import { QuizHandler } from "../../src/handlers/ai/QuizHandler";
+import { MultiChoiceHandler } from "../../src/handlers/ai/MultiChoiceHandler";
 import { FlashcardsHandler } from "../../src/handlers/embedded/FlashcardsHandler";
 import { DialogCardsHandler } from "../../src/handlers/embedded/DialogCardsHandler";
 import { HandlerRegistry } from "../../src/handlers/HandlerRegistry";
@@ -84,9 +84,9 @@ describe("Handler Validation and Error Reporting", () => {
     });
   });
 
-  describe("QuizHandler validation", () => {
+  describe("MultiChoiceHandler validation", () => {
     it("should reject missing sourceText field", () => {
-      const handler = new QuizHandler();
+      const handler = new MultiChoiceHandler();
       const result = handler.validate({ type: "ai-quiz", title: "Quiz" });
 
       expect(result.valid).toBe(false);
@@ -94,7 +94,7 @@ describe("Handler Validation and Error Reporting", () => {
     });
 
     it("should reject non-string sourceText", () => {
-      const handler = new QuizHandler();
+      const handler = new MultiChoiceHandler();
       const result = handler.validate({ type: "ai-quiz", sourceText: 123 });
 
       expect(result.valid).toBe(false);
@@ -102,7 +102,7 @@ describe("Handler Validation and Error Reporting", () => {
     });
 
     it("should accept valid quiz content", () => {
-      const handler = new QuizHandler();
+      const handler = new MultiChoiceHandler();
       const result = handler.validate({
         type: "ai-quiz",
         sourceText: "The capital of France is Paris.",
