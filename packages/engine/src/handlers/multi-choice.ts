@@ -1,12 +1,7 @@
 import type { MultiChoiceSpec } from "@leaplearn/shared";
-import type { ActivityHandler, BuildContext } from "./handler.js";
+import { resolveLibraryKey, type ActivityHandler } from "./handler.js";
 import type { H5PContent } from "../params.js";
 import { sanitizeHtml, escapeHtml } from "../html.js";
-
-function key(ctx: BuildContext, name: string): string {
-  const l = ctx.registry.resolve(name);
-  return `${l.machineName}-${l.majorVersion}.${l.minorVersion}`;
-}
 
 export const multiChoiceHandler: ActivityHandler<MultiChoiceSpec> = {
   type: "multiChoice",
@@ -14,7 +9,7 @@ export const multiChoiceHandler: ActivityHandler<MultiChoiceSpec> = {
   requiredLibraries: () => ["H5P.MultiChoice"],
   build(spec, ctx): H5PContent {
     return {
-      library: ctx.registry.libraryString(key(ctx, "H5P.MultiChoice")),
+      library: ctx.registry.libraryString(resolveLibraryKey(ctx.registry, "H5P.MultiChoice")),
       params: {
         question: sanitizeHtml(spec.question),
         answers: spec.answers.map((a) => ({

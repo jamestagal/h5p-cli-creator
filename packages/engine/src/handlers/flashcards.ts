@@ -1,13 +1,8 @@
 import type { FlashcardsSpec } from "@leaplearn/shared";
 import { EngineError } from "../errors.js";
-import type { ActivityHandler, BuildContext } from "./handler.js";
+import { resolveLibraryKey, type ActivityHandler } from "./handler.js";
 import type { H5PContent } from "../params.js";
 import { escapeHtml } from "../html.js";
-
-function key(ctx: BuildContext, name: string): string {
-  const l = ctx.registry.resolve(name);
-  return `${l.machineName}-${l.majorVersion}.${l.minorVersion}`;
-}
 
 const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp" };
 
@@ -32,7 +27,7 @@ export const flashcardsHandler: ActivityHandler<FlashcardsSpec> = {
       return card;
     });
     return {
-      library: ctx.registry.libraryString(key(ctx, "H5P.Flashcards")),
+      library: ctx.registry.libraryString(resolveLibraryKey(ctx.registry, "H5P.Flashcards")),
       params: {
         description: escapeHtml(spec.description ?? ""),
         cards,

@@ -17,3 +17,8 @@ export interface ActivityHandler<S extends ActivitySpec = ActivitySpec> {
   requiredLibraries(spec: S): string[];
   build(spec: S, ctx: BuildContext): H5PContent;
 }
+
+export function resolveLibraryKey(registry: LibraryRegistry, machineName: string): string {
+  const l = registry.resolve(machineName);
+  return `${l.machineName}-${l.majorVersion}.${l.minorVersion}`;
+}
