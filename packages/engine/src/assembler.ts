@@ -11,11 +11,17 @@ import type { LockedLibrary } from "./lock.js";
 // yazl's `dateToDosDateTime` reads local-time getters (getFullYear, getHours, ...), so an
 // instant fixed with a `Z` UTC suffix produces different DOS date/time fields (and therefore
 // different package bytes) depending on the process's `TZ`. Constructing this from local-time
-// fields instead makes DOS date 10273 / time 0 in every timezone.
-const FIXED_MTIME = new Date(2000, 0, 1, 0, 0, 0);
+// fields instead makes DOS date 10273 / time 0 in every timezone — but only if construction and
+// reading happen under the same zone: a Date built once at module load stores a fixed absolute
+// instant, and re-reading its local-time getters after `TZ` changes mid-process would convert
+// that instant into a different local date/time. Building it fresh on every call keeps
+// construction and reading in the same zone regardless of what `TZ` was when the module loaded.
+function fixedMtime(): Date {
+  return new Date(2000, 0, 1, 0, 0, 0);
+}
 // `forceDosTimestamp` skips yazl's Info-ZIP "UT" extra-timestamp field, which otherwise encodes
 // `mtime.getTime()` (an absolute instant) alongside the DOS date/time (a local-time encoding):
-// fixing `FIXED_MTIME`'s local fields necessarily leaves its absolute instant TZ-dependent, so
+// fixing `fixedMtime()`'s local fields necessarily leaves its absolute instant TZ-dependent, so
 // without this flag the "UT" field alone would still make package bytes vary by `TZ`.
 const FORCE_DOS_TIMESTAMP = true;
 const FILE_MODE = 0o100644;
@@ -72,7 +78,7 @@ function verifying(asset: AssetEntry, fail: (err: Error) => void): Transform {
 }
 
 export async function writePackage(input: PackageInput, registry: LibraryRegistry, output: NodeJS.WritableStream): Promise<string[]> {
-  const opts = { mtime: FIXED_MTIME, mode: FILE_MODE, compress: true, forceDosTimestamp: FORCE_DOS_TIMESTAMP };
+  const opts = { mtime: fixedMtime(), mode: FILE_MODE, compress: true, forceDosTimestamp: FORCE_DOS_TIMESTAMP };
   const zip = new ZipFile();
   const sources: Readable[] = [];
   let settled = false;

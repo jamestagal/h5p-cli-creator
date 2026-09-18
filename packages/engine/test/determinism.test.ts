@@ -87,21 +87,61 @@ describe("compile", () => {
     expect(a.equals(b)).toBe(false);
   });
 
-  it("uses a timezone-independent fixed timestamp for every zip entry", async () => {
+  it("encodes a fixed DOS-only timestamp for every zip entry, with no timezone-dependent extra field", async () => {
     const buf = await compileToBuffer(load("flashcards"), new Map([["card", card()]]), { registry, revision: 1 });
-    const signature = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
-    let offset = buf.indexOf(signature);
-    let header: { time: number; date: number } | undefined;
+
+    const localSignature = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+    let offset = buf.indexOf(localSignature);
+    let localHeader: { time: number; date: number } | undefined;
     while (offset !== -1) {
       const nameLength = buf.readUInt16LE(offset + 26);
       const name = buf.toString("utf8", offset + 30, offset + 30 + nameLength);
       if (name === "h5p.json") {
-        header = { time: buf.readUInt16LE(offset + 10), date: buf.readUInt16LE(offset + 12) };
+        localHeader = { time: buf.readUInt16LE(offset + 10), date: buf.readUInt16LE(offset + 12) };
         break;
       }
-      offset = buf.indexOf(signature, offset + 4);
+      offset = buf.indexOf(localSignature, offset + 4);
     }
-    expect(header).toEqual({ time: 0, date: 10273 });
+    expect(localHeader).toEqual({ time: 0, date: 10273 });
+
+    // `forceDosTimestamp` must suppress yazl's Info-ZIP "UT" extra-timestamp field (which encodes
+    // the absolute epoch instant, not just the DOS date/time) on the central-directory record too;
+    // otherwise the DOS field above stays fixed while this field still varies with `TZ`.
+    const centralSignature = Buffer.from([0x50, 0x4b, 0x01, 0x02]);
+    offset = buf.indexOf(centralSignature);
+    let extraFieldLength: number | undefined;
+    while (offset !== -1) {
+      const nameLength = buf.readUInt16LE(offset + 28);
+      const name = buf.toString("utf8", offset + 46, offset + 46 + nameLength);
+      if (name === "h5p.json") {
+        extraFieldLength = buf.readUInt16LE(offset + 30);
+        break;
+      }
+      offset = buf.indexOf(centralSignature, offset + 4);
+    }
+    expect(extraFieldLength).toBe(0);
+  });
+
+  it("produces identical bytes under different timezones", async () => {
+    const originalTz = process.env.TZ;
+    try {
+      const zones = ["UTC", "Asia/Tokyo", "America/New_York"];
+      const hashes: string[] = [];
+      const offsets: number[] = [];
+      for (const zone of zones) {
+        process.env.TZ = zone;
+        offsets.push(new Date(2000, 0, 1).getTimezoneOffset());
+        const buf = await compileToBuffer(load("flashcards"), new Map([["card", card()]]), { registry, revision: 1 });
+        hashes.push(createHash("sha256").update(buf).digest("hex"));
+      }
+      expect(new Set(hashes).size).toBe(1);
+      // Proves the TZ switch actually took effect (otherwise the hash equality above would be
+      // vacuous, e.g. if Node cached the offset from process start).
+      expect(new Set(offsets).size).toBeGreaterThanOrEqual(2);
+    } finally {
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
+    }
   });
 
   it("destroys open asset streams when the destination errors", async () => {
