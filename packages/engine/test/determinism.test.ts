@@ -86,4 +86,31 @@ describe("compile", () => {
     const b = await compileToBuffer(load("question-set-nested"), new Map(), { registry, revision: 2 });
     expect(a.equals(b)).toBe(false);
   });
+
+  it("uses a timezone-independent fixed timestamp for every zip entry", async () => {
+    const buf = await compileToBuffer(load("flashcards"), new Map([["card", card()]]), { registry, revision: 1 });
+    const signature = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+    let offset = buf.indexOf(signature);
+    let header: { time: number; date: number } | undefined;
+    while (offset !== -1) {
+      const nameLength = buf.readUInt16LE(offset + 26);
+      const name = buf.toString("utf8", offset + 30, offset + 30 + nameLength);
+      if (name === "h5p.json") {
+        header = { time: buf.readUInt16LE(offset + 10), date: buf.readUInt16LE(offset + 12) };
+        break;
+      }
+      offset = buf.indexOf(signature, offset + 4);
+    }
+    expect(header).toEqual({ time: 0, date: 10273 });
+  });
+
+  it("destroys open asset streams when the destination errors", async () => {
+    const { Writable } = await import("node:stream");
+    const asset = card();
+    const openStream = asset.open();
+    asset.open = () => openStream;
+    const failing = new Writable({ write(_c, _e, cb) { cb(new Error("destination full")); } });
+    await expect(compile(load("flashcards"), new Map([["card", asset]]), failing, { registry, revision: 1 })).rejects.toThrow(/destination full/);
+    expect(openStream.destroyed).toBe(true);
+  });
 });

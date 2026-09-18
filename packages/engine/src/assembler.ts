@@ -8,7 +8,16 @@ import type { H5PContent } from "./params.js";
 import type { LibraryRegistry } from "./registry.js";
 import type { LockedLibrary } from "./lock.js";
 
-const FIXED_MTIME = new Date("2000-01-01T00:00:00Z");
+// yazl's `dateToDosDateTime` reads local-time getters (getFullYear, getHours, ...), so an
+// instant fixed with a `Z` UTC suffix produces different DOS date/time fields (and therefore
+// different package bytes) depending on the process's `TZ`. Constructing this from local-time
+// fields instead makes DOS date 10273 / time 0 in every timezone.
+const FIXED_MTIME = new Date(2000, 0, 1, 0, 0, 0);
+// `forceDosTimestamp` skips yazl's Info-ZIP "UT" extra-timestamp field, which otherwise encodes
+// `mtime.getTime()` (an absolute instant) alongside the DOS date/time (a local-time encoding):
+// fixing `FIXED_MTIME`'s local fields necessarily leaves its absolute instant TZ-dependent, so
+// without this flag the "UT" field alone would still make package bytes vary by `TZ`.
+const FORCE_DOS_TIMESTAMP = true;
 const FILE_MODE = 0o100644;
 const compareCodeUnits = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -63,7 +72,7 @@ function verifying(asset: AssetEntry, fail: (err: Error) => void): Transform {
 }
 
 export async function writePackage(input: PackageInput, registry: LibraryRegistry, output: NodeJS.WritableStream): Promise<string[]> {
-  const opts = { mtime: FIXED_MTIME, mode: FILE_MODE, compress: true };
+  const opts = { mtime: FIXED_MTIME, mode: FILE_MODE, compress: true, forceDosTimestamp: FORCE_DOS_TIMESTAMP };
   const zip = new ZipFile();
   const sources: Readable[] = [];
   let settled = false;
@@ -87,9 +96,11 @@ export async function writePackage(input: PackageInput, registry: LibraryRegistr
   // would otherwise keep re-erroring as more chunks arrive instead of rejecting exactly once.
   const outputDone = pipeline(zip.outputStream, output);
   // The destination can reject before the entry-building work below reaches `await outputDone`;
-  // this silences Node's transient "unhandled rejection" false positive for that window without
-  // swallowing the error, which the `await outputDone` at the end of this function still surfaces.
-  outputDone.catch(() => undefined);
+  // routing it through `abort` (instead of a no-op) both destroys every open asset source stream
+  // for a destination-only failure (pipeline() only owns zip.outputStream and output, not our
+  // side-loaded asset streams) and silences Node's transient "unhandled rejection" false positive
+  // for that window. `await outputDone` below still delivers the original error to the caller.
+  outputDone.catch(abort);
 
   const entries: Entry[] = [];
   try {
@@ -107,6 +118,12 @@ export async function writePackage(input: PackageInput, registry: LibraryRegistr
           source.on("error", abort);
           check.on("error", abort);
           sources.push(source, check);
+          // The destination can already have failed by the time this entry is reached (entries
+          // are registered with `zip` well ahead of when their bytes actually flow to `output`);
+          // `abort`'s cleanup only reaches streams that existed in `sources` when it ran, so a
+          // stream opened afterwards must be destroyed immediately instead of being piped into an
+          // archive that is no longer going anywhere.
+          if (settled) { destroyStream(source); destroyStream(check); return; }
           z.addReadStream(source.pipe(check), `content/${path}`, { ...opts, size: asset.byteLength });
         }
       });

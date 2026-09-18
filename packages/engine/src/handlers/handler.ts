@@ -1,6 +1,7 @@
 import type { ActivitySpec, AssetManifest } from "@leaplearn/shared";
 import { EngineError } from "../errors.js";
 import type { IdFactory } from "../ids.js";
+import type { LibraryKey } from "../lock.js";
 import type { H5PContent } from "../params.js";
 import type { LibraryRegistry } from "../registry.js";
 
@@ -19,7 +20,7 @@ export interface ActivityHandler<S extends ActivitySpec = ActivitySpec> {
   build(spec: S, ctx: BuildContext): H5PContent;
 }
 
-export function resolveLibraryKey(registry: LibraryRegistry, machineName: string): string {
+export function resolveLibraryKey(registry: LibraryRegistry, machineName: string): LibraryKey {
   const l = registry.resolve(machineName);
   return `${l.machineName}-${l.majorVersion}.${l.minorVersion}`;
 }

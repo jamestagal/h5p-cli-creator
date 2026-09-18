@@ -11,7 +11,6 @@ import { validateParams } from "./validator/semantics.js";
 import { checkClosure } from "./validator/closure.js";
 import { writePackage } from "./assembler.js";
 import type { LibraryRegistry } from "./registry.js";
-import type { LibraryKey } from "./lock.js";
 import type { H5PParams } from "./params.js";
 
 export interface Logger { info(msg: string): void; warn(msg: string): void; }
@@ -26,7 +25,7 @@ async function prepare(spec: ActivitySpec, assets: AssetManifest, options: Compi
 
   const ctx: BuildContext = { registry: options.registry, ids: createIdFactory(parsed.id, options.revision ?? 1), assets, mediaPaths: new Map() };
   const content = handler.build(parsed as never, ctx);
-  const closure = await options.registry.closure(handler.requiredLibraries(parsed as never).map((n) => resolveLibraryKey(options.registry, n) as LibraryKey));
+  const closure = await options.registry.closure(handler.requiredLibraries(parsed as never).map((n) => resolveLibraryKey(options.registry, n)));
   const closureKeys = closure.map((l) => `${l.machineName}-${l.majorVersion}.${l.minorVersion}`);
   const issues: ValidationIssue[] = [...(await validateParams(content, options.registry, ctx.mediaPaths)), ...(await checkClosure(content, options.registry, closureKeys))];
 
