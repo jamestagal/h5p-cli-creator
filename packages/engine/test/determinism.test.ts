@@ -13,6 +13,7 @@ beforeAll(async () => { registry = await createRegistry({ lockPath: resolve(root
 
 const card = (): AssetEntry => { const p = resolve(fixtures, "assets/card.jpg"); return { assetId: "card", sha256: createHash("sha256").update(readFileSync(p)).digest("hex"), byteLength: statSync(p).size, mimeType: "image/jpeg", open: () => createReadStream(p) }; };
 const load = (n: string) => ActivitySpec.parse(JSON.parse(readFileSync(resolve(fixtures, "specs", `${n}.json`), "utf8")));
+const goldenHashes: Record<string, string> = JSON.parse(readFileSync(resolve(fixtures, "golden-hashes.json"), "utf8"));
 
 describe("compile", () => {
   it("produces byte-identical packages for identical inputs", async () => {
@@ -152,5 +153,11 @@ describe("compile", () => {
     const failing = new Writable({ write(_c, _e, cb) { cb(new Error("destination full")); } });
     await expect(compile(load("flashcards"), new Map([["card", asset]]), failing, { registry, revision: 1 })).rejects.toThrow(/destination full/);
     expect(openStream.destroyed).toBe(true);
+  });
+
+  it("matches the committed golden hash for flashcards@1 (a mismatch means the toolchain, yazl, a handler or a library changed and the hash must be re-recorded deliberately)", async () => {
+    const buf = await compileToBuffer(load("flashcards"), new Map([["card", card()]]), { registry, revision: 1 });
+    const hash = createHash("sha256").update(buf).digest("hex");
+    expect(hash, "compiled bytes for flashcards@1 no longer match packages/engine/test/fixtures/golden-hashes.json: the Node/zlib toolchain, yazl, a handler or a library changed. Re-record the hash deliberately if the change was intended.").toBe(goldenHashes["flashcards@1"]);
   });
 });
