@@ -4,7 +4,7 @@ import { ActivitySpec, QuestionSetSpec, InteractiveBookSpec, ACTIVITY_TYPES, ass
 const base = { id: "x", title: "T" };
 const mc = { ...base, type: "multiChoice", question: "q", answers: [{ text: "a", correct: true }, { text: "b", correct: false }] };
 const cards = { ...base, type: "flashcards", cards: [{ id: "c1", front: "f", back: "b" }] };
-const tf = { ...base, type: "trueFalse", statement: "s", correct: true };
+const tf = { ...base, id: "x2", type: "trueFalse", statement: "s", correct: true };
 const crossword = { ...base, type: "crossword", words: [{ id: "w1", answer: "cat", clue: "pet" }, { id: "w2", answer: "dog", clue: "pet" }] };
 
 describe("containers", () => {

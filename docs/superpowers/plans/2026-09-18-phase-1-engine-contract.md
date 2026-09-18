@@ -3219,3 +3219,4 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - **Book children narrowed:** `flashcards` and `crossword` are excluded from `interactiveBook` items because the locked H5P.Column 1.18 content allowlist omits them; found by the validator in Task 10, the spec §2.1 row is corrected.
 - **Delimiter guards:** `blanks.passage` rejects `*`; `dragText` rejects `*` in the passage and `*`, `/`, `:` in draggable text and tips (found by the final review; the plan's Task 3/4 schemas lacked them).
 - **Book cover image:** `coverImageAssetId` is schema-complete but the handler throws `NOT_IMPLEMENTED` until phase 4, alongside audio and video pages.
+- **Unique item ids:** every item collection and container child list rejects duplicate ids, reporting the duplicate's path (owner-found after the final review; the plan's schemas did not check).

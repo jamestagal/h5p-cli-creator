@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { readFileSync, createReadStream, statSync } from "node:fs";
 import JSZip from "jszip";
+import { ZodError } from "zod";
 import { ActivitySpec, type AssetEntry } from "@leaplearn/shared";
 import { compile, compileToBuffer, compileToFile, createRegistry, validate, type LibraryRegistry, type Logger } from "../src/index.js";
 
@@ -167,5 +168,25 @@ describe("compile", () => {
     await compileToBuffer(load("flashcards"), new Map([["card", card()]]), { registry, revision: 1, logger });
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(/^compiled H5P\.Flashcards: \d+ entries, \d+ libraries$/);
+  });
+
+  it("rejects a flashcards spec whose two cards share an id, so the engine can no longer overwrite one card's image mapping with the other's", async () => {
+    const duplicateFlashcards: ActivitySpec = {
+      id: "fc-dup", title: "Dup", type: "flashcards", language: "en", schemaVersion: 1,
+      cards: [
+        { id: "c1", front: "front1", back: "back1", imageAssetId: "card" },
+        { id: "c1", front: "front2", back: "back2", imageAssetId: "card" }
+      ]
+    };
+    const assets = new Map([["card", card()]]);
+
+    const validationError: unknown = await validate(duplicateFlashcards, assets, { registry }).then(
+      () => { throw new Error("expected validate() to reject"); },
+      (err: unknown) => err
+    );
+    expect(validationError).toBeInstanceOf(ZodError);
+    expect((validationError as ZodError).issues.some((i) => /duplicate id "c1"/.test(i.message))).toBe(true);
+
+    await expect(compileToBuffer(duplicateFlashcards, assets, { registry, revision: 1 })).rejects.toBeInstanceOf(ZodError);
   });
 });

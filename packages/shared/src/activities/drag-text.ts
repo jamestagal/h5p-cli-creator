@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ActivityBase, ItemBase } from "./base.js";
+import { ActivityBase, ItemBase, rejectDuplicateIds } from "./base.js";
 export const DRAG_TOKEN = /\{\{(d[0-9]+)\}\}/g;
 /** H5P.DragText uses `*text:tip*` markup with no escaping, so these characters cannot appear in draggable text or tips. */
 export const DRAG_TEXT_FORBIDDEN = ["*", "/", ":"] as const;
@@ -14,6 +14,7 @@ export const DragTextSpec = ActivityBase.extend({
   passage: z.string().min(1),
   draggables: z.array(Draggable).min(1)
 }).superRefine((s, ctx) => {
+  rejectDuplicateIds(s.draggables, ["draggables"], ctx);
   if (s.passage.includes("*")) ctx.addIssue({ code: "custom", path: ["passage"], message: `passage contains "*", which H5P.DragText cannot represent` });
   const seen = new Set<string>();
   for (const m of s.passage.matchAll(DRAG_TOKEN)) {

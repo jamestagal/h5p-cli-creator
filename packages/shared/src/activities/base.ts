@@ -19,3 +19,19 @@ export const ItemBase = z.object({
   provenance: Provenance.optional()
 });
 export type ItemBase = z.infer<typeof ItemBase>;
+
+/**
+ * Reports every repeated id in `items` as an issue on `ctx`, one per occurrence after the first.
+ * `path` locates the collection (e.g. `["cards"]`); the issue path appends the offending item's
+ * index and `"id"` (e.g. `["cards", 1, "id"]`).
+ */
+export function rejectDuplicateIds(items: ReadonlyArray<{ id: string }>, path: (string | number)[], ctx: z.RefinementCtx): void {
+  const seen = new Set<string>();
+  items.forEach((item, index) => {
+    if (seen.has(item.id)) {
+      ctx.addIssue({ code: "custom", path: [...path, index, "id"], message: `duplicate id "${item.id}" in ${path.join(".")}` });
+    } else {
+      seen.add(item.id);
+    }
+  });
+}

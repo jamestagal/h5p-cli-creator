@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ActivityBase } from "./base.js";
+import { ActivityBase, rejectDuplicateIds } from "./base.js";
 import { MultiChoiceSpec } from "./multi-choice.js";
 import { TrueFalseSpec } from "./true-false.js";
 import { BlanksSpec } from "./blanks.js";
@@ -15,5 +15,5 @@ export const QuestionSetSpec = ActivityBase.extend({
   passPercentage: z.number().int().min(0).max(100).default(50),
   randomQuestions: z.boolean().default(false),
   children: z.array(QuestionSetChild).min(1).max(50)
-});
+}).superRefine((s, ctx) => rejectDuplicateIds(s.children, ["children"], ctx));
 export type QuestionSetSpec = z.infer<typeof QuestionSetSpec>;

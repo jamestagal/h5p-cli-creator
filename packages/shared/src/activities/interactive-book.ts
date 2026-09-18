@@ -22,10 +22,27 @@ export type BookItem = z.infer<typeof BookItem>;
 
 export const BookChapter = z.object({ title: z.string().min(1).max(200), items: z.array(BookItem).min(1) });
 
+function isBookActivityItem(item: BookItem): item is Exclude<BookItem, TextPage | ImagePage | AudioPage | VideoPage> {
+  return item.type !== "text" && item.type !== "image" && item.type !== "audio" && item.type !== "video";
+}
+
 export const InteractiveBookSpec = ActivityBase.extend({
   type: z.literal("interactiveBook"),
   coverDescription: z.string().optional(),
   coverImageAssetId: z.string().min(1).optional(),
   chapters: z.array(BookChapter).min(1).max(50)
+}).superRefine((s, ctx) => {
+  const seen = new Set<string>();
+  s.chapters.forEach((chapter, chapterIndex) => {
+    chapter.items.forEach((item, itemIndex) => {
+      if (!isBookActivityItem(item)) return;
+
+      if (seen.has(item.id)) {
+        ctx.addIssue({ code: "custom", path: ["chapters", chapterIndex, "items", itemIndex, "id"], message: `duplicate id "${item.id}" in chapters` });
+      } else {
+        seen.add(item.id);
+      }
+    });
+  });
 });
 export type InteractiveBookSpec = z.infer<typeof InteractiveBookSpec>;

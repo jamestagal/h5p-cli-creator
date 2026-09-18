@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ActivityBase, ItemBase } from "./base.js";
+import { ActivityBase, ItemBase, rejectDuplicateIds } from "./base.js";
 
 export const BLANK_TOKEN = /\{\{(b[0-9]+)\}\}/g;
 /** H5P.Blanks has no escaping for its delimiters, so these characters cannot appear in answers or tips. */
@@ -21,6 +21,7 @@ export const BlanksSpec = ActivityBase.extend({
   blanks: z.array(Blank).min(1),
   caseSensitive: z.boolean().default(false)
 }).superRefine((s, ctx) => {
+  rejectDuplicateIds(s.blanks, ["blanks"], ctx);
   if (s.passage.includes("*")) ctx.addIssue({ code: "custom", path: ["passage"], message: `passage contains "*", which H5P.Blanks cannot represent` });
   const counts = new Map<string, number>();
   for (const m of s.passage.matchAll(BLANK_TOKEN)) {
