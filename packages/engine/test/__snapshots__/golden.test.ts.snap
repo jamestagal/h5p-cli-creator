@@ -116,6 +116,709 @@ exports[`golden: flashcards > builds params that validate, reference only locked
 }
 `;
 
+exports[`golden: interactive-book > builds params that validate, reference only locked libraries, and match the snapshot 1`] = `
+{
+  "library": "H5P.InteractiveBook 1.11",
+  "metadata": {
+    "contentType": "Interactive Book",
+    "license": "U",
+    "title": "Induction",
+  },
+  "params": {
+    "allInteractions": "All interactions",
+    "behaviour": {
+      "defaultTableOfContents": true,
+      "displaySummary": true,
+      "enableRetry": true,
+      "progressAuto": true,
+      "progressIndicators": true,
+    },
+    "bookCover": {
+      "coverDescription": "",
+    },
+    "bookProgress": "Book progress",
+    "bookProgressSubtext": "@count of @total pages",
+    "chapterCompleted": "Page completed!",
+    "chapters": [
+      {
+        "library": "H5P.Column 1.18",
+        "metadata": {
+          "contentType": "Column",
+          "license": "U",
+          "title": "Welcome",
+        },
+        "params": {
+          "content": [
+            {
+              "content": {
+                "library": "H5P.Row 1.0",
+                "metadata": {
+                  "contentType": "Row",
+                  "license": "U",
+                  "title": "Untitled Row",
+                },
+                "params": {
+                  "columns": [
+                    {
+                      "content": {
+                        "library": "H5P.RowColumn 1.0",
+                        "metadata": {
+                          "contentType": "Column",
+                          "license": "U",
+                          "title": "Untitled Column",
+                        },
+                        "params": {
+                          "content": [
+                            {
+                              "library": "H5P.AdvancedText 1.1",
+                              "metadata": {
+                                "contentType": "Text",
+                                "license": "U",
+                                "title": "Intro",
+                              },
+                              "params": {
+                                "text": "<h2>Intro</h2><p>Welcome to site.</p>",
+                              },
+                              "subContentId": "9d01eca1-4787-5c30-ba79-f3660b8ce55c",
+                            },
+                          ],
+                        },
+                        "subContentId": "9c7d6f99-054d-561b-b159-83e9b5a9dc44",
+                      },
+                      "width": 100,
+                    },
+                  ],
+                },
+                "subContentId": "82616ad1-c26d-594a-a8e1-5fed4dce34a4",
+              },
+              "useSeparator": "auto",
+            },
+          ],
+        },
+        "subContentId": "b17f5b9c-d518-53c4-bcf1-b6523f149383",
+      },
+      {
+        "library": "H5P.Column 1.18",
+        "metadata": {
+          "contentType": "Column",
+          "license": "U",
+          "title": "Check",
+        },
+        "params": {
+          "content": [
+            {
+              "content": {
+                "library": "H5P.Row 1.0",
+                "metadata": {
+                  "contentType": "Row",
+                  "license": "U",
+                  "title": "Untitled Row",
+                },
+                "params": {
+                  "columns": [
+                    {
+                      "content": {
+                        "library": "H5P.RowColumn 1.0",
+                        "metadata": {
+                          "contentType": "Column",
+                          "license": "U",
+                          "title": "Untitled Column",
+                        },
+                        "params": {
+                          "content": [
+                            {
+                              "library": "H5P.MultiChoice 1.16",
+                              "metadata": {
+                                "contentType": "Multiple Choice",
+                                "license": "U",
+                                "title": "Signs",
+                              },
+                              "params": {
+                                "UI": {
+                                  "a11yCheck": "Check the answers. The responses will be marked as correct, incorrect, or unanswered.",
+                                  "a11yRetry": "Retry the task. Reset all responses and start the task over again.",
+                                  "a11yShowSolution": "Show the solution. The task will be marked with its correct solution.",
+                                  "checkAnswerButton": "Check",
+                                  "correctAnswer": "Correct answer",
+                                  "feedbackAvailable": "Feedback available",
+                                  "noInput": "Please answer before viewing the solution",
+                                  "readFeedback": "Read feedback",
+                                  "scoreBarLabel": "You got :num out of :total points",
+                                  "shouldCheck": "Should have been checked",
+                                  "shouldNotCheck": "Should not have been checked",
+                                  "showSolutionButton": "Show solution",
+                                  "submitAnswerButton": "Submit",
+                                  "tipAvailable": "Tip available",
+                                  "tipsLabel": "Show tip",
+                                  "tryAgainButton": "Retry",
+                                  "wrongAnswer": "Wrong answer",
+                                },
+                                "answers": [
+                                  {
+                                    "correct": true,
+                                    "text": "<div>Mandatory</div>",
+                                    "tipsAndFeedback": {
+                                      "chosenFeedback": "",
+                                      "notChosenFeedback": "",
+                                      "tip": "",
+                                    },
+                                  },
+                                  {
+                                    "correct": false,
+                                    "text": "<div>Prohibited</div>",
+                                    "tipsAndFeedback": {
+                                      "chosenFeedback": "",
+                                      "notChosenFeedback": "",
+                                      "tip": "",
+                                    },
+                                  },
+                                ],
+                                "behaviour": {
+                                  "autoCheck": false,
+                                  "confirmCheckDialog": false,
+                                  "confirmRetryDialog": false,
+                                  "enableCheckButton": true,
+                                  "enableRetry": true,
+                                  "enableSolutionsButton": true,
+                                  "passPercentage": 100,
+                                  "randomAnswers": true,
+                                  "showScorePoints": true,
+                                  "showSolutionsRequiresInput": true,
+                                  "singlePoint": false,
+                                  "type": "auto",
+                                },
+                                "confirmCheck": {
+                                  "body": "Are you sure you wish to finish ?",
+                                  "cancelLabel": "Cancel",
+                                  "confirmLabel": "Finish",
+                                  "header": "Finish ?",
+                                },
+                                "confirmRetry": {
+                                  "body": "Are you sure you wish to retry ?",
+                                  "cancelLabel": "Cancel",
+                                  "confirmLabel": "Confirm",
+                                  "header": "Retry ?",
+                                },
+                                "overallFeedback": [
+                                  {
+                                    "from": 0,
+                                    "to": 100,
+                                  },
+                                ],
+                                "question": "<p>Blue circle means?</p>",
+                              },
+                              "subContentId": "ff508313-42b3-53f5-862f-b043d469d1ff",
+                            },
+                          ],
+                        },
+                        "subContentId": "99d3caf9-bac9-514c-9822-97be1ab005d7",
+                      },
+                      "width": 100,
+                    },
+                  ],
+                },
+                "subContentId": "6e2d522d-867b-53a0-9cfd-f72247589f50",
+              },
+              "useSeparator": "auto",
+            },
+            {
+              "content": {
+                "library": "H5P.Row 1.0",
+                "metadata": {
+                  "contentType": "Row",
+                  "license": "U",
+                  "title": "Untitled Row",
+                },
+                "params": {
+                  "columns": [
+                    {
+                      "content": {
+                        "library": "H5P.RowColumn 1.0",
+                        "metadata": {
+                          "contentType": "Column",
+                          "license": "U",
+                          "title": "Untitled Column",
+                        },
+                        "params": {
+                          "content": [
+                            {
+                              "library": "H5P.Blanks 1.14",
+                              "metadata": {
+                                "contentType": "Fill in the Blanks",
+                                "license": "U",
+                                "title": "PPE",
+                              },
+                              "params": {
+                                "a11yCheck": "Check the answers. The responses will be marked as correct, incorrect, or unanswered.",
+                                "a11yCheckingModeHeader": "Checking mode",
+                                "a11yRetry": "Retry the task. Reset all responses and start the task over again.",
+                                "a11yShowSolution": "Show the solution. The task will be marked with its correct solution.",
+                                "answerIsCorrect": "':ans' is correct",
+                                "answerIsWrong": "':ans' is wrong",
+                                "answeredCorrectly": "Answered correctly",
+                                "answeredIncorrectly": "Answered incorrectly",
+                                "behaviour": {
+                                  "acceptSpellingErrors": false,
+                                  "autoCheck": false,
+                                  "caseSensitive": false,
+                                  "confirmCheckDialog": false,
+                                  "confirmRetryDialog": false,
+                                  "enableCheckButton": true,
+                                  "enableRetry": true,
+                                  "enableSolutionsButton": true,
+                                  "separateLines": false,
+                                  "showSolutionsRequiresInput": true,
+                                },
+                                "checkAnswer": "Check",
+                                "confirmCheck": {
+                                  "body": "Are you sure?",
+                                  "cancelLabel": "Cancel",
+                                  "confirmLabel": "Finish",
+                                  "header": "Finish ?",
+                                },
+                                "confirmRetry": {
+                                  "body": "Are you sure?",
+                                  "cancelLabel": "Cancel",
+                                  "confirmLabel": "Confirm",
+                                  "header": "Retry ?",
+                                },
+                                "inputHasTipLabel": "Tip available",
+                                "inputLabel": "Blank input @num of @total",
+                                "notFilledOut": "Please fill in all blanks",
+                                "overallFeedback": [
+                                  {
+                                    "feedback": "You got @score of @total blanks correct.",
+                                    "from": 0,
+                                    "to": 100,
+                                  },
+                                ],
+                                "questions": [
+                                  "<p>Wear your *hard hat*.</p>",
+                                ],
+                                "scoreBarLabel": "You got :num out of :total points",
+                                "showSolutions": "Show solutions",
+                                "solutionLabel": "Correct answer:",
+                                "submitAnswer": "Submit",
+                                "text": "",
+                                "tipLabel": "Tip",
+                                "tryAgain": "Try again",
+                              },
+                              "subContentId": "6b659bff-7a55-58e9-846b-2fe640bf164a",
+                            },
+                          ],
+                        },
+                        "subContentId": "a6b1c1ca-c0e8-53e6-9be5-731c05e08a0f",
+                      },
+                      "width": 100,
+                    },
+                  ],
+                },
+                "subContentId": "752aa07e-9a50-5d8d-8b07-a77896dc28c7",
+              },
+              "useSeparator": "auto",
+            },
+          ],
+        },
+        "subContentId": "da6faf09-a99f-5a2e-b6f6-78376f65a4f1",
+      },
+    ],
+    "displayTOC": "Display 'Table of contents'",
+    "exitFullscreen": "Exit fullscreen",
+    "fullscreen": "Fullscreen",
+    "hideTOC": "Hide 'Table of contents'",
+    "incompleteChapter": "Incomplete page",
+    "interactionsProgress": "Interactions progress",
+    "interactionsProgressSubtext": "@count of @total interactions",
+    "leftOutOfTotalCompleted": "@left of @max interactions completed",
+    "markAsFinished": "I have finished this page",
+    "navigateToTop": "Go to the top",
+    "nextPage": "Next page",
+    "noChapterInteractionBoldText": "You have not interacted with any pages.",
+    "noChapterInteractionText": "You have to interact with at least one page before you can see the summary.",
+    "noInteractions": "No interactions",
+    "partCompleted": "@pages of @total completed",
+    "previousPage": "Previous page",
+    "read": "Read",
+    "restartLabel": "Restart",
+    "score": "Score",
+    "scoreText": "@score / @maxscore",
+    "showCoverPage": false,
+    "submitReport": "Submit Report",
+    "summaryAndSubmit": "Summary & submit",
+    "summaryHeader": "Summary",
+    "totalScoreLabel": "Total score",
+    "unansweredInteractions": "Unanswered interactions",
+    "yourAnswersAreSubmittedForReview": "Your answers are submitted for review!",
+  },
+}
+`;
+
+exports[`golden: interactive-book-nested > builds params that validate, reference only locked libraries, and match the snapshot 1`] = `
+{
+  "library": "H5P.InteractiveBook 1.11",
+  "metadata": {
+    "contentType": "Interactive Book",
+    "license": "U",
+    "title": "Induction with quiz",
+  },
+  "params": {
+    "allInteractions": "All interactions",
+    "behaviour": {
+      "defaultTableOfContents": true,
+      "displaySummary": true,
+      "enableRetry": true,
+      "progressAuto": true,
+      "progressIndicators": true,
+    },
+    "bookCover": {
+      "coverDescription": "",
+    },
+    "bookProgress": "Book progress",
+    "bookProgressSubtext": "@count of @total pages",
+    "chapterCompleted": "Page completed!",
+    "chapters": [
+      {
+        "library": "H5P.Column 1.18",
+        "metadata": {
+          "contentType": "Column",
+          "license": "U",
+          "title": "Welcome",
+        },
+        "params": {
+          "content": [
+            {
+              "content": {
+                "library": "H5P.Row 1.0",
+                "metadata": {
+                  "contentType": "Row",
+                  "license": "U",
+                  "title": "Untitled Row",
+                },
+                "params": {
+                  "columns": [
+                    {
+                      "content": {
+                        "library": "H5P.RowColumn 1.0",
+                        "metadata": {
+                          "contentType": "Column",
+                          "license": "U",
+                          "title": "Untitled Column",
+                        },
+                        "params": {
+                          "content": [
+                            {
+                              "library": "H5P.AdvancedText 1.1",
+                              "metadata": {
+                                "contentType": "Text",
+                                "license": "U",
+                                "title": "Intro",
+                              },
+                              "params": {
+                                "text": "<h2>Intro</h2><p>Welcome.</p>",
+                              },
+                              "subContentId": "dce7b481-d7b4-5606-bb82-85f9937d6116",
+                            },
+                          ],
+                        },
+                        "subContentId": "f26a777c-d6e1-50df-9779-f1b3e35486c6",
+                      },
+                      "width": 100,
+                    },
+                  ],
+                },
+                "subContentId": "1b530ba5-76b4-54bd-b06c-8a376542121f",
+              },
+              "useSeparator": "auto",
+            },
+          ],
+        },
+        "subContentId": "228edef0-d726-58e8-ba84-0cc4b8742c25",
+      },
+      {
+        "library": "H5P.Column 1.18",
+        "metadata": {
+          "contentType": "Column",
+          "license": "U",
+          "title": "Quiz",
+        },
+        "params": {
+          "content": [
+            {
+              "content": {
+                "library": "H5P.Row 1.0",
+                "metadata": {
+                  "contentType": "Row",
+                  "license": "U",
+                  "title": "Untitled Row",
+                },
+                "params": {
+                  "columns": [
+                    {
+                      "content": {
+                        "library": "H5P.RowColumn 1.0",
+                        "metadata": {
+                          "contentType": "Column",
+                          "license": "U",
+                          "title": "Untitled Column",
+                        },
+                        "params": {
+                          "content": [
+                            {
+                              "library": "H5P.QuestionSet 1.20",
+                              "metadata": {
+                                "contentType": "Question Set",
+                                "license": "U",
+                                "title": "Check",
+                              },
+                              "params": {
+                                "disableBackwardsNavigation": false,
+                                "endGame": {
+                                  "finishButtonText": "Finish",
+                                  "message": "Your result:",
+                                  "noResultMessage": "Finished",
+                                  "overallFeedback": [
+                                    {
+                                      "from": 0,
+                                      "to": 100,
+                                    },
+                                  ],
+                                  "retryButtonText": "Retry",
+                                  "scoreBarLabel": "You got @finals out of @totals points",
+                                  "showAnimations": false,
+                                  "showResultPage": true,
+                                  "showRetryButton": true,
+                                  "showSolutionButton": true,
+                                  "skipButtonText": "Skip video",
+                                  "skippable": false,
+                                  "solutionButtonText": "Show solution",
+                                  "submitButtonText": "Submit",
+                                },
+                                "introPage": {
+                                  "introduction": "",
+                                  "showIntroPage": false,
+                                  "startButtonText": "Start Quiz",
+                                  "title": "Check",
+                                },
+                                "override": {
+                                  "checkButton": true,
+                                },
+                                "passPercentage": 50,
+                                "progressType": "dots",
+                                "questions": [
+                                  {
+                                    "library": "H5P.MultiChoice 1.16",
+                                    "metadata": {
+                                      "contentType": "Multiple Choice",
+                                      "license": "U",
+                                      "title": "Signs",
+                                    },
+                                    "params": {
+                                      "UI": {
+                                        "a11yCheck": "Check the answers. The responses will be marked as correct, incorrect, or unanswered.",
+                                        "a11yRetry": "Retry the task. Reset all responses and start the task over again.",
+                                        "a11yShowSolution": "Show the solution. The task will be marked with its correct solution.",
+                                        "checkAnswerButton": "Check",
+                                        "correctAnswer": "Correct answer",
+                                        "feedbackAvailable": "Feedback available",
+                                        "noInput": "Please answer before viewing the solution",
+                                        "readFeedback": "Read feedback",
+                                        "scoreBarLabel": "You got :num out of :total points",
+                                        "shouldCheck": "Should have been checked",
+                                        "shouldNotCheck": "Should not have been checked",
+                                        "showSolutionButton": "Show solution",
+                                        "submitAnswerButton": "Submit",
+                                        "tipAvailable": "Tip available",
+                                        "tipsLabel": "Show tip",
+                                        "tryAgainButton": "Retry",
+                                        "wrongAnswer": "Wrong answer",
+                                      },
+                                      "answers": [
+                                        {
+                                          "correct": true,
+                                          "text": "<div>Mandatory</div>",
+                                          "tipsAndFeedback": {
+                                            "chosenFeedback": "",
+                                            "notChosenFeedback": "",
+                                            "tip": "",
+                                          },
+                                        },
+                                        {
+                                          "correct": false,
+                                          "text": "<div>Prohibited</div>",
+                                          "tipsAndFeedback": {
+                                            "chosenFeedback": "",
+                                            "notChosenFeedback": "",
+                                            "tip": "",
+                                          },
+                                        },
+                                      ],
+                                      "behaviour": {
+                                        "autoCheck": false,
+                                        "confirmCheckDialog": false,
+                                        "confirmRetryDialog": false,
+                                        "enableCheckButton": true,
+                                        "enableRetry": true,
+                                        "enableSolutionsButton": true,
+                                        "passPercentage": 100,
+                                        "randomAnswers": true,
+                                        "showScorePoints": true,
+                                        "showSolutionsRequiresInput": true,
+                                        "singlePoint": false,
+                                        "type": "auto",
+                                      },
+                                      "confirmCheck": {
+                                        "body": "Are you sure you wish to finish ?",
+                                        "cancelLabel": "Cancel",
+                                        "confirmLabel": "Finish",
+                                        "header": "Finish ?",
+                                      },
+                                      "confirmRetry": {
+                                        "body": "Are you sure you wish to retry ?",
+                                        "cancelLabel": "Cancel",
+                                        "confirmLabel": "Confirm",
+                                        "header": "Retry ?",
+                                      },
+                                      "overallFeedback": [
+                                        {
+                                          "from": 0,
+                                          "to": 100,
+                                        },
+                                      ],
+                                      "question": "<p>Blue circle means?</p>",
+                                    },
+                                    "subContentId": "d918bb07-e4fb-5690-acb3-0491680a0d6c",
+                                  },
+                                  {
+                                    "library": "H5P.Blanks 1.14",
+                                    "metadata": {
+                                      "contentType": "Fill in the Blanks",
+                                      "license": "U",
+                                      "title": "PPE",
+                                    },
+                                    "params": {
+                                      "a11yCheck": "Check the answers. The responses will be marked as correct, incorrect, or unanswered.",
+                                      "a11yCheckingModeHeader": "Checking mode",
+                                      "a11yRetry": "Retry the task. Reset all responses and start the task over again.",
+                                      "a11yShowSolution": "Show the solution. The task will be marked with its correct solution.",
+                                      "answerIsCorrect": "':ans' is correct",
+                                      "answerIsWrong": "':ans' is wrong",
+                                      "answeredCorrectly": "Answered correctly",
+                                      "answeredIncorrectly": "Answered incorrectly",
+                                      "behaviour": {
+                                        "acceptSpellingErrors": false,
+                                        "autoCheck": false,
+                                        "caseSensitive": false,
+                                        "confirmCheckDialog": false,
+                                        "confirmRetryDialog": false,
+                                        "enableCheckButton": true,
+                                        "enableRetry": true,
+                                        "enableSolutionsButton": true,
+                                        "separateLines": false,
+                                        "showSolutionsRequiresInput": true,
+                                      },
+                                      "checkAnswer": "Check",
+                                      "confirmCheck": {
+                                        "body": "Are you sure?",
+                                        "cancelLabel": "Cancel",
+                                        "confirmLabel": "Finish",
+                                        "header": "Finish ?",
+                                      },
+                                      "confirmRetry": {
+                                        "body": "Are you sure?",
+                                        "cancelLabel": "Cancel",
+                                        "confirmLabel": "Confirm",
+                                        "header": "Retry ?",
+                                      },
+                                      "inputHasTipLabel": "Tip available",
+                                      "inputLabel": "Blank input @num of @total",
+                                      "notFilledOut": "Please fill in all blanks",
+                                      "overallFeedback": [
+                                        {
+                                          "feedback": "You got @score of @total blanks correct.",
+                                          "from": 0,
+                                          "to": 100,
+                                        },
+                                      ],
+                                      "questions": [
+                                        "<p>Wear your *hard hat*.</p>",
+                                      ],
+                                      "scoreBarLabel": "You got :num out of :total points",
+                                      "showSolutions": "Show solutions",
+                                      "solutionLabel": "Correct answer:",
+                                      "submitAnswer": "Submit",
+                                      "text": "",
+                                      "tipLabel": "Tip",
+                                      "tryAgain": "Try again",
+                                    },
+                                    "subContentId": "672a796a-2482-5c11-bab1-81385ce5548c",
+                                  },
+                                ],
+                                "randomQuestions": false,
+                                "texts": {
+                                  "answeredText": "Answered",
+                                  "currentQuestionText": "Current question",
+                                  "finishButton": "Finish",
+                                  "jumpToQuestion": "Question %d of %total",
+                                  "navigationLabel": "Questions",
+                                  "nextButton": "Next question",
+                                  "prevButton": "Previous question",
+                                  "questionLabel": "Question",
+                                  "readSpeakerProgress": "Question @current of @total",
+                                  "submitButton": "Submit",
+                                  "textualProgress": "Question: @current of @total questions",
+                                  "unansweredText": "Unanswered",
+                                },
+                              },
+                              "subContentId": "cbf58d3f-156a-5840-ae31-4ff58ad771ae",
+                            },
+                          ],
+                        },
+                        "subContentId": "3036c6ea-4951-5a3d-9dfb-92553cb31f5b",
+                      },
+                      "width": 100,
+                    },
+                  ],
+                },
+                "subContentId": "01537e0a-c657-5866-9fb0-1f8bbfdfb8be",
+              },
+              "useSeparator": "auto",
+            },
+          ],
+        },
+        "subContentId": "ce10237c-6b0f-5208-96d4-16743d3771d9",
+      },
+    ],
+    "displayTOC": "Display 'Table of contents'",
+    "exitFullscreen": "Exit fullscreen",
+    "fullscreen": "Fullscreen",
+    "hideTOC": "Hide 'Table of contents'",
+    "incompleteChapter": "Incomplete page",
+    "interactionsProgress": "Interactions progress",
+    "interactionsProgressSubtext": "@count of @total interactions",
+    "leftOutOfTotalCompleted": "@left of @max interactions completed",
+    "markAsFinished": "I have finished this page",
+    "navigateToTop": "Go to the top",
+    "nextPage": "Next page",
+    "noChapterInteractionBoldText": "You have not interacted with any pages.",
+    "noChapterInteractionText": "You have to interact with at least one page before you can see the summary.",
+    "noInteractions": "No interactions",
+    "partCompleted": "@pages of @total completed",
+    "previousPage": "Previous page",
+    "read": "Read",
+    "restartLabel": "Restart",
+    "score": "Score",
+    "scoreText": "@score / @maxscore",
+    "showCoverPage": false,
+    "submitReport": "Submit Report",
+    "summaryAndSubmit": "Summary & submit",
+    "summaryHeader": "Summary",
+    "totalScoreLabel": "Total score",
+    "unansweredInteractions": "Unanswered interactions",
+    "yourAnswersAreSubmittedForReview": "Your answers are submitted for review!",
+  },
+}
+`;
+
 exports[`golden: multi-choice > builds params that validate, reference only locked libraries, and match the snapshot 1`] = `
 {
   "library": "H5P.MultiChoice 1.16",
@@ -206,6 +909,216 @@ exports[`golden: multi-choice > builds params that validate, reference only lock
       },
     ],
     "question": "<p>Which sign means <em>mandatory</em> action?</p>",
+  },
+}
+`;
+
+exports[`golden: question-set-nested > builds params that validate, reference only locked libraries, and match the snapshot 1`] = `
+{
+  "library": "H5P.QuestionSet 1.20",
+  "metadata": {
+    "contentType": "Question Set",
+    "license": "U",
+    "title": "Site induction check",
+  },
+  "params": {
+    "disableBackwardsNavigation": false,
+    "endGame": {
+      "finishButtonText": "Finish",
+      "message": "Your result:",
+      "noResultMessage": "Finished",
+      "overallFeedback": [
+        {
+          "from": 0,
+          "to": 100,
+        },
+      ],
+      "retryButtonText": "Retry",
+      "scoreBarLabel": "You got @finals out of @totals points",
+      "showAnimations": false,
+      "showResultPage": true,
+      "showRetryButton": true,
+      "showSolutionButton": true,
+      "skipButtonText": "Skip video",
+      "skippable": false,
+      "solutionButtonText": "Show solution",
+      "submitButtonText": "Submit",
+    },
+    "introPage": {
+      "introduction": "<p>Three quick questions.</p>",
+      "showIntroPage": true,
+      "startButtonText": "Start Quiz",
+      "title": "Site induction check",
+    },
+    "override": {
+      "checkButton": true,
+    },
+    "passPercentage": 66,
+    "progressType": "dots",
+    "questions": [
+      {
+        "library": "H5P.MultiChoice 1.16",
+        "metadata": {
+          "contentType": "Multiple Choice",
+          "license": "U",
+          "title": "Signs",
+        },
+        "params": {
+          "UI": {
+            "a11yCheck": "Check the answers. The responses will be marked as correct, incorrect, or unanswered.",
+            "a11yRetry": "Retry the task. Reset all responses and start the task over again.",
+            "a11yShowSolution": "Show the solution. The task will be marked with its correct solution.",
+            "checkAnswerButton": "Check",
+            "correctAnswer": "Correct answer",
+            "feedbackAvailable": "Feedback available",
+            "noInput": "Please answer before viewing the solution",
+            "readFeedback": "Read feedback",
+            "scoreBarLabel": "You got :num out of :total points",
+            "shouldCheck": "Should have been checked",
+            "shouldNotCheck": "Should not have been checked",
+            "showSolutionButton": "Show solution",
+            "submitAnswerButton": "Submit",
+            "tipAvailable": "Tip available",
+            "tipsLabel": "Show tip",
+            "tryAgainButton": "Retry",
+            "wrongAnswer": "Wrong answer",
+          },
+          "answers": [
+            {
+              "correct": true,
+              "text": "<div>Mandatory</div>",
+              "tipsAndFeedback": {
+                "chosenFeedback": "",
+                "notChosenFeedback": "",
+                "tip": "",
+              },
+            },
+            {
+              "correct": false,
+              "text": "<div>Prohibited</div>",
+              "tipsAndFeedback": {
+                "chosenFeedback": "",
+                "notChosenFeedback": "",
+                "tip": "",
+              },
+            },
+          ],
+          "behaviour": {
+            "autoCheck": false,
+            "confirmCheckDialog": false,
+            "confirmRetryDialog": false,
+            "enableCheckButton": true,
+            "enableRetry": true,
+            "enableSolutionsButton": true,
+            "passPercentage": 100,
+            "randomAnswers": true,
+            "showScorePoints": true,
+            "showSolutionsRequiresInput": true,
+            "singlePoint": false,
+            "type": "auto",
+          },
+          "confirmCheck": {
+            "body": "Are you sure you wish to finish ?",
+            "cancelLabel": "Cancel",
+            "confirmLabel": "Finish",
+            "header": "Finish ?",
+          },
+          "confirmRetry": {
+            "body": "Are you sure you wish to retry ?",
+            "cancelLabel": "Cancel",
+            "confirmLabel": "Confirm",
+            "header": "Retry ?",
+          },
+          "overallFeedback": [
+            {
+              "from": 0,
+              "to": 100,
+            },
+          ],
+          "question": "<p>Blue circle means?</p>",
+        },
+        "subContentId": "035aafab-2886-5e3d-b634-a3abe0bf0e34",
+      },
+      {
+        "library": "H5P.Blanks 1.14",
+        "metadata": {
+          "contentType": "Fill in the Blanks",
+          "license": "U",
+          "title": "PPE",
+        },
+        "params": {
+          "a11yCheck": "Check the answers. The responses will be marked as correct, incorrect, or unanswered.",
+          "a11yCheckingModeHeader": "Checking mode",
+          "a11yRetry": "Retry the task. Reset all responses and start the task over again.",
+          "a11yShowSolution": "Show the solution. The task will be marked with its correct solution.",
+          "answerIsCorrect": "':ans' is correct",
+          "answerIsWrong": "':ans' is wrong",
+          "answeredCorrectly": "Answered correctly",
+          "answeredIncorrectly": "Answered incorrectly",
+          "behaviour": {
+            "acceptSpellingErrors": false,
+            "autoCheck": false,
+            "caseSensitive": false,
+            "confirmCheckDialog": false,
+            "confirmRetryDialog": false,
+            "enableCheckButton": true,
+            "enableRetry": true,
+            "enableSolutionsButton": true,
+            "separateLines": false,
+            "showSolutionsRequiresInput": true,
+          },
+          "checkAnswer": "Check",
+          "confirmCheck": {
+            "body": "Are you sure?",
+            "cancelLabel": "Cancel",
+            "confirmLabel": "Finish",
+            "header": "Finish ?",
+          },
+          "confirmRetry": {
+            "body": "Are you sure?",
+            "cancelLabel": "Cancel",
+            "confirmLabel": "Confirm",
+            "header": "Retry ?",
+          },
+          "inputHasTipLabel": "Tip available",
+          "inputLabel": "Blank input @num of @total",
+          "notFilledOut": "Please fill in all blanks",
+          "overallFeedback": [
+            {
+              "feedback": "You got @score of @total blanks correct.",
+              "from": 0,
+              "to": 100,
+            },
+          ],
+          "questions": [
+            "<p>Wear your *hard hat*.</p>",
+          ],
+          "scoreBarLabel": "You got :num out of :total points",
+          "showSolutions": "Show solutions",
+          "solutionLabel": "Correct answer:",
+          "submitAnswer": "Submit",
+          "text": "",
+          "tipLabel": "Tip",
+          "tryAgain": "Try again",
+        },
+        "subContentId": "74cc20ce-c9ff-5302-b06e-d5df0a10a116",
+      },
+    ],
+    "randomQuestions": false,
+    "texts": {
+      "answeredText": "Answered",
+      "currentQuestionText": "Current question",
+      "finishButton": "Finish",
+      "jumpToQuestion": "Question %d of %total",
+      "navigationLabel": "Questions",
+      "nextButton": "Next question",
+      "prevButton": "Previous question",
+      "questionLabel": "Question",
+      "readSpeakerProgress": "Question @current of @total",
+      "submitButton": "Submit",
+      "textualProgress": "Question: @current of @total questions",
+      "unansweredText": "Unanswered",
+    },
   },
 }
 `;

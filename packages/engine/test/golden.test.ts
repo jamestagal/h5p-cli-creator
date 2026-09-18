@@ -20,7 +20,7 @@ function asset(id: string, file: string, mimeType: string): AssetEntry {
   return { assetId: id, sha256: createHash("sha256").update(readFileSync(p)).digest("hex"), byteLength: statSync(p).size, mimeType, open: () => createReadStream(p) };
 }
 
-const cases = ["multi-choice", "blanks", "flashcards"] as const;
+const cases = ["multi-choice", "blanks", "flashcards", "question-set-nested", "interactive-book", "interactive-book-nested"] as const;
 
 describe.each(cases)("golden: %s", (name) => {
   it("builds params that validate, reference only locked libraries, and match the snapshot", async () => {
@@ -35,5 +35,7 @@ describe.each(cases)("golden: %s", (name) => {
     const closure = (await reg.closure(handler.requiredLibraries(spec as never).map((n) => { const l = reg.resolve(n); return `${l.machineName}-${l.majorVersion}.${l.minorVersion}`; }))).map((l) => `${l.machineName}-${l.majorVersion}.${l.minorVersion}`);
     expect(await checkClosure(content, reg, closure)).toEqual([]);
     expect(content).toMatchSnapshot();
+    const ids = JSON.stringify(content).match(/"subContentId":"([^"]+)"/g) ?? [];
+    expect(new Set(ids).size).toBe(ids.length); // no duplicate sub-content ids anywhere in the tree
   });
 });

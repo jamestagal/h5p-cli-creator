@@ -1,0 +1,8 @@
+{ "id": "bk-2", "title": "Induction with quiz", "type": "interactiveBook",
+  "chapters": [
+    { "title": "Welcome", "items": [ { "type": "text", "title": "Intro", "html": "<p>Welcome.</p>" } ] },
+    { "title": "Quiz", "items": [
+      { "id": "bk-2-qs", "title": "Check", "type": "questionSet", "passPercentage": 50,
+        "children": [
+          { "id": "bk-2-qs-q1", "title": "Signs", "type": "multiChoice", "question": "<p>Blue circle means?</p>", "answers": [ { "text": "Mandatory", "correct": true }, { "text": "Prohibited", "correct": false } ] },
+          { "id": "bk-2-qs-q2", "title": "PPE", "type": "blanks", "passage": "Wear your {{b1}}.", "blanks": [ { "id": "b1", "answers": ["hard hat"] } ] } ] } ] } ] }

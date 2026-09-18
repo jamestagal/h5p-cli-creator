@@ -1,0 +1,6 @@
+{ "id": "bk-1", "title": "Induction", "type": "interactiveBook",
+  "chapters": [
+    { "title": "Welcome", "items": [ { "type": "text", "title": "Intro", "html": "<p>Welcome to site.</p>" } ] },
+    { "title": "Check", "items": [
+      { "id": "bk-1-mc", "title": "Signs", "type": "multiChoice", "question": "<p>Blue circle means?</p>", "answers": [ { "text": "Mandatory", "correct": true }, { "text": "Prohibited", "correct": false } ] },
+      { "id": "bk-1-bl", "title": "PPE", "type": "blanks", "passage": "Wear your {{b1}}.", "blanks": [ { "id": "b1", "answers": ["hard hat"] } ] } ] } ] }

@@ -1,0 +1,5 @@
+{ "id": "qs-1", "title": "Site induction check", "type": "questionSet", "introduction": "<p>Three quick questions.</p>", "passPercentage": 66,
+  "children": [
+    { "id": "qs-1-q1", "title": "Signs", "type": "multiChoice", "question": "<p>Blue circle means?</p>", "answers": [ { "text": "Mandatory", "correct": true }, { "text": "Prohibited", "correct": false } ] },
+    { "id": "qs-1-q2", "title": "PPE", "type": "blanks", "passage": "Wear your {{b1}}.", "blanks": [ { "id": "b1", "answers": ["hard hat"] } ] }
+  ] }
