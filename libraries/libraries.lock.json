@@ -1,0 +1,843 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-18T10:32:34.852Z",
+  "libraries": {
+    "Drop-1.0": {
+      "machineName": "Drop",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 2,
+      "package": "H5P.Flashcards-1.5.h5p",
+      "dir": "Drop-1.0",
+      "sha256": "4009ddf1fcac9aa3e629b974b018e28849d490e9d675c9387ba9fd888ea960a4"
+    },
+    "FontAwesome-4.5": {
+      "machineName": "FontAwesome",
+      "majorVersion": 4,
+      "minorVersion": 5,
+      "patchVersion": 4,
+      "package": "H5P.Accordion-1.0.h5p",
+      "dir": "FontAwesome-4.5",
+      "sha256": "eb8536ffbc6a93e0268fbd75ab2e2e3251fee7da4d4ffe84ab5d964b22927cb3"
+    },
+    "H5P.Accordion-1.0": {
+      "machineName": "H5P.Accordion",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 33,
+      "package": "H5P.Accordion-1.0.h5p",
+      "dir": "H5P.Accordion-1.0",
+      "sha256": "eb8536ffbc6a93e0268fbd75ab2e2e3251fee7da4d4ffe84ab5d964b22927cb3"
+    },
+    "H5P.AdvancedText-1.1": {
+      "machineName": "H5P.AdvancedText",
+      "majorVersion": 1,
+      "minorVersion": 1,
+      "patchVersion": 14,
+      "package": "H5P.Accordion-1.0.h5p",
+      "dir": "H5P.AdvancedText-1.1",
+      "sha256": "eb8536ffbc6a93e0268fbd75ab2e2e3251fee7da4d4ffe84ab5d964b22927cb3"
+    },
+    "H5P.Audio-1.5": {
+      "machineName": "H5P.Audio",
+      "majorVersion": 1,
+      "minorVersion": 5,
+      "patchVersion": 12,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.Audio-1.5",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.AudioRecorder-1.0": {
+      "machineName": "H5P.AudioRecorder",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 33,
+      "package": "H5P.AudioRecorder-1.0.h5p",
+      "dir": "H5P.AudioRecorder-1.0",
+      "sha256": "7911a1ab75b946b60e4bd1c08350f1941dfad8d57a64131c4b9012de0562ad05"
+    },
+    "H5P.Blanks-1.14": {
+      "machineName": "H5P.Blanks",
+      "majorVersion": 1,
+      "minorVersion": 14,
+      "patchVersion": 13,
+      "package": "H5P.Blanks-1.14.h5p",
+      "dir": "H5P.Blanks-1.14",
+      "sha256": "0eaf030d4ca0a8a799d960fc17d6fcf58632bb074162b38ccdfe224c985a49de"
+    },
+    "H5P.CKEditor-1.0": {
+      "machineName": "H5P.CKEditor",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 24,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.CKEditor-1.0",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Collage-0.3": {
+      "machineName": "H5P.Collage",
+      "majorVersion": 0,
+      "minorVersion": 3,
+      "patchVersion": 25,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.Collage-0.3",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Column-1.18": {
+      "machineName": "H5P.Column",
+      "majorVersion": 1,
+      "minorVersion": 18,
+      "patchVersion": 8,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.Column-1.18",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.ContinuousText-1.2": {
+      "machineName": "H5P.ContinuousText",
+      "majorVersion": 1,
+      "minorVersion": 2,
+      "patchVersion": 16,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.ContinuousText-1.2",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.CoursePresentation-1.26": {
+      "machineName": "H5P.CoursePresentation",
+      "majorVersion": 1,
+      "minorVersion": 26,
+      "patchVersion": 3,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.CoursePresentation-1.26",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Crossword-0.5": {
+      "machineName": "H5P.Crossword",
+      "majorVersion": 0,
+      "minorVersion": 5,
+      "patchVersion": 13,
+      "package": "H5P.Crossword-0.5.h5p",
+      "dir": "H5P.Crossword-0.5",
+      "sha256": "01ab2086a132129af9a3d9a823e3d5b36e3326226a9748b35e4074963cc7ee19"
+    },
+    "H5P.Dialogcards-1.9": {
+      "machineName": "H5P.Dialogcards",
+      "majorVersion": 1,
+      "minorVersion": 9,
+      "patchVersion": 18,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.Dialogcards-1.9",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.DocumentExportPage-1.5": {
+      "machineName": "H5P.DocumentExportPage",
+      "majorVersion": 1,
+      "minorVersion": 5,
+      "patchVersion": 19,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.DocumentExportPage-1.5",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.DocumentationTool-1.8": {
+      "machineName": "H5P.DocumentationTool",
+      "majorVersion": 1,
+      "minorVersion": 8,
+      "patchVersion": 27,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.DocumentationTool-1.8",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.DragNBar-1.5": {
+      "machineName": "H5P.DragNBar",
+      "majorVersion": 1,
+      "minorVersion": 5,
+      "patchVersion": 22,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.DragNBar-1.5",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.DragNDrop-1.1": {
+      "machineName": "H5P.DragNDrop",
+      "majorVersion": 1,
+      "minorVersion": 1,
+      "patchVersion": 5,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.DragNDrop-1.1",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.DragNResize-1.2": {
+      "machineName": "H5P.DragNResize",
+      "majorVersion": 1,
+      "minorVersion": 2,
+      "patchVersion": 6,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.DragNResize-1.2",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.DragQuestion-1.14": {
+      "machineName": "H5P.DragQuestion",
+      "majorVersion": 1,
+      "minorVersion": 14,
+      "patchVersion": 22,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.DragQuestion-1.14",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.DragText-1.10": {
+      "machineName": "H5P.DragText",
+      "majorVersion": 1,
+      "minorVersion": 10,
+      "patchVersion": 17,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.DragText-1.10",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Essay-1.5": {
+      "machineName": "H5P.Essay",
+      "majorVersion": 1,
+      "minorVersion": 5,
+      "patchVersion": 13,
+      "package": "H5P.Essay-1.5.h5p",
+      "dir": "H5P.Essay-1.5",
+      "sha256": "cb065224f3ed2c71753e67ac54645edc1cc209369b185c5e4229baeb2320dae8"
+    },
+    "H5P.ExportableTextArea-1.3": {
+      "machineName": "H5P.ExportableTextArea",
+      "majorVersion": 1,
+      "minorVersion": 3,
+      "patchVersion": 18,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.ExportableTextArea-1.3",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Flashcards-1.5": {
+      "machineName": "H5P.Flashcards",
+      "majorVersion": 1,
+      "minorVersion": 5,
+      "patchVersion": 14,
+      "package": "H5P.Flashcards-1.5.h5p",
+      "dir": "H5P.Flashcards-1.5",
+      "sha256": "4009ddf1fcac9aa3e629b974b018e28849d490e9d675c9387ba9fd888ea960a4"
+    },
+    "H5P.FontIcons-1.0": {
+      "machineName": "H5P.FontIcons",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 6,
+      "package": "H5P.AudioRecorder-1.0.h5p",
+      "dir": "H5P.FontIcons-1.0",
+      "sha256": "7911a1ab75b946b60e4bd1c08350f1941dfad8d57a64131c4b9012de0562ad05"
+    },
+    "H5P.FreeTextQuestion-1.0": {
+      "machineName": "H5P.FreeTextQuestion",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 16,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.FreeTextQuestion-1.0",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.GoToQuestion-1.3": {
+      "machineName": "H5P.GoToQuestion",
+      "majorVersion": 1,
+      "minorVersion": 3,
+      "patchVersion": 15,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.GoToQuestion-1.3",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.GoalsAssessmentPage-1.4": {
+      "machineName": "H5P.GoalsAssessmentPage",
+      "majorVersion": 1,
+      "minorVersion": 4,
+      "patchVersion": 17,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.GoalsAssessmentPage-1.4",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.GoalsPage-1.5": {
+      "machineName": "H5P.GoalsPage",
+      "majorVersion": 1,
+      "minorVersion": 5,
+      "patchVersion": 21,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.GoalsPage-1.5",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.GuidedTour-1.0": {
+      "machineName": "H5P.GuidedTour",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 6,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.GuidedTour-1.0",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.IFrameEmbed-1.0": {
+      "machineName": "H5P.IFrameEmbed",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 29,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.IFrameEmbed-1.0",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.IVHotspot-1.2": {
+      "machineName": "H5P.IVHotspot",
+      "majorVersion": 1,
+      "minorVersion": 2,
+      "patchVersion": 17,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.IVHotspot-1.2",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Image-1.1": {
+      "machineName": "H5P.Image",
+      "majorVersion": 1,
+      "minorVersion": 1,
+      "patchVersion": 22,
+      "package": "H5P.Blanks-1.14.h5p",
+      "dir": "H5P.Image-1.1",
+      "sha256": "0eaf030d4ca0a8a799d960fc17d6fcf58632bb074162b38ccdfe224c985a49de"
+    },
+    "H5P.ImageHotspotQuestion-1.8": {
+      "machineName": "H5P.ImageHotspotQuestion",
+      "majorVersion": 1,
+      "minorVersion": 8,
+      "patchVersion": 22,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.ImageHotspotQuestion-1.8",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.ImageHotspots-1.10": {
+      "machineName": "H5P.ImageHotspots",
+      "majorVersion": 1,
+      "minorVersion": 10,
+      "patchVersion": 18,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.ImageHotspots-1.10",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.InteractiveBook-1.11": {
+      "machineName": "H5P.InteractiveBook",
+      "majorVersion": 1,
+      "minorVersion": 11,
+      "patchVersion": 11,
+      "package": "H5P.InteractiveBook-1.11.h5p",
+      "dir": "H5P.InteractiveBook-1.11",
+      "sha256": "7cb1f589b27eb98c62963672a22916cea1a5e8cc191de0c7e538648c7e159fb2"
+    },
+    "H5P.InteractiveVideo-1.27": {
+      "machineName": "H5P.InteractiveVideo",
+      "majorVersion": 1,
+      "minorVersion": 27,
+      "patchVersion": 9,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.InteractiveVideo-1.27",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.JoubelUI-1.3": {
+      "machineName": "H5P.JoubelUI",
+      "majorVersion": 1,
+      "minorVersion": 3,
+      "patchVersion": 19,
+      "package": "H5P.Blanks-1.14.h5p",
+      "dir": "H5P.JoubelUI-1.3",
+      "sha256": "0eaf030d4ca0a8a799d960fc17d6fcf58632bb074162b38ccdfe224c985a49de"
+    },
+    "H5P.Link-1.3": {
+      "machineName": "H5P.Link",
+      "majorVersion": 1,
+      "minorVersion": 3,
+      "patchVersion": 18,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.Link-1.3",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.MarkTheWords-1.11": {
+      "machineName": "H5P.MarkTheWords",
+      "majorVersion": 1,
+      "minorVersion": 11,
+      "patchVersion": 9,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.MarkTheWords-1.11",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.MaterialDesignIcons-1.0": {
+      "machineName": "H5P.MaterialDesignIcons",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 0,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.MaterialDesignIcons-1.0",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.MemoryGame-1.3": {
+      "machineName": "H5P.MemoryGame",
+      "majorVersion": 1,
+      "minorVersion": 3,
+      "patchVersion": 29,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.MemoryGame-1.3",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.MultiChoice-1.16": {
+      "machineName": "H5P.MultiChoice",
+      "majorVersion": 1,
+      "minorVersion": 16,
+      "patchVersion": 14,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.MultiChoice-1.16",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.MultiMediaChoice-0.3": {
+      "machineName": "H5P.MultiMediaChoice",
+      "majorVersion": 0,
+      "minorVersion": 3,
+      "patchVersion": 44,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.MultiMediaChoice-0.3",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Nil-1.0": {
+      "machineName": "H5P.Nil",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 14,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.Nil-1.0",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.OpenEndedQuestion-1.0": {
+      "machineName": "H5P.OpenEndedQuestion",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 28,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.OpenEndedQuestion-1.0",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Question-1.5": {
+      "machineName": "H5P.Question",
+      "majorVersion": 1,
+      "minorVersion": 5,
+      "patchVersion": 15,
+      "package": "H5P.Blanks-1.14.h5p",
+      "dir": "H5P.Question-1.5",
+      "sha256": "0eaf030d4ca0a8a799d960fc17d6fcf58632bb074162b38ccdfe224c985a49de"
+    },
+    "H5P.QuestionSet-1.20": {
+      "machineName": "H5P.QuestionSet",
+      "majorVersion": 1,
+      "minorVersion": 20,
+      "patchVersion": 31,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.QuestionSet-1.20",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Questionnaire-1.3": {
+      "machineName": "H5P.Questionnaire",
+      "majorVersion": 1,
+      "minorVersion": 3,
+      "patchVersion": 11,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.Questionnaire-1.3",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Row-1.0": {
+      "machineName": "H5P.Row",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 12,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.Row-1.0",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.RowColumn-1.0": {
+      "machineName": "H5P.RowColumn",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 4,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.RowColumn-1.0",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Shape-1.0": {
+      "machineName": "H5P.Shape",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 5,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.Shape-1.0",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.SimpleMultiChoice-1.1": {
+      "machineName": "H5P.SimpleMultiChoice",
+      "majorVersion": 1,
+      "minorVersion": 1,
+      "patchVersion": 22,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.SimpleMultiChoice-1.1",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.SingleChoiceSet-1.11": {
+      "machineName": "H5P.SingleChoiceSet",
+      "majorVersion": 1,
+      "minorVersion": 11,
+      "patchVersion": 44,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.SingleChoiceSet-1.11",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.StandardPage-1.5": {
+      "machineName": "H5P.StandardPage",
+      "majorVersion": 1,
+      "minorVersion": 5,
+      "patchVersion": 16,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.StandardPage-1.5",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Summary-1.10": {
+      "machineName": "H5P.Summary",
+      "majorVersion": 1,
+      "minorVersion": 10,
+      "patchVersion": 22,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.Summary-1.10",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Table-1.2": {
+      "machineName": "H5P.Table",
+      "majorVersion": 1,
+      "minorVersion": 2,
+      "patchVersion": 2,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.Table-1.2",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Text-1.1": {
+      "machineName": "H5P.Text",
+      "majorVersion": 1,
+      "minorVersion": 1,
+      "patchVersion": 17,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.Text-1.1",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.TextInputField-1.2": {
+      "machineName": "H5P.TextInputField",
+      "majorVersion": 1,
+      "minorVersion": 2,
+      "patchVersion": 17,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.TextInputField-1.2",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.TextUtilities-1.3": {
+      "machineName": "H5P.TextUtilities",
+      "majorVersion": 1,
+      "minorVersion": 3,
+      "patchVersion": 0,
+      "package": "H5P.Blanks-1.14.h5p",
+      "dir": "H5P.TextUtilities-1.3",
+      "sha256": "0eaf030d4ca0a8a799d960fc17d6fcf58632bb074162b38ccdfe224c985a49de"
+    },
+    "H5P.Timeline-1.1": {
+      "machineName": "H5P.Timeline",
+      "majorVersion": 1,
+      "minorVersion": 1,
+      "patchVersion": 25,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.Timeline-1.1",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Timer-0.4": {
+      "machineName": "H5P.Timer",
+      "majorVersion": 0,
+      "minorVersion": 4,
+      "patchVersion": 2,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.Timer-0.4",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Transition-1.0": {
+      "machineName": "H5P.Transition",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 4,
+      "package": "H5P.Blanks-1.14.h5p",
+      "dir": "H5P.Transition-1.0",
+      "sha256": "0eaf030d4ca0a8a799d960fc17d6fcf58632bb074162b38ccdfe224c985a49de"
+    },
+    "H5P.TrueFalse-1.8": {
+      "machineName": "H5P.TrueFalse",
+      "majorVersion": 1,
+      "minorVersion": 8,
+      "patchVersion": 11,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.TrueFalse-1.8",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.TwitterUserFeed-1.0": {
+      "machineName": "H5P.TwitterUserFeed",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 21,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.TwitterUserFeed-1.0",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5P.Video-1.6": {
+      "machineName": "H5P.Video",
+      "majorVersion": 1,
+      "minorVersion": 6,
+      "patchVersion": 66,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5P.Video-1.6",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.AudioRecorder-1.0": {
+      "machineName": "H5PEditor.AudioRecorder",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 11,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.AudioRecorder-1.0",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.Collage-0.3": {
+      "machineName": "H5PEditor.Collage",
+      "majorVersion": 0,
+      "minorVersion": 3,
+      "patchVersion": 22,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.Collage-0.3",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.ColorSelector-1.3": {
+      "machineName": "H5PEditor.ColorSelector",
+      "majorVersion": 1,
+      "minorVersion": 3,
+      "patchVersion": 1,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.ColorSelector-1.3",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.CoursePresentation-1.25": {
+      "machineName": "H5PEditor.CoursePresentation",
+      "majorVersion": 1,
+      "minorVersion": 25,
+      "patchVersion": 14,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.CoursePresentation-1.25",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.DragQuestion-1.10": {
+      "machineName": "H5PEditor.DragQuestion",
+      "majorVersion": 1,
+      "minorVersion": 10,
+      "patchVersion": 21,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.DragQuestion-1.10",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.Duration-1.1": {
+      "machineName": "H5PEditor.Duration",
+      "majorVersion": 1,
+      "minorVersion": 1,
+      "patchVersion": 14,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.Duration-1.1",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.ImageCoordinateSelector-1.2": {
+      "machineName": "H5PEditor.ImageCoordinateSelector",
+      "majorVersion": 1,
+      "minorVersion": 2,
+      "patchVersion": 7,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.ImageCoordinateSelector-1.2",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.ImageHotspotQuestion-1.8": {
+      "machineName": "H5PEditor.ImageHotspotQuestion",
+      "majorVersion": 1,
+      "minorVersion": 8,
+      "patchVersion": 12,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.ImageHotspotQuestion-1.8",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.InteractiveVideo-1.25": {
+      "machineName": "H5PEditor.InteractiveVideo",
+      "majorVersion": 1,
+      "minorVersion": 25,
+      "patchVersion": 11,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.InteractiveVideo-1.25",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.QuestionSetTextualEditor-1.3": {
+      "machineName": "H5PEditor.QuestionSetTextualEditor",
+      "majorVersion": 1,
+      "minorVersion": 3,
+      "patchVersion": 18,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.QuestionSetTextualEditor-1.3",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.RadioGroup-1.1": {
+      "machineName": "H5PEditor.RadioGroup",
+      "majorVersion": 1,
+      "minorVersion": 1,
+      "patchVersion": 4,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.RadioGroup-1.1",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.RadioSelector-1.2": {
+      "machineName": "H5PEditor.RadioSelector",
+      "majorVersion": 1,
+      "minorVersion": 2,
+      "patchVersion": 2,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.RadioSelector-1.2",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.RangeList-1.0": {
+      "machineName": "H5PEditor.RangeList",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 13,
+      "package": "H5P.Blanks-1.14.h5p",
+      "dir": "H5PEditor.RangeList-1.0",
+      "sha256": "0eaf030d4ca0a8a799d960fc17d6fcf58632bb074162b38ccdfe224c985a49de"
+    },
+    "H5PEditor.SelectToggleFields-1.1": {
+      "machineName": "H5PEditor.SelectToggleFields",
+      "majorVersion": 1,
+      "minorVersion": 1,
+      "patchVersion": 1,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.SelectToggleFields-1.1",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.Shape-1.0": {
+      "machineName": "H5PEditor.Shape",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 0,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.Shape-1.0",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.ShowWhen-1.0": {
+      "machineName": "H5PEditor.ShowWhen",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 9,
+      "package": "H5P.Blanks-1.14.h5p",
+      "dir": "H5PEditor.ShowWhen-1.0",
+      "sha256": "0eaf030d4ca0a8a799d960fc17d6fcf58632bb074162b38ccdfe224c985a49de"
+    },
+    "H5PEditor.SingleChoiceSetTextualEditor-1.0": {
+      "machineName": "H5PEditor.SingleChoiceSetTextualEditor",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 10,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.SingleChoiceSetTextualEditor-1.0",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.SummaryTextualEditor-1.1": {
+      "machineName": "H5PEditor.SummaryTextualEditor",
+      "majorVersion": 1,
+      "minorVersion": 1,
+      "patchVersion": 12,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.SummaryTextualEditor-1.1",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.TableList-1.0": {
+      "machineName": "H5PEditor.TableList",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 4,
+      "package": "H5P.Blanks-1.14.h5p",
+      "dir": "H5PEditor.TableList-1.0",
+      "sha256": "0eaf030d4ca0a8a799d960fc17d6fcf58632bb074162b38ccdfe224c985a49de"
+    },
+    "H5PEditor.Timecode-1.2": {
+      "machineName": "H5PEditor.Timecode",
+      "majorVersion": 1,
+      "minorVersion": 2,
+      "patchVersion": 14,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.Timecode-1.2",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.UrlField-1.2": {
+      "machineName": "H5PEditor.UrlField",
+      "majorVersion": 1,
+      "minorVersion": 2,
+      "patchVersion": 2,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.UrlField-1.2",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.VerticalTabs-1.3": {
+      "machineName": "H5PEditor.VerticalTabs",
+      "majorVersion": 1,
+      "minorVersion": 3,
+      "patchVersion": 14,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.VerticalTabs-1.3",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "H5PEditor.Wizard-1.2": {
+      "machineName": "H5PEditor.Wizard",
+      "majorVersion": 1,
+      "minorVersion": 2,
+      "patchVersion": 17,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "H5PEditor.Wizard-1.2",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "Shepherd-1.0": {
+      "machineName": "Shepherd",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 7,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "Shepherd-1.0",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "Tether-1.0": {
+      "machineName": "Tether",
+      "majorVersion": 1,
+      "minorVersion": 0,
+      "patchVersion": 2,
+      "package": "H5P.Flashcards-1.5.h5p",
+      "dir": "Tether-1.0",
+      "sha256": "4009ddf1fcac9aa3e629b974b018e28849d490e9d675c9387ba9fd888ea960a4"
+    },
+    "TimelineJS-1.1": {
+      "machineName": "TimelineJS",
+      "majorVersion": 1,
+      "minorVersion": 1,
+      "patchVersion": 1,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "TimelineJS-1.1",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    },
+    "jQuery.ui-1.10": {
+      "machineName": "jQuery.ui",
+      "majorVersion": 1,
+      "minorVersion": 10,
+      "patchVersion": 22,
+      "package": "H5P.Column-1.18.h5p",
+      "dir": "jQuery.ui-1.10",
+      "sha256": "17b1f96bbf0f1e44b9098cec4c9793818fa408f91e950ac0c5a62ce3be80d3e3"
+    }
+  }
+}
