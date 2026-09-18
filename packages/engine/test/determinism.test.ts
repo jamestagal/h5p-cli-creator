@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, createReadStream, statSync } from "node:fs";
 import JSZip from "jszip";
 import { ActivitySpec, type AssetEntry } from "@leaplearn/shared";
-import { compile, compileToBuffer, compileToFile, createRegistry, validate, type LibraryRegistry } from "../src/index.js";
+import { compile, compileToBuffer, compileToFile, createRegistry, validate, type LibraryRegistry, type Logger } from "../src/index.js";
 
 const root = resolve(import.meta.dirname, "../../..");
 const fixtures = resolve(import.meta.dirname, "fixtures");
@@ -159,5 +159,13 @@ describe("compile", () => {
     const buf = await compileToBuffer(load("flashcards"), new Map([["card", card()]]), { registry, revision: 1 });
     const hash = createHash("sha256").update(buf).digest("hex");
     expect(hash, "compiled bytes for flashcards@1 no longer match packages/engine/test/fixtures/golden-hashes.json: the Node/zlib toolchain, yazl, a handler or a library changed. Re-record the hash deliberately if the change was intended.").toBe(goldenHashes["flashcards@1"]);
+  });
+
+  it("calls the injected logger with a compiled summary after a successful write", async () => {
+    const lines: string[] = [];
+    const logger: Logger = { info: (msg) => lines.push(msg), warn: () => undefined };
+    await compileToBuffer(load("flashcards"), new Map([["card", card()]]), { registry, revision: 1, logger });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^compiled H5P\.Flashcards: \d+ entries, \d+ libraries$/);
   });
 });

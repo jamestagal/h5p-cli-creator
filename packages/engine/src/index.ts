@@ -4,7 +4,7 @@ import { rename, unlink } from "node:fs/promises";
 import { PassThrough } from "node:stream";
 import { ActivitySpec, type AssetManifest } from "@leaplearn/shared";
 import { createHandlerRegistry } from "./handlers/index.js";
-import { resolveLibraryKey, type BuildContext } from "./handlers/handler.js";
+import { requireHandler, resolveLibraryKey, type BuildContext } from "./handlers/handler.js";
 import { createIdFactory } from "./ids.js";
 import { ValidationError, type ValidationIssue } from "./errors.js";
 import { validateParams } from "./validator/semantics.js";
@@ -20,8 +20,7 @@ export interface CompileResult { mainLibrary: string; libraries: string[]; entri
 async function prepare(spec: ActivitySpec, assets: AssetManifest, options: CompileOptions) {
   const parsed = ActivitySpec.parse(spec);
   const handlers = createHandlerRegistry();
-  const handler = handlers.get(parsed.type);
-  if (!handler) throw new ValidationError([{ path: "type", message: `no handler for ${parsed.type}` }]);
+  const handler = requireHandler(handlers, parsed.type);
 
   const ctx: BuildContext = { registry: options.registry, ids: createIdFactory(parsed.id, options.revision ?? 1), assets, mediaPaths: new Map() };
   const content = handler.build(parsed as never, ctx);
@@ -42,6 +41,7 @@ export async function compile(spec: ActivitySpec, assets: AssetManifest, output:
 
   const mainLibrary = options.registry.get(resolveLibraryKey(options.registry, handler.mainLibrary));
   const entries = await writePackage({ title: parsed.title, language: parsed.language, mainLibrary, closure, content, media: ctx.mediaPaths, assets }, options.registry, output);
+  options.logger?.info(`compiled ${handler.mainLibrary}: ${entries.length} entries, ${closureKeys.length} libraries`);
 
   return { mainLibrary: handler.mainLibrary, libraries: closureKeys, entries, contentJson: content.params };
 }
@@ -64,6 +64,7 @@ export async function compileToFile(spec: ActivitySpec, assets: AssetManifest, p
     const entries = await writePackage({ title: parsed.title, language: parsed.language, mainLibrary, closure, content, media: ctx.mediaPaths, assets }, options.registry, out);
     await closed;
     await rename(tmp, path);
+    options.logger?.info(`compiled ${handler.mainLibrary}: ${entries.length} entries, ${closureKeys.length} libraries`);
 
     return { mainLibrary: handler.mainLibrary, libraries: closureKeys, entries, contentJson: content.params };
   } catch (err) {
