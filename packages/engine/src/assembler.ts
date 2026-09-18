@@ -3,6 +3,7 @@ import { Transform, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { ZipFile } from "yazl";
 import type { AssetEntry, AssetManifest } from "@leaplearn/shared";
+import { compareCodeUnits } from "./compare.js";
 import { EngineError } from "./errors.js";
 import type { H5PContent } from "./params.js";
 import type { LibraryRegistry } from "./registry.js";
@@ -25,7 +26,6 @@ function fixedMtime(): Date {
 // without this flag the "UT" field alone would still make package bytes vary by `TZ`.
 const FORCE_DOS_TIMESTAMP = true;
 const FILE_MODE = 0o100644;
-const compareCodeUnits = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 export interface PackageInput {
   title: string;

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { extname, isAbsolute, join } from "node:path";
 import { Readable } from "node:stream";
 import type { AssetEntry } from "@leaplearn/shared";
@@ -16,7 +16,7 @@ export const localImageResolver: ImageResolver = async (ref, baseDir) => {
   const mimeType = MIME[extname(path).toLowerCase()];
   if (!mimeType) throw new Error(`unsupported image type: ${ref}`);
   const bytes = await readFile(path);
-  return { assetId: "", sha256: createHash("sha256").update(bytes).digest("hex"), byteLength: (await stat(path)).size, mimeType, open: () => createReadStream(path) };
+  return { assetId: "", sha256: createHash("sha256").update(bytes).digest("hex"), byteLength: bytes.length, mimeType, open: () => createReadStream(path) };
 };
 
 /** Application-side network access; the engine never fetches. */

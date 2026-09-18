@@ -9,4 +9,7 @@ describe("html contract", () => {
   it("escapes plain text", () => {
     expect(escapeHtml('1 < 2 & "q" *a/b:c*')).toBe("1 &lt; 2 &amp; &quot;q&quot; *a/b:c*");
   });
+  it("escapes single quotes", () => {
+    expect(escapeHtml("it's a 'test'")).toBe("it&#39;s a &#39;test&#39;");
+  });
 });

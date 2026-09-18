@@ -12,7 +12,13 @@ import { libraryKey, type LibraryLock, type LockedLibrary } from "@leaplearn/eng
  */
 async function main(): Promise<void> {
   const args = new Map<string, string>();
-  for (let i = 2; i < process.argv.length; i += 2) args.set(process.argv[i]!, process.argv[i + 1]!);
+  for (let i = 2; i < process.argv.length; i += 2) {
+    const flag = process.argv[i]!;
+    const value = process.argv[i + 1];
+    if (value === undefined) throw new Error(`${flag} is missing its value`);
+
+    args.set(flag, value);
+  }
   const from = resolve(args.get("--from") ?? "apps/cli-legacy/content-type-cache");
   const out = resolve(args.get("--out") ?? "libraries");
   await mkdir(join(out, "cache"), { recursive: true });

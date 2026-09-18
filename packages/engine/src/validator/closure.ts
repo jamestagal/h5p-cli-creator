@@ -1,3 +1,4 @@
+import { compareCodeUnits } from "../compare.js";
 import type { ValidationIssue } from "../errors.js";
 import type { H5PContent } from "../params.js";
 import type { LibraryRegistry } from "../registry.js";
@@ -22,7 +23,7 @@ export function collectLibraries(content: H5PContent): string[] {
   };
   walk(content);
 
-  return [...out].sort();
+  return [...out].sort(compareCodeUnits);
 }
 
 export async function checkClosure(

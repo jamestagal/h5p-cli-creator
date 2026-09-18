@@ -2,10 +2,9 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import JSZip from "jszip";
+import { compareCodeUnits } from "./compare.js";
 import { EngineError } from "./errors.js";
 import { libraryKey, loadLock, type LibraryKey, type LibraryLock, type LockedLibrary } from "./lock.js";
-
-const compareCodeUnits = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 export interface LibraryDependencyRef {
   machineName: string;
