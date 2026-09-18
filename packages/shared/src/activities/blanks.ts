@@ -21,6 +21,7 @@ export const BlanksSpec = ActivityBase.extend({
   blanks: z.array(Blank).min(1),
   caseSensitive: z.boolean().default(false)
 }).superRefine((s, ctx) => {
+  if (s.passage.includes("*")) ctx.addIssue({ code: "custom", path: ["passage"], message: `passage contains "*", which H5P.Blanks cannot represent` });
   const counts = new Map<string, number>();
   for (const m of s.passage.matchAll(BLANK_TOKEN)) {
     const id = m[1]!;

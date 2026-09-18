@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ActivitySpec, QuestionSetSpec, InteractiveBookSpec, ACTIVITY_TYPES, assertGeneratedProvenance } from "../src/index.js";
+import { ActivitySpec, QuestionSetSpec, InteractiveBookSpec, ACTIVITY_TYPES, assertGeneratedProvenance, DragTextSpec } from "../src/index.js";
 
 const base = { id: "x", title: "T" };
 const mc = { ...base, type: "multiChoice", question: "q", answers: [{ text: "a", correct: true }, { text: "b", correct: false }] };
@@ -42,5 +42,26 @@ describe("containers", () => {
     expect(() => assertGeneratedProvenance(withRoot)).toThrow(/item c1/);
     const full = ActivitySpec.parse({ ...cards, provenance: { evidenceIds: ["e1"] }, cards: [{ id: "c1", front: "f", back: "b", provenance: { evidenceIds: ["e2"] } }] });
     expect(() => assertGeneratedProvenance(full)).not.toThrow();
+  });
+});
+
+describe("DragTextSpec", () => {
+  it("rejects a passage containing the H5P.DragText marker character", () => {
+    const r = DragTextSpec.safeParse({ ...base, type: "dragText", passage: "Pick a* {{d1}}", draggables: [{ id: "d1", text: "a" }] });
+    expect(r.success).toBe(false);
+    expect(!r.success && r.error.issues.some((i) => /passage contains "\*"/.test(i.message))).toBe(true);
+  });
+  it("rejects draggable text or tips containing the H5P.DragText delimiter characters, naming the draggable", () => {
+    const r1 = DragTextSpec.safeParse({ ...base, type: "dragText", passage: "{{d1}}", draggables: [{ id: "d1", text: "1/2" }] });
+    expect(r1.success).toBe(false);
+    expect(!r1.success && r1.error.issues.some((i) => /d1.*"\/"/.test(i.message))).toBe(true);
+
+    const r2 = DragTextSpec.safeParse({ ...base, type: "dragText", passage: "{{d1}}", draggables: [{ id: "d1", text: "10:30" }] });
+    expect(r2.success).toBe(false);
+    expect(!r2.success && r2.error.issues.some((i) => /d1.*":"/.test(i.message))).toBe(true);
+
+    const r3 = DragTextSpec.safeParse({ ...base, type: "dragText", passage: "{{d1}}", draggables: [{ id: "d1", text: "a", tip: "one*two" }] });
+    expect(r3.success).toBe(false);
+    expect(!r3.success && r3.error.issues.some((i) => /d1.*"\*"/.test(i.message))).toBe(true);
   });
 });

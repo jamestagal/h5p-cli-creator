@@ -42,6 +42,11 @@ describe("BlanksSpec", () => {
     expect(r3.success).toBe(false);
     expect(!r3.success && r3.error.issues.some((i) => /b1.*"\*"/.test(i.message))).toBe(true);
   });
+  it("rejects a passage containing the H5P.Blanks marker character", () => {
+    const r = BlanksSpec.safeParse({ ...base, type: "blanks", passage: "Pick a* {{b1}}", blanks: [{ id: "b1", answers: ["a"] }] });
+    expect(r.success).toBe(false);
+    expect(!r.success && r.error.issues.some((i) => /passage contains "\*"/.test(i.message))).toBe(true);
+  });
   it("rejects a token without a blank", () => {
     expect(() => BlanksSpec.parse({ ...base, type: "blanks", passage: "x {{b9}}", blanks: [{ id: "b1", answers: ["a"] }] })).toThrow(/b9/);
   });
