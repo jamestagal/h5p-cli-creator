@@ -14,3 +14,13 @@ examples/*.h5p
 
 # SDD scratch workspace
 .superpowers/
+# Runtime caches (never committed)
+.youtube-cache/
+
+# Editor and OS
+.DS_Store
+
+# Backups and scratch
+*.bak
+*.bak2
+*.backup
