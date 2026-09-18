@@ -11,3 +11,6 @@ examples/*.h5p
 
 # Environment files
 .env
+
+# SDD scratch workspace
+.superpowers/
