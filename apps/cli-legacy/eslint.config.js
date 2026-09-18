@@ -6,7 +6,7 @@ module.exports = tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["src/**/*.ts", "tests/**/*.ts", "docs/**/*.ts", "examples/**/*.ts"],
+    files: ["src/**/*.ts", "tests/**/*.ts", "developer-guides/**/*.ts", "examples/**/*.ts"],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
