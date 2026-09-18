@@ -6,21 +6,30 @@
 
 **Architecture:** A new `packages/generator` holds the pipeline: `ingest/` (text, markdown, PDF → `SourceDocument` with a text hash and numbered sentence spans), `competency/` (unit text → `UnitOfCompetency`), `concepts/` (chunked extraction with evidence chosen from numbered sentences, quote verification, a merge pass, alignment to criteria), `plan/` (counts by rule, allocation by one model call), `produce/` (one producer per type, prompt → model output schema → `ActivitySpec` with provenance), `quality/` (reference validity, duplicates, per-type answer checks), `llm/` (one `callModel` behind a `ModelProvider` interface, a two-event `AttemptRecorder`, budget reservation, a versioned pricing table, the Anthropic adapter, and replay/recording providers for offline tests) and `pipeline/` (persisted, resumable orchestration over an `ImportStore`). The engine is unchanged except for its opening error-classification task. `apps/cli` gains `leap generate` with a file-based store, `mapping.csv` and a cost report. Storage is a directory of JSON and JSONL files written atomically (temp + rename), because the current `better-sqlite3` requires Node 22 and phase 5 moves the same record shapes to Postgres.
 
-**Tech Stack:** pnpm workspace as in phase 1; TypeScript 5.9 strict ESM; Vitest 3; Zod 4 (`z.toJSONSchema`); `@anthropic-ai/sdk` 0.127 (Messages API, native structured outputs via `output_config.format`, prompt caching); `pdf-parse` 2.4 (`PDFParse` class); `pdf-lib` (dev only, to generate the synthetic PDF fixture); `yargs` 17; Node 20 `fetch`/`dns` for the SSRF guard.
+**Tech Stack:** pnpm workspace as in phase 1; TypeScript 5.9 strict ESM; Vitest 3; Zod 4 (`z.toJSONSchema`); `@anthropic-ai/sdk` 0.127 (Messages API, native structured outputs via `output_config.format`, prompt caching, SDK retries disabled); `pdf-parse` 2.4 (`PDFParse` class); `pdf-lib` (dev only, to generate the synthetic PDF fixture); `yargs` 17; `undici` 6 (`Agent` with a pinned `connect.lookup` and `fetch({ dispatcher })`) plus Node 20 `dns` for the SSRF guard.
+
+**Revision 2 (2026-09-19):** the owner's review of revision 1 found nine defects in the supplied implementations (sampling parameters Sonnet 5 rejects, SDK retries outside metering, a reservation that was not a ceiling, unrecoverable success states, resume without input identity or a lock, an SSRF guard that let mapped IPv6 and rebinding through, concurrent failure and duplicate handling, per-item mappings that overstated alignment, and a retry share that counted first attempts). This revision changes the behavioural contracts and adds the failure tests for each; the decisions table and the Global Constraints below carry the corrected rules, and each affected task names the finding it answers.
 
 **Spec:** `docs/superpowers/specs/2026-09-18-generator-service-design.md` (§2.2 identity and provenance, §3 packages/generator, §4 data model record shapes, §5 pipeline, §8 cost and metering, §9 security, §10 testing, §11 phase 2). Research the plan relies on: `.superpowers/sdd/phase-2-research-code.md` (legacy prompt material, engine and shared surface) and `.superpowers/sdd/phase-2-research-web.md` (SDK, pricing, pdf-parse, Zod, Node facts with URLs).
+
+**Later UI reference:** [Smart Import screenshots, interaction patterns and proposed design tokens](references/2026-09-19-smart-import-ui-reference.md). Reference for phase-5 design only; no UI implementation is added to this plan.
 
 ## Decisions the spec leaves open for a CLI-first phase 2 (for the owner's review)
 
 | Question | Decision | Why |
 |---|---|---|
 | Persistence without Postgres | `ImportStore` interface in the generator; `MemoryStore` for tests; `FileStore` in `apps/cli` writing JSON (state) and JSONL (append-only operations and attempts) under the output directory, atomically | `better-sqlite3` 13 requires Node ≥22 (engines gate); JSON files are dependency-free; phase 5 maps the same record shapes to the §4 tables |
-| Structured output mechanism | `output_config.format = { type: "json_schema", schema }` (native structured outputs), schema derived from Zod with `additionalProperties: false` and every property required | The docs now frame this as the mechanism for "what Claude says"; forced tool use stays available as a fallback behind the same `ModelProvider` interface |
+| Structured output mechanism | `output_config.format = { type: "json_schema", schema }` (native structured outputs). The wire schema is a **provider-compatible projection** of the Zod schema: `toStrictJsonSchema` closes every object and requires every property, then `toProviderSchema` removes what the API rejects (numeric, string and array constraints, `minItems` above 1, unsupported `format`s, `$schema`), recording each removed constraint in the property's `description`. Full Zod validation runs on the parsed response, so nothing is lost | The API returns 400 for unsupported keywords, and Zod 4 emits `minimum`/`maximum` for `.int()`; the SDK's `zodOutputFormat` (which targets `zod/v4`) is the fallback if the projection is ever rejected in the demo. A contract test walks all eight real model-output schemas (Task 7) |
+| Model request settings | Per-model request profiles in `models.ts`: `claude-sonnet-5` sends **no** sampling parameter and `thinking: { type: "disabled" }`; `claude-haiku-4-5-20251001` sends `temperature: 0` and no `thinking` field. No stage sets a temperature | Sonnet 5 returns 400 for non-default `temperature`/`top_p`/`top_k` and runs adaptive thinking by default, billing thinking tokens against `max_tokens`; disabling it keeps the output allowance and the cost predictable for structured extraction. Haiku 4.5 rejects adaptive thinking and accepts `temperature`. The profile is recorded in every revision's `modelConfig`, so phase 3 can trial adaptive thinking + `effort` as a measured change |
+| Provider retries | SDK `maxRetries: 0`; the stage runner owns every retry and each retry is its own recorded attempt with its own reservation | Retries inside the SDK would be HTTP attempts with no start/outcome record and no reservation |
 | Model output schemas vs activity schemas | Separate "model output" Zod schemas with no optionals/defaults/refinements (nullable where needed); code converts them to `ActivitySpec`, assigns ids, attaches provenance, then the full spec parse and the engine validator run | JSON Schema cannot carry refinements; ids are assigned in code (spec §2.2); keeps prompts and cache prefixes stable |
 | Web-page ingestion | Deferred to phase 5 (where the server exists); phase 2 ingests text, markdown and PDF text layers | Owner scope for phase 2; the SSRF guard is built now and wired into the only fetch that exists (`apps/cli` image resolver) |
 | Prompt caching | 5-minute ephemeral caching on the system block and the concept-map context block; cache writes priced at the 5-minute rate | Sonnet 5 needs ≥1,024 tokens in the cached prefix, Haiku 4.5 ≥4,096; below that the API silently does not cache, and `cache_read_input_tokens` shows whether it did |
-| Budget reservation input estimate | `ceil(chars / 3.5)` of the outgoing prompt, marked `estimated`; output reserved at `max_tokens`; reservation replaced by actual usage on completion | A `count_tokens` call per attempt would double the request count; the estimate is conservative |
+| Budget reservation | The reservation is an **upper bound**, not an estimate: input tokens = `ceil(0.5 × characters)` of system + cached context + user + the serialised output schema, plus a fixed structured-output overhead allowance, every one priced at the 5-minute **cache-write** rate (the dearest input category the adapter can incur); output = `max_tokens` × output rate. Four limits are reserved before dispatch: spend, requests, tokens and elapsed time (spec §4 `budget`). Each outcome records `reservationExceeded` (actual input tokens above the reserved input tokens), and the demo reports the count and the observed max tokens-per-character | A `count_tokens` call per attempt would double the request count; the earlier `chars / 3.5` under-estimated Sonnet 5's tokenizer (about 30% more tokens than Sonnet 4.6) and ignored the cache-write premium. 0.5 tokens per character is above any observed English or JSON ratio; the flag proves or disproves it on real traffic |
+| Resume identity and exclusivity | Every import record stores an immutable `fingerprint` (source text hash, unit text hash, selected types, language, prompt config, chunk budget, plan rules, prompt version, model roles, schema version); a rerun whose fingerprint differs is refused before any write. The store grants one exclusive lock per import (`lock.json` with owner pid, stale locks from dead local processes reclaimed) | Reusing an output directory with a different source, unit, language or chunking would mix old artefacts with new input; two writers would corrupt the JSONL ledgers |
+| Concurrency | Activities run in **one serial lane per type**; lanes run concurrently up to `--concurrency` (default 3). Within a lane the near-duplicate check sees every earlier promotion, so the check is exact; a budget refusal or infrastructure failure sets a shared stop flag, in-flight attempts settle, and every undispatched activity gets an explicit outcome (`failed` with `skipped: <reason>`, re-dispatched on resume) | The earlier `Promise.all` let workers keep spending after the import was marked failed and let same-type activities pass the duplicate check against one stale snapshot |
 | Model roles (provisional, §13) | `parseUnit`, `extract`, `merge`, `align`: `claude-haiku-4-5-20251001`; `plan`, `produce`: `claude-sonnet-5` | Spec §8; confirmed by the phase-3 gate, not assumed |
+| Review and acceptance | Minimal **revision-bound** records now: `AcceptanceRecord` (spec §4 `acceptance_decisions`) and `AlignmentReviewRecord` (`alignment_reviews`) in the store, written by `leap review` from the CLI; `mapping.csv` status becomes `suggested | confirmed | rejected | added`; the cost report gains accepted count and cost per accepted activity | The owner's ruling: the UI can wait, the quality gate and cost-per-accepted-activity measurement cannot. Phase 3 records its judgements with the same records |
 | Synthetic fixtures | A labelled synthetic source (workplace electrical safety), a synthetic unit, a generated PDF of the same text, and hand-authored model responses shaped like the API | Establish pipeline correctness; the real vocational corpus and quality judgement belong to phase 3 and are kept apart |
 
 ## Global Constraints
@@ -28,21 +37,26 @@
 - Node `>=20.19.0 <21` on every new package (`packages/generator`, matching the engine's pin); pnpm 10.33.2; `strict: true` from the first commit under `tsconfig.base.json`; `tsconfig.test.json` type-checks tests as in phase 1.
 - Package scope `@leaplearn`; new workspace package `packages/generator`; `apps/cli` extended. `apps/cli-legacy` is frozen and untouched.
 - The engine keeps its boundary (no network, `process.env|cwd|exit`, `console`); the **generator** may read `process.env` only in one file (`llm/anthropic-provider.ts` reads `ANTHROPIC_API_KEY` when no key is injected) and never calls `console`; the CLI is the only place that prints.
-- **Exactly one call site talks to the Anthropic SDK** (`llm/anthropic-provider.ts`). Every model call goes through `callModel`, which writes an attempt-start record before dispatch and an attempt-outcome record after completion through the injected `AttemptRecorder`. No placeholder content is ever written into a spec or a package.
+- **Exactly one call site talks to the Anthropic SDK** (`llm/anthropic-provider.ts`), with `maxRetries: 0`. Every model call goes through `callModel`, which reserves budget, writes an attempt-start record before dispatch and an attempt-outcome record after completion through the injected `AttemptRecorder`, and never retries. Every retry (content, transient or resumed) is a new attempt with its own start, outcome and reservation, and carries the logical call's stable `callKey` and a `retryIndex`. No placeholder content is ever written into a spec or a package.
+- **Model request settings come only from `REQUEST_PROFILES` in `models.ts`**; no stage or producer sets `temperature`, `top_p`, `top_k` or `thinking`. Response content blocks are selected by `type`, never by position.
+- **The budget is a ceiling with four limits** (spend in USD micro, requests, tokens, elapsed milliseconds). A reservation covers the whole request (system, cached context, user text, serialised output schema, structured-output overhead) at the cache-write input rate and `max_tokens` at the output rate; a dispatch whose reservation would cross any limit is refused before any record is written. Every outcome records `reservationExceeded`.
+- **Every operation persists its result before it is marked succeeded**, through `runOperation`'s `persist` step; a persisted result is reused on resume even when the operation record was interrupted. Activity records are reconciled from the saved plan; a saved candidate revision resumes at compilation; promotion is idempotent and repairable. Resume refuses a changed `fingerprint` and requires the store's exclusive lock.
+- **Provenance is derived, not copied:** an item's `conceptIds` are the concepts whose evidence it cites, its `criteriaIds` are the plan's criteria that those concepts support (per the alignment), and an activity's evidence is the union of its items' evidence.
 - **Pricing lives in one file**, `packages/generator/src/llm/pricing.ts`, with `version`, `source` (URL) and `effectiveDate`; every cost row records `pricingVersion`. No rate appears anywhere else in code, tests or this plan except that file and the test that pins it.
 - Model IDs live in one file, `packages/generator/src/llm/models.ts`, keyed by role.
 - Costs are integers in USD micro-units (`costUsdMicro`); `costStatus` is `known` | `estimated` | `unavailable`; a missing usage never becomes zero cost.
 - Provenance: every generated activity and every item carries `provenance` with at least one `evidenceId`; evidence quotes are verified as substrings of the stored text at their offsets (UTF-16 code units, half-open); `assertGeneratedProvenance` from `@leaplearn/shared` runs on every produced spec.
 - Text handling (spec §9): HTML-bearing fields (`question`, `taskDescription`) may contain only what `sanitizeHtml` allows; producers are told to emit plain text and the converter wraps it in `<p>` after `escapeHtml`; every other string is plain text.
-- Blanks: answers and tips never contain `*`, `/`, `:`; the passage never contains `*`; every answer occurs (case-insensitively) in the evidence text the activity cites.
+- Blanks: answers and tips never contain `*`, `/`, `:`; the passage never contains `*`; every answer occurs (case-insensitively, as a whole-word phrase) in the evidence text **that blank** cites.
+- **SSRF guard:** `safeFetch` is the only outbound HTTP path in application code. Every hop resolves the host itself, classifies every address after IPv6 normalisation (mapped, compatible, NAT64 and 6to4 embedded IPv4 included), and connects through an undici `Agent` whose `connect.lookup` returns only the validated address, so the name is never resolved a second time. DNS resolution counts against the one total deadline.
 - Conventional Commits. Attribution reflects who actually wrote the change: a commit authored by a Claude agent ends with the trailer naming that model (`Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` etc.); a commit written by a person carries no trailer.
 - **Exit codes:** `set -o pipefail` at the start of every shell session; a "passes" claim is valid only when the command's exit status was 0.
-- **No real API calls in `pnpm verify`.** Unit and pipeline tests use `FakeProvider` (hand-authored responses, labelled synthetic) or `ReplayProvider` (fixtures recorded from real responses in Task 16). The real API is used only by the demo/record command with an explicit `--record` flag and an API key.
+- **No real API calls in `pnpm verify`.** Unit and pipeline tests use `FakeProvider` (hand-authored responses, labelled synthetic) or `ReplayProvider` (fixtures recorded from real responses in Task 17). The real API is used only by the demo/record command with `--provider record` and an API key.
 - Platform compatibility claims (h5p.com, Moodle) come only from `docs/testing/platform-checklist.md`, filled by hand; generation-quality claims come only from the phase-3 gate. Neither is asserted by any test in this phase.
 
 ## Execution workflow
 
-Execute tasks in order; each ends with a commit. For each task: write the failing test where one is given, run it and see it fail, implement, run the named verification and confirm `exit=0`, then commit. Do not start a task while the previous task's verification is red. Sequential execution by one agent or person per task, with a review of the diff and the verification output between tasks, is the intended mode. Root verification stays `pnpm verify` (build → typecheck → lint → test → engine smoke); Task 16 adds the generator's replay test to it.
+Execute tasks in order; each ends with a commit. For each task: write the failing test where one is given, run it and see it fail, implement, run the named verification and confirm `exit=0`, then commit. Do not start a task while the previous task's verification is red. Sequential execution by one agent or person per task, with a review of the diff and the verification output between tasks, is the intended mode. Root verification stays `pnpm verify` (build → typecheck → lint → test → engine smoke); Task 17 adds the generator's replay test to it.
 
 Repository: `/Users/benjaminjameswaller/Projects/personal/h5p-cli-creator`. Paths are relative to it.
 
@@ -62,18 +76,19 @@ packages/generator/src/
     source-document.ts           SourceDocument, textHash, sentence segmentation with offsets
     text.ts  pdf.ts              ingestText, ingestMarkdown, ingestPdf
   llm/
-    models.ts                    model ids by role
+    models.ts                    model ids by role; REQUEST_PROFILES (sampling and thinking per model)
     pricing.ts                   versioned pricing table (the only place rates live)
-    cost.ts                      computeCost(usage, model) -> { costUsdMicro, costStatus }
-    types.ts                     ModelRequest, ModelResponse, Usage, AttemptStart, AttemptOutcome
-    schema.ts                    toStrictJsonSchema(zodSchema)
-    provider.ts                  ModelProvider interface; ProviderError classification
-    anthropic-provider.ts        the only SDK call site
+    cost.ts                      computeCost(usage, model); reserveInputTokens, reservationCost (the ceiling)
+    types.ts                     ModelRequest, ModelResponse, Usage, AttemptStart (callKey, retryIndex), AttemptOutcome (reservationExceeded)
+    schema.ts                    toStrictJsonSchema(zodSchema); toProviderSchema(zodSchema) (API-compatible projection)
+    provider.ts                  ModelProvider interface; ProviderError (kind, status, requestId, retryAfterMs)
+    anthropic-provider.ts        the only SDK call site (maxRetries 0)
     fake-provider.ts             scripted responses for tests
     replay-provider.ts           ReplayProvider + RecordingProvider (fixtures keyed by request hash)
-    budget.ts                    Budget, reservation arithmetic
-    call-model.ts                callModel(request, ctx): start record -> dispatch -> outcome record
-  net/safe-fetch.ts              SSRF-guarded fetch
+    budget.ts                    Budget with four limits; reserve/settle
+    call-model.ts                callModel(request, ctx): reserve -> start record -> dispatch -> outcome record -> settle
+    runner.ts                    StageRunner: content-attempt feedback, transient retries, stable call keys
+  net/safe-fetch.ts              SSRF-guarded fetch (pinned connection via undici Agent)
   prompts/
     system.ts                    reading levels, tones, grounding rules (from legacy tables)
   schemas/model-output.ts        UnitOut, ConceptsOut, MergeOut, AlignmentOut, PlanOut, MultiChoiceOut, BlanksOut, FlashcardsOut
@@ -86,19 +101,21 @@ packages/generator/src/
     producer.ts                  Producer interface + shared conversion helpers
     multi-choice.ts  blanks.ts  flashcards.ts  index.ts
   store/
-    types.ts                     ImportStore interface + record types
+    types.ts                     ImportStore interface (lock, acceptance and alignment-review records) + record types
     memory-store.ts
   pipeline/
-    run-import.ts                the steps of §5, resumable
-    operations.ts                operation + content-attempt loop + failure categories
+    fingerprint.ts               runFingerprint(input, deps); IncompatibleResumeError
+    run-import.ts                the steps of §5, resumable with crash-safe boundaries and per-type lanes
+    operations.ts                runOperation (load/work/persist), reconcile, budgetFromLedger, lanes
 packages/generator/test/
   fixtures/synthetic/            SYNTHETIC source, unit, PDF, model responses (see Task 3)
-  fixtures/replay/               recorded real responses (Task 16)
+  fixtures/replay/               recorded real responses (Task 17)
   *.test.ts
 apps/cli/src/
   generate.ts                    leap generate
-  file-store.ts                  FileStore
-  report.ts                      mapping.csv + cost report
+  review.ts                      leap review (acceptance and alignment-review records)
+  file-store.ts                  FileStore (atomic JSON, JSONL ledgers with truncated-tail handling, lock.json)
+  report.ts                      mapping.csv (review-aware status) + cost report (retry share by retryIndex, cost per accepted activity)
   image-resolver.ts              networkImageResolver uses safeFetch
 docs/superpowers/specs/2026-09-18-generator-service-design.md   §3 amended (structured outputs, file store)
 ```
@@ -117,21 +134,46 @@ The final phase-1 review deferred this to phase 2's opening task (ledger Ruling 
 **Interfaces:**
 - Produces: `export type EngineErrorCode = "VALIDATION" | "LIBRARY_NOT_LOCKED" | "PACKAGE_CORRUPT" | "PACKAGE_CHECKSUM" | "ASSET_LENGTH" | "ASSET_HASH" | "ASSET_MISSING" | "ASSET_TYPE" | "DUPLICATE_ENTRY" | "NOT_IMPLEMENTED" | "HANDLER_MISSING"`; `EngineError.code: EngineErrorCode`; `ValidationIssue = { path: string; message: string; code?: "SCHEMA" | "SEMANTICS" | "CLOSURE" | "ASSET_MISSING" | "ASSET_TYPE" | "NOT_IMPLEMENTED" | "HANDLER_MISSING" }`; `SPEC_ATTRIBUTABLE: ReadonlySet<EngineErrorCode>`; `validate()` returns issues (never throws) for schema failures and for `EngineError`s whose code is in `SPEC_ATTRIBUTABLE`; `compile*` throw `ValidationError(issues)` in the same cases.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Replace the assertions that expect thrown validation failures, then add the new cases**
 
-Append to `packages/engine/test/determinism.test.ts` inside `describe("compile")`:
+The owner's review requires this task to **replace** the existing assertions that expect `ZodError` or a thrown validation failure, not only append new tests. Assertions that expect exceptions for engine-integrity failures (bad asset hash, `disk gone`, `destination full`, `ENOENT`, checksum) stay exactly as they are.
+
+In `packages/engine/test/determinism.test.ts`:
+
+1. In "writes h5p.json, content/content.json, media and every closure library…", replace
 ```ts
-  it("validate returns issues (not exceptions) for spec-attributable failures", async () => {
-    const missingAsset = await validate(load("flashcards"), new Map(), { registry });
-    expect(missingAsset).toEqual([{ path: "cards[1].imageAssetId", message: "asset card is not in the manifest", code: "ASSET_MISSING" }]);
+    await expect(compileToFile(invalid, new Map(), resolve(dir, "out.h5p"), { registry })).rejects.toThrow();
+```
+with
+```ts
+    await expect(compileToFile(invalid, new Map(), resolve(dir, "out.h5p"), { registry })).rejects.toMatchObject({ name: "ValidationError", code: "VALIDATION", issues: [expect.objectContaining({ path: "answers", code: "SCHEMA" })] });
+```
+2. In "validate accepts an image-bearing spec when the manifest has the asset, and reports the missing asset otherwise", replace
+```ts
+    await expect(validate(load("flashcards"), new Map(), { registry })).rejects.toThrow(/asset card is not in the manifest/);
+```
+with
+```ts
+    expect(await validate(load("flashcards"), new Map(), { registry })).toEqual([{ path: "cards[1].imageAssetId", message: "asset card is not in the manifest", code: "ASSET_MISSING" }]);
+    await expect(compileToBuffer(load("flashcards"), new Map(), { registry })).rejects.toMatchObject({ name: "ValidationError", code: "VALIDATION", issues: [{ path: "cards[1].imageAssetId", message: "asset card is not in the manifest", code: "ASSET_MISSING" }] });
+```
+3. In "rejects a flashcards spec whose two cards share an id…", replace the block from `const validationError: unknown = await validate(` through `rejects.toBeInstanceOf(ZodError);` with
+```ts
+    expect(await validate(duplicateFlashcards, assets, { registry })).toEqual([{ path: "cards[1].id", message: 'duplicate id "c1" in cards', code: "SCHEMA" }]);
+    await expect(compileToBuffer(duplicateFlashcards, assets, { registry, revision: 1 })).rejects.toMatchObject({ name: "ValidationError", code: "VALIDATION", issues: [expect.objectContaining({ path: "cards[1].id", code: "SCHEMA" })] });
+```
+and delete the now-unused `import { ZodError } from "zod";` line (lint would fail on it).
 
+4. Add inside `describe("compile")`:
+```ts
+  it("validate returns coded schema issues with a path instead of throwing", async () => {
     const badShape = { ...load("multi-choice"), answers: "nope" } as unknown as ActivitySpec;
     const issues = await validate(badShape, new Map(), { registry });
-    expect(issues.some((i) => i.code === "SCHEMA" && i.path === "answers")).toBe(true);
-
-    await expect(compileToBuffer(load("flashcards"), new Map(), { registry })).rejects.toMatchObject({ code: "VALIDATION", issues: [{ code: "ASSET_MISSING" }] });
+    expect(issues.length).toBeGreaterThan(0);
+    for (const issue of issues) expect(issue).toMatchObject({ code: "SCHEMA", path: expect.stringMatching(/^answers/) });
   });
 ```
+
 Append to `packages/engine/test/containers.test.ts`:
 ```ts
   it("validate reports a child without a handler as an issue with the child's path", async () => {
@@ -144,7 +186,7 @@ Append to `packages/engine/test/containers.test.ts`:
 
 - [ ] **Step 2: Run to see them fail**
 
-Run: `pnpm --filter @leaplearn/engine exec vitest run test/determinism.test.ts test/containers.test.ts`. Expected: the new cases fail (`validate` currently rejects).
+Run: `pnpm --filter @leaplearn/engine exec vitest run test/determinism.test.ts test/containers.test.ts`. Expected: the replaced and the new cases fail (`validate` currently rejects and `compile*` throw `ZodError`).
 
 - [ ] **Step 3: Implement**
 
@@ -258,7 +300,8 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Produces (shared): `PerformanceCriterion { id, number, text }`, `Element { id, number, text, performanceCriteria[] }`, `UnitOfCompetency { code, title, elements[], knowledgeEvidence: string[], performanceEvidence: string[], textHash }`; `Evidence { evidenceId, sentenceId, charStart, charEnd, quote }`, `Concept { conceptId, name, summary, evidence: Evidence[] }`, `ConceptMap { sourceId, textHash, concepts[], alignment?: Alignment }`, `Alignment { criteria: Array<{ criterionId, conceptIds: string[] }>, unsupportedCriteriaIds: string[] }`; `ImportStatus`, `ActivityStatus`, `RevisionState`, `CostStatus`, `GenerationUsage { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens }`.
-- Produces (generator): `MODEL_ROLES`, `modelForRole(role)`; `PRICING` (version, source, effectiveDate, per-model rates in USD per million tokens); `computeCost(usage: GenerationUsage | null, model: string): { costUsdMicro: number | null; costStatus: CostStatus; pricingVersion: string }`; the `llm/types.ts` record shapes used by every later task.
+- Produces (generator): `MODEL_ROLES`, `modelForRole(role)`, `REQUEST_PROFILES`, `requestProfile(model): { temperature: number | null; thinking: { type: "disabled" } | null }`; `PRICING` (version, source, effectiveDate, per-model rates in USD per million tokens); `computeCost(usage: GenerationUsage | null, model: string): { costUsdMicro: number | null; costStatus: CostStatus; pricingVersion: string }`; `estimateInputTokens(text)` (chunk sizing only), `reserveInputTokens(request)` and `reservationCost(model, inputTokens, outputTokens)` (the budget ceiling); the `llm/types.ts` record shapes used by every later task (`ModelRequest` has no sampling field; `AttemptStart` carries `callKey`, `retryIndex`, `retryReason`; `AttemptOutcome` carries `reservationExceeded`).
+- Produces (shared, for the review records): `ACCEPTANCE_DECISIONS`, `ALIGNMENT_DECISIONS`, `MAPPING_STATUSES` and their Zod enums.
 
 - [ ] **Step 1: Failing tests**
 
@@ -293,9 +336,9 @@ describe("generation contract", () => {
 `packages/generator/test/cost.test.ts`:
 ```ts
 import { describe, it, expect } from "vitest";
-import { computeCost } from "../src/llm/cost.js";
+import { computeCost, estimateInputTokens, reservationCost, reserveInputTokens, RESERVATION_TOKENS_PER_CHAR, STRUCTURED_OUTPUT_OVERHEAD_TOKENS } from "../src/llm/cost.js";
 import { PRICING } from "../src/llm/pricing.js";
-import { modelForRole } from "../src/llm/models.js";
+import { MODEL_ROLES, modelForRole, requestProfile } from "../src/llm/models.js";
 
 describe("cost", () => {
   it("prices every token class from the versioned table, in USD micro-units", () => {
@@ -310,6 +353,30 @@ describe("cost", () => {
     const model = modelForRole("extract");
     const cost = computeCost({ inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, model);
     expect(cost.costUsdMicro).toBe(Math.round(PRICING.models[model]!.inputPerMTok));
+  });
+  it("reserves a ceiling: no split of the same token totals across input classes can cost more", () => {
+    const model = modelForRole("produce");
+    const reserved = reservationCost(model, 10_000, 100);
+    const splits = [
+      { inputTokens: 10_000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      { inputTokens: 0, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 10_000 },
+      { inputTokens: 0, outputTokens: 100, cacheReadTokens: 10_000, cacheWriteTokens: 0 },
+      { inputTokens: 4_000, outputTokens: 100, cacheReadTokens: 3_000, cacheWriteTokens: 3_000 }
+    ];
+    for (const usage of splits) expect(computeCost(usage, model).costUsdMicro!).toBeLessThanOrEqual(reserved);
+    expect(reserved).toBe(computeCost(splits[1]!, model).costUsdMicro); // the cache-write split is the ceiling, exactly
+  });
+  it("reserves input tokens for the whole request, schema included, above the sizing estimate", () => {
+    const request = { system: "s".repeat(1000), cachedContext: "c".repeat(1000), user: "u".repeat(1000), outputSchema: { type: "object", properties: { a: { type: "string" } } } };
+    const schemaChars = JSON.stringify(request.outputSchema).length;
+    expect(reserveInputTokens(request)).toBe(Math.ceil((3000 + schemaChars) * RESERVATION_TOKENS_PER_CHAR) + STRUCTURED_OUTPUT_OVERHEAD_TOKENS);
+    expect(reserveInputTokens(request)).toBeGreaterThan(estimateInputTokens(request.system + request.cachedContext + request.user));
+  });
+  it("has a request profile for every model a role names", () => {
+    for (const model of new Set(Object.values(MODEL_ROLES))) expect(requestProfile(model)).toBeDefined();
+    expect(requestProfile("claude-sonnet-5")).toEqual({ temperature: null, thinking: { type: "disabled" } });
+    expect(requestProfile("claude-haiku-4-5-20251001")).toEqual({ temperature: 0, thinking: null });
+    expect(() => requestProfile("claude-unknown")).toThrow(/no request profile/);
   });
   it("never records zero for missing usage", () => {
     expect(computeCost(null, modelForRole("produce"))).toEqual({ costUsdMicro: null, costStatus: "unavailable", pricingVersion: PRICING.version });
@@ -397,15 +464,27 @@ export const IMPORT_STATUSES = ["queued", "ingesting", "extracting", "planning",
 export const ACTIVITY_STATUSES = ["planned", "generating", "generated", "built", "promoted", "failed", "dropped"] as const;
 export const REVISION_STATES = ["candidate", "promoted", "superseded", "rejected"] as const;
 export const COST_STATUSES = ["known", "estimated", "unavailable"] as const;
+/** Spec §4 acceptance_decisions.decision: a human judged the promoted revision good or not. */
+export const ACCEPTANCE_DECISIONS = ["accepted", "rejected"] as const;
+/** Spec §4 alignment_reviews.decision, bound to one revision (and one item when the criterion is on an item). */
+export const ALIGNMENT_DECISIONS = ["confirmed", "rejected", "added"] as const;
+/** The status column of mapping.csv: `suggested` until a review exists for that row. */
+export const MAPPING_STATUSES = ["suggested", "confirmed", "rejected", "added"] as const;
 
 export const ImportStatus = z.enum(IMPORT_STATUSES);
 export const ActivityStatus = z.enum(ACTIVITY_STATUSES);
 export const RevisionState = z.enum(REVISION_STATES);
 export const CostStatus = z.enum(COST_STATUSES);
+export const AcceptanceDecision = z.enum(ACCEPTANCE_DECISIONS);
+export const AlignmentDecision = z.enum(ALIGNMENT_DECISIONS);
+export const MappingStatus = z.enum(MAPPING_STATUSES);
 export type ImportStatus = z.infer<typeof ImportStatus>;
 export type ActivityStatus = z.infer<typeof ActivityStatus>;
 export type RevisionState = z.infer<typeof RevisionState>;
 export type CostStatus = z.infer<typeof CostStatus>;
+export type AcceptanceDecision = z.infer<typeof AcceptanceDecision>;
+export type AlignmentDecision = z.infer<typeof AlignmentDecision>;
+export type MappingStatus = z.infer<typeof MappingStatus>;
 
 export const GenerationUsage = z.object({
   inputTokens: z.number().int().min(0),
@@ -474,6 +553,28 @@ export type ModelId = (typeof MODEL_ROLES)[ModelRole];
 export function modelForRole(role: ModelRole): ModelId {
   return MODEL_ROLES[role];
 }
+
+/**
+ * Request settings the adapter applies per model; no stage sets them. Sonnet 5 returns 400 for a
+ * non-default temperature/top_p/top_k and runs adaptive thinking unless told not to (thinking tokens
+ * bill against max_tokens), so it gets no sampling parameter and thinking disabled. Haiku 4.5 rejects
+ * adaptive thinking and accepts temperature.
+ */
+export interface RequestProfile {
+  temperature: number | null;
+  thinking: { type: "disabled" } | null;
+}
+
+export const REQUEST_PROFILES: Record<ModelId, RequestProfile> = {
+  "claude-sonnet-5": { temperature: null, thinking: { type: "disabled" } },
+  "claude-haiku-4-5-20251001": { temperature: 0, thinking: null }
+};
+
+export function requestProfile(model: string): RequestProfile {
+  const profile = (REQUEST_PROFILES as Record<string, RequestProfile | undefined>)[model];
+  if (!profile) throw new Error(`no request profile for model ${model}; add it to REQUEST_PROFILES`);
+  return profile;
+}
 ```
 
 `packages/generator/src/llm/pricing.ts` — the only place rates live:
@@ -518,8 +619,32 @@ export function computeCost(usage: GenerationUsage | null, model: string): CostR
   return { costUsdMicro: Math.round(usd * 1_000_000), costStatus: "known", pricingVersion: PRICING.version };
 }
 
+/** Sizing estimate for chunking prompts to a working size; never used for a reservation. */
 export function estimateInputTokens(text: string): number {
   return Math.ceil(text.length / 3.5);
+}
+
+/**
+ * Reservation ceiling. 0.5 tokens per character is above any observed English or JSON ratio on the
+ * Sonnet 5 tokenizer; the overhead allowance covers the system text the API injects for structured
+ * outputs. Every outcome records whether the actual input exceeded the reservation (Task 4), and
+ * the demo reports the observed maximum ratio (Task 17), so these constants are checked on real traffic.
+ */
+export const RESERVATION_TOKENS_PER_CHAR = 0.5;
+export const STRUCTURED_OUTPUT_OVERHEAD_TOKENS = 500;
+
+export interface ReservableRequest { system: string; cachedContext?: string; user: string; outputSchema: Record<string, unknown>; }
+
+export function reserveInputTokens(request: ReservableRequest): number {
+  const characters = request.system.length + (request.cachedContext?.length ?? 0) + request.user.length + JSON.stringify(request.outputSchema).length;
+  return Math.ceil(characters * RESERVATION_TOKENS_PER_CHAR) + STRUCTURED_OUTPUT_OVERHEAD_TOKENS;
+}
+
+/** The most the attempt can cost: every input token at the 5-minute cache-write rate, every output token at the output rate. USD/MTok × tokens is exactly µUSD. */
+export function reservationCost(model: string, inputTokens: number, outputTokens: number): number {
+  const rates = PRICING.models[model];
+  if (!rates) throw new Error(`no pricing for model ${model} (pricing version ${PRICING.version})`);
+  return Math.ceil(inputTokens * rates.cacheWrite5mPerMTok + outputTokens * rates.outputPerMTok);
 }
 ```
 
@@ -538,12 +663,11 @@ export interface ModelRequest {
   cachedContext?: string;
   user: string;
   maxOutputTokens: number;
-  /** JSON Schema (draft 2020-12) the response must satisfy; the provider enforces it natively. */
+  /** Provider-compatible JSON Schema (from toProviderSchema) the response must satisfy; the provider enforces it natively. */
   outputSchema: Record<string, unknown>;
-  temperature?: number;
 }
 
-export type StopReason = "end_turn" | "max_tokens" | "stop_sequence" | "tool_use" | "pause_turn" | "refusal";
+export type StopReason = "end_turn" | "max_tokens" | "stop_sequence" | "tool_use" | "pause_turn" | "refusal" | "model_context_window_exceeded";
 
 export interface ModelResponse {
   providerRequestId: string | null;
@@ -557,11 +681,19 @@ export interface ModelResponse {
 }
 
 export type AttemptStatus = "ok" | "content_error" | "transient_error" | "provider_error";
+/** Why this attempt exists beyond the first for its call key: a content rejection, a transient provider failure, or a resumed operation. */
+export type RetryReason = "content" | "transient" | "resume";
 
 export interface AttemptStart {
   event: "start";
   attemptId: string;
   operationId: string;
+  /** Stable identity of the logical call within the import (e.g. `extract:chunk-2`, `merge`, `produce:act-3`); retries share it. */
+  callKey: string;
+  /** 0 for the first attempt of a call key in the import; counts every earlier attempt with the same key, across operations and resumptions. */
+  retryIndex: number;
+  retryReason: RetryReason | null;
+  /** 1-based content attempt within the operation (transient retries do not advance it). */
   attempt: number;
   purpose: Purpose;
   provider: "anthropic" | "fake" | "replay";
@@ -590,6 +722,8 @@ export interface AttemptOutcome {
   stopReason: StopReason | null;
   status: AttemptStatus;
   error: string | null;
+  /** True when input + cache-read + cache-write tokens exceeded reservedInputTokens: the ceiling assumption failed for this attempt. */
+  reservationExceeded: boolean;
   completedAt: string;
 }
 
@@ -950,15 +1084,20 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 4: LLM core — providers, structured-output schemas, budget, and `callModel` with two-event recording
+### Task 4: LLM core — providers, provider-compatible output schemas, the four-limit budget, and `callModel` with two-event recording
+
+Answers review findings 1 (the wire schema is a tested projection of the Zod schema), 2 (`callModel` never retries; every attempt is metered), 3 (the reservation is a ceiling over spend, requests, tokens and elapsed time) and 9 (every attempt record carries a stable call key and a retry index).
 
 **Files:**
 - Create: `packages/generator/src/llm/schema.ts`, `src/llm/provider.ts`, `src/llm/fake-provider.ts`, `src/llm/replay-provider.ts`, `src/llm/budget.ts`, `src/llm/call-model.ts`
-- Test: `packages/generator/test/schema.test.ts`, `test/call-model.test.ts`, `test/replay-provider.test.ts`
+- Test: `packages/generator/test/schema.test.ts`, `test/budget.test.ts`, `test/call-model.test.ts`, `test/replay-provider.test.ts`
 
 **Interfaces:**
-- Produces: `toStrictJsonSchema(schema: z.ZodType): Record<string, unknown>` (draft 2020-12; every object gets `additionalProperties: false` and `required` = all properties; throws if a property is optional, has a default, or is unrepresentable — model output schemas must be strict by construction); `ModelProvider { readonly name: "anthropic" | "fake" | "replay"; complete(req: ModelRequest): Promise<ModelResponse> }`; `ProviderError` with `kind: "transient" | "permanent"` and `status?`; `classifyProviderError(err): "transient" | "permanent"`; `FakeProvider(script: Array<ModelResponse | Error>)` (responses consumed in order; records every request in `.requests`); `ReplayProvider(dir)` (looks up `sha256(JSON.stringify({ model, system, cachedContext, user, outputSchema }))` → `<dir>/<hash>.json`; throws `ReplayMissError` naming the purpose when absent); `RecordingProvider(inner, dir)` (delegates and writes the fixture); `Budget { limitUsdMicro, reservedUsdMicro, spentUsdMicro }`, `reserve(budget, req): { ok: true; reservedUsdMicro; reservedInputTokens; reservedOutputTokens } | { ok: false; reason }` (max output tokens × output rate + estimated input × input rate; refuses when reserved+spent+new > limit), `settle(budget, reservedUsdMicro, actualUsdMicro | null)`; `callModel(req, ctx: { provider; recorder; budget; operationId; attempt; clock?; ids? }): Promise<CallResult>` where `CallResult = { kind: "ok"; json: unknown; response; attemptId } | { kind: "content_error"; reason; response; attemptId } | { kind: "transient_error" | "provider_error"; error; attemptId } | { kind: "budget_refused"; reason }`.
-- Rules: start record before dispatch; outcome record after completion, always (also on throw); SDK-level retries are the provider's business (Task 5 configures `maxRetries: 2`) — `callModel` retries **nothing** itself; `stop_reason: "max_tokens"` is a `content_error` ("output truncated at N tokens"); `"refusal"` is a `content_error` carrying the explanation; JSON that fails `JSON.parse` is a `content_error`; a `ProviderError` of kind `transient` after the SDK's own retries is `transient_error` (the operation loop in Task 14 decides whether to retry the attempt); everything else is `provider_error`.
+- Produces (schema): `toStrictJsonSchema(schema: z.ZodType): Record<string, unknown>` (draft 2020-12; every object closed and every property required; throws if a property is optional, has a default, or is unrepresentable); `toProviderSchema(schema: z.ZodType): Record<string, unknown>` (the strict schema projected to what the API accepts: `$schema` removed; `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`, `maxItems`, `uniqueItems` removed, `minItems` above 1 removed, `format` kept only when in `SUPPORTED_FORMATS`; every removed constraint appended to the node's `description` as `Constraint: …`); `UNSUPPORTED_SCHEMA_KEYWORDS`, `SUPPORTED_FORMATS`; `assertProviderCompatible(schema): void` (throws naming the path of any remaining unsupported keyword, any object without `additionalProperties: false`, any non-local `$ref`).
+- Produces (provider): `ModelProvider { readonly name: "anthropic" | "fake" | "replay"; complete(req: ModelRequest): Promise<ModelResponse> }`; `ProviderError(message, kind: "transient" | "permanent", status?: number, details?: { requestId?: string | null; retryAfterMs?: number | null })` exposing `requestId: string | null` and `retryAfterMs: number | null`; `FakeProvider(script)` and `fakeResponse(partial)` (test-only); `ReplayProvider(dir)`, `RecordingProvider(inner, dir)`, `requestKey(request)`, `ReplayMissError`.
+- Produces (budget): `BudgetLimits { usdMicro; requests; tokens; elapsedMs }`; `DEFAULT_BUDGET_LIMITS = { requests: 200, tokens: 2_000_000, elapsedMs: 1_800_000 }` (spend has no default; the caller always names it); `Budget { limits; startedAtMs; reservedUsdMicro; spentUsdMicro; reservedTokens; spentTokens; requests }`; `createBudget(limits: { usdMicro: number } & Partial<BudgetLimits>, startedAtMs?): Budget`; `reserve(budget, request, nowMs?): Reservation` with `Reservation = { ok: true; reservedUsdMicro; reservedInputTokens; reservedOutputTokens } | { ok: false; limit: BudgetLimitName; reason }`, `BudgetLimitName = "spend" | "requests" | "tokens" | "elapsed"` — synchronous, so concurrent callers cannot interleave between check and update; `settle(budget, reservation, actual: { costUsdMicro: number | null; tokens: number | null })` (an unknown cost or token count keeps the reservation as spent); `budgetSnapshot(budget): { spentUsdMicro; reservedUsdMicro; spentTokens; requests }`.
+- Produces (call): `callModel(req, ctx: CallContext): Promise<CallResult>` with `CallContext = { provider; recorder; budget; operationId; callKey; retryIndex; retryReason; attempt; clock?; ids? }` and `CallResult = { kind: "ok"; json; response; attemptId } | { kind: "content_error"; reason; response; attemptId } | { kind: "transient_error" | "provider_error"; error; attemptId; providerRequestId: string | null; retryAfterMs: number | null } | { kind: "budget_refused"; limit: BudgetLimitName; reason }`.
+- Rules: reserve → start record → dispatch → outcome record (always, also on throw) → settle. `callModel` retries **nothing**; the SDK retries nothing (Task 5); the stage runner (Task 7) owns retries and each retry is a new `callModel` with its own reservation and records. `stop_reason` `max_tokens`, `refusal` and `model_context_window_exceeded` are `content_error`s with a reason; unparsable JSON is a `content_error`; a transient `ProviderError` is `transient_error`; anything else is `provider_error`. The outcome's `providerRequestId` comes from the response, or from the `ProviderError` when the call failed. `reservationExceeded = inputTokens + cacheReadTokens + cacheWriteTokens > reservedInputTokens`.
 
 - [ ] **Step 1: Failing tests**
 
@@ -966,7 +1105,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 ```ts
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { toStrictJsonSchema } from "../src/llm/schema.js";
+import { assertProviderCompatible, toProviderSchema, toStrictJsonSchema, UNSUPPORTED_SCHEMA_KEYWORDS } from "../src/llm/schema.js";
 
 describe("toStrictJsonSchema", () => {
   it("emits draft 2020-12 with closed objects and every property required", () => {
@@ -982,9 +1121,84 @@ describe("toStrictJsonSchema", () => {
     expect(() => toStrictJsonSchema(z.object({ a: z.string().optional() }))).toThrow(/optional/);
     expect(() => toStrictJsonSchema(z.object({ a: z.string().default("x") }))).toThrow(/default/);
   });
+});
+
+describe("toProviderSchema", () => {
+  it("removes the constraints the API rejects, records them in descriptions, and drops $schema", () => {
+    const s = toProviderSchema(z.object({ slot: z.number().int(), name: z.string().min(1).max(80).regex(/^[A-Z]/), ids: z.array(z.string()).min(2).max(10), mail: z.email(), one: z.array(z.string()).min(1) }));
+    const props = s["properties"] as Record<string, Record<string, unknown>>;
+    expect(s).not.toHaveProperty("$schema");
+    expect(props["slot"]!["type"]).toBe("integer");
+    for (const k of ["minimum", "maximum"]) expect(props["slot"]).not.toHaveProperty(k);
+    for (const k of ["minLength", "maxLength", "pattern"]) expect(props["name"]).not.toHaveProperty(k);
+    expect(String(props["name"]!["description"])).toMatch(/Constraint: .*minLength 1/);
+    for (const k of ["minItems", "maxItems"]) expect(props["ids"]).not.toHaveProperty(k);
+    expect(props["one"]!["minItems"]).toBe(1); // 0 and 1 are supported and kept
+    expect(props["mail"]!["format"]).toBe("email"); // supported format kept
+    expect(() => assertProviderCompatible(s)).not.toThrow();
+  });
+  it("assertProviderCompatible names the path of an unsupported keyword or an open object", () => {
+    expect(() => assertProviderCompatible({ type: "object", additionalProperties: false, required: ["n"], properties: { n: { type: "number", minimum: 1 } } })).toThrow(/properties\.n: unsupported keyword minimum/);
+    expect(() => assertProviderCompatible({ type: "object", required: [], properties: {} })).toThrow(/additionalProperties/);
+    expect(() => assertProviderCompatible({ type: "object", additionalProperties: false, required: ["x"], properties: { x: { $ref: "https://example.test/x.json" } } })).toThrow(/external \$ref/);
+    expect(UNSUPPORTED_SCHEMA_KEYWORDS.has("multipleOf")).toBe(true);
+  });
   it("does not carry refinements (they are enforced in code after parsing)", () => {
-    const s = toStrictJsonSchema(z.object({ n: z.number() }).refine((o) => o.n > 1));
+    const s = toProviderSchema(z.object({ n: z.number() }).refine((o) => o.n > 1));
     expect(JSON.stringify(s)).not.toMatch(/refine/);
+  });
+});
+```
+If Zod 4 spells a constraint differently from the test's expectation (for example `.int()` emitting only `type: "integer"` with no bounds), keep the assertions that hold and note the observed output in the ledger; the rule — nothing in `UNSUPPORTED_SCHEMA_KEYWORDS` reaches the wire — is the requirement, and Task 7's contract test over the real schemas is the gate.
+
+`packages/generator/test/budget.test.ts`:
+```ts
+import { describe, it, expect } from "vitest";
+import { z } from "zod";
+import { budgetSnapshot, createBudget, DEFAULT_BUDGET_LIMITS, reserve, settle } from "../src/llm/budget.js";
+import { reservationCost, reserveInputTokens } from "../src/llm/cost.js";
+import { modelForRole } from "../src/llm/models.js";
+import { toProviderSchema } from "../src/llm/schema.js";
+import type { ModelRequest } from "../src/llm/types.js";
+
+const req = (): ModelRequest => ({ purpose: "produce", model: modelForRole("produce"), system: "s".repeat(2000), user: "u".repeat(2000), maxOutputTokens: 1000, outputSchema: toProviderSchema(z.object({ ok: z.boolean() })) });
+
+describe("budget", () => {
+  it("reserves the ceiling for the whole request and settles to the actual cost and tokens", () => {
+    const b = createBudget({ usdMicro: 100_000_000 }, 0);
+    const r = reserve(b, req(), 0);
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.reservedInputTokens).toBe(reserveInputTokens(req()));
+    expect(r.reservedOutputTokens).toBe(1000);
+    expect(r.reservedUsdMicro).toBe(reservationCost(modelForRole("produce"), r.reservedInputTokens, 1000));
+    expect(b).toMatchObject({ requests: 1, reservedUsdMicro: r.reservedUsdMicro, reservedTokens: r.reservedInputTokens + 1000, spentUsdMicro: 0 });
+    settle(b, r, { costUsdMicro: 123, tokens: 456 });
+    expect(budgetSnapshot(b)).toEqual({ spentUsdMicro: 123, reservedUsdMicro: 0, spentTokens: 456, requests: 1 });
+    expect(b.limits).toEqual({ usdMicro: 100_000_000, ...DEFAULT_BUDGET_LIMITS });
+  });
+  it("refuses each of the four limits by name, changing nothing", () => {
+    const spend = createBudget({ usdMicro: 1 }, 0);
+    expect(reserve(spend, req(), 0)).toMatchObject({ ok: false, limit: "spend", reason: expect.stringMatching(/spend/) });
+    expect(spend).toMatchObject({ requests: 0, reservedUsdMicro: 0, reservedTokens: 0 });
+    expect(reserve(createBudget({ usdMicro: 1e9, requests: 0 }, 0), req(), 0)).toMatchObject({ ok: false, limit: "requests" });
+    expect(reserve(createBudget({ usdMicro: 1e9, tokens: 10 }, 0), req(), 0)).toMatchObject({ ok: false, limit: "tokens" });
+    expect(reserve(createBudget({ usdMicro: 1e9, elapsedMs: 1000 }, 0), req(), 5000)).toMatchObject({ ok: false, limit: "elapsed" });
+    expect(reserve(createBudget({ usdMicro: 1e9, elapsedMs: 1000 }, 0), req(), 999).ok).toBe(true);
+  });
+  it("counts an unknown cost or token count at the reservation and never frees it", () => {
+    const b = createBudget({ usdMicro: 1e9 }, 0);
+    const r = reserve(b, req(), 0);
+    if (!r.ok) throw new Error(r.reason);
+    settle(b, r, { costUsdMicro: null, tokens: null });
+    expect(b).toMatchObject({ reservedUsdMicro: 0, spentUsdMicro: r.reservedUsdMicro, reservedTokens: 0, spentTokens: r.reservedInputTokens + r.reservedOutputTokens });
+  });
+  it("is a hard ceiling under concurrency: a second in-flight reservation that would cross the limit is refused", () => {
+    const probe = reserve(createBudget({ usdMicro: 1e12 }, 0), req(), 0);
+    if (!probe.ok) throw new Error(probe.reason);
+    const b = createBudget({ usdMicro: Math.floor(probe.reservedUsdMicro * 1.5) }, 0);
+    expect(reserve(b, req(), 0).ok).toBe(true);
+    expect(reserve(b, req(), 0)).toMatchObject({ ok: false, limit: "spend" });
+    expect(b.requests).toBe(1);
   });
 });
 ```
@@ -993,28 +1207,29 @@ describe("toStrictJsonSchema", () => {
 ```ts
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { callModel } from "../src/llm/call-model.js";
+import { callModel, type CallContext } from "../src/llm/call-model.js";
 import { FakeProvider, fakeResponse } from "../src/llm/fake-provider.js";
 import { ProviderError } from "../src/llm/provider.js";
-import { createBudget } from "../src/llm/budget.js";
-import { toStrictJsonSchema } from "../src/llm/schema.js";
+import { createBudget, reserve } from "../src/llm/budget.js";
+import { toProviderSchema } from "../src/llm/schema.js";
 import { modelForRole } from "../src/llm/models.js";
 import { computeCost } from "../src/llm/cost.js";
-import type { AttemptEvent, AttemptRecorder, ModelRequest } from "../src/llm/types.js";
+import type { AttemptEvent, AttemptOutcome, AttemptRecorder, AttemptStart, ModelRequest } from "../src/llm/types.js";
 
 class MemoryRecorder implements AttemptRecorder {
   events: AttemptEvent[] = [];
   startedBeforeDispatch = false;
   constructor(private readonly provider?: FakeProvider) {}
-  async recordStart(s: AttemptEvent & { event: "start" }) { this.startedBeforeDispatch = (this.provider?.requests.length ?? 0) === 0; this.events.push(s); }
-  async recordOutcome(o: AttemptEvent & { event: "outcome" }) { this.events.push(o); }
+  async recordStart(s: AttemptStart) { this.startedBeforeDispatch = (this.provider?.requests.length ?? 0) === 0; this.events.push(s); }
+  async recordOutcome(o: AttemptOutcome) { this.events.push(o); }
 }
 
-const req = (): ModelRequest => ({ purpose: "produce", model: modelForRole("produce"), system: "sys", user: "make one", maxOutputTokens: 500, outputSchema: toStrictJsonSchema(z.object({ ok: z.boolean() })) });
-const ctx = (provider: FakeProvider, recorder = new MemoryRecorder(), limitUsdMicro = 10_000_000) => ({ provider, recorder, budget: createBudget(limitUsdMicro), operationId: "op-1", attempt: 1, clock: () => new Date("2026-09-19T00:00:00Z"), ids: () => "att-1" });
+const req = (): ModelRequest => ({ purpose: "produce", model: modelForRole("produce"), system: "sys", user: "make one", maxOutputTokens: 500, outputSchema: toProviderSchema(z.object({ ok: z.boolean() })) });
+const ctx = (provider: FakeProvider, recorder = new MemoryRecorder(), limitUsdMicro = 10_000_000): CallContext => ({ provider, recorder, budget: createBudget({ usdMicro: limitUsdMicro }, 0), operationId: "op-1", callKey: "produce:act-1", retryIndex: 0, retryReason: null, attempt: 1, clock: () => new Date("2026-09-19T00:00:00Z"), ids: () => "att-1" });
+const outcomes = (r: MemoryRecorder) => r.events.filter((e): e is AttemptOutcome => e.event === "outcome");
 
 describe("callModel", () => {
-  it("records start before dispatch and outcome after, with cost from the pricing table", async () => {
+  it("records start before dispatch and outcome after, with the call key, retry index and cost from the pricing table", async () => {
     const usage = { inputTokens: 120, outputTokens: 30, cacheReadTokens: 0, cacheWriteTokens: 0 };
     const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify({ ok: true }), usage, providerRequestId: "req_1" })]);
     const recorder = new MemoryRecorder(provider);
@@ -1022,54 +1237,63 @@ describe("callModel", () => {
     expect(result.kind).toBe("ok");
     if (result.kind === "ok") expect(result.json).toEqual({ ok: true });
     expect(recorder.events.map((e) => e.event)).toEqual(["start", "outcome"]);
-    const start = recorder.events[0] as AttemptEvent & { event: "start" };
-    expect(start.reservedOutputTokens).toBe(500);
+    const start = recorder.events[0] as AttemptStart;
+    expect(start).toMatchObject({ callKey: "produce:act-1", retryIndex: 0, retryReason: null, attempt: 1, reservedOutputTokens: 500 });
     expect(start.reservedUsdMicro).toBeGreaterThan(0);
-    const outcome = recorder.events[1] as AttemptEvent & { event: "outcome" };
-    expect(outcome).toMatchObject({ status: "ok", providerRequestId: "req_1", inputTokens: 120, outputTokens: 30, costStatus: "known", pricingVersion: expect.any(String) });
+    const outcome = outcomes(recorder)[0]!;
+    expect(outcome).toMatchObject({ status: "ok", providerRequestId: "req_1", inputTokens: 120, outputTokens: 30, costStatus: "known", pricingVersion: expect.any(String), reservationExceeded: false });
     expect(outcome.costUsdMicro).toBe(computeCost(usage, modelForRole("produce")).costUsdMicro);
     expect(recorder.startedBeforeDispatch).toBe(true);
   });
-  it("classifies max_tokens and refusal as content errors and still records the outcome", async () => {
-    const provider = new FakeProvider([fakeResponse({ stopReason: "max_tokens", outputText: "{\"ok\":" }), fakeResponse({ stopReason: "refusal", outputText: undefined })]);
+  it("flags an attempt whose actual input tokens exceed the reservation", async () => {
+    const usage = { inputTokens: 5_000_000, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 };
+    const provider = new FakeProvider([fakeResponse({ outputText: "{\"ok\":true}", usage })]);
+    const recorder = new MemoryRecorder();
+    await callModel(req(), ctx(provider, recorder, 1e12));
+    expect(outcomes(recorder)[0]!.reservationExceeded).toBe(true);
+  });
+  it("classifies max_tokens, refusal and context overflow as content errors and still records the outcome", async () => {
+    const provider = new FakeProvider([fakeResponse({ stopReason: "max_tokens", outputText: "{\"ok\":" }), fakeResponse({ stopReason: "refusal", outputText: undefined }), fakeResponse({ stopReason: "model_context_window_exceeded", outputText: undefined })]);
     const recorder = new MemoryRecorder();
     const a = await callModel(req(), ctx(provider, recorder));
     expect(a).toMatchObject({ kind: "content_error", reason: expect.stringMatching(/truncated/) });
     const b = await callModel(req(), ctx(provider, recorder));
     expect(b).toMatchObject({ kind: "content_error", reason: expect.stringMatching(/refus/) });
-    expect(recorder.events.filter((e) => e.event === "outcome").map((e) => (e as AttemptEvent & { event: "outcome" }).status)).toEqual(["content_error", "content_error"]);
+    const c = await callModel(req(), ctx(provider, recorder));
+    expect(c).toMatchObject({ kind: "content_error", reason: expect.stringMatching(/context window/) });
+    expect(outcomes(recorder).map((o) => o.status)).toEqual(["content_error", "content_error", "content_error"]);
   });
-  it("records a missing usage as unavailable, never zero", async () => {
+  it("records a missing usage as unavailable, never zero, and keeps the reservation as spent", async () => {
     const provider = new FakeProvider([fakeResponse({ outputText: "{\"ok\":true}", usage: null, rawUsage: null })]);
     const recorder = new MemoryRecorder();
-    await callModel(req(), ctx(provider, recorder));
-    const outcome = recorder.events[1] as AttemptEvent & { event: "outcome" };
-    expect(outcome).toMatchObject({ costUsdMicro: null, costStatus: "unavailable", inputTokens: null });
+    const c = ctx(provider, recorder);
+    await callModel(req(), c);
+    expect(outcomes(recorder)[0]).toMatchObject({ costUsdMicro: null, costStatus: "unavailable", inputTokens: null, reservationExceeded: false });
+    expect(c.budget.reservedUsdMicro).toBe(0);
+    expect(c.budget.spentUsdMicro).toBe((recorder.events[0] as AttemptStart).reservedUsdMicro);
   });
-  it("turns a transient provider error into transient_error with an outcome record, and keeps the reservation released", async () => {
-    const provider = new FakeProvider([new ProviderError("overloaded", "transient", 529)]);
+  it("turns a transient provider error into transient_error carrying the provider's request id and retry-after, with an outcome record", async () => {
+    const provider = new FakeProvider([new ProviderError("overloaded", "transient", 529, { requestId: "req_err", retryAfterMs: 2500 })]);
     const recorder = new MemoryRecorder();
     const c = ctx(provider, recorder);
     const r = await callModel(req(), c);
-    expect(r.kind).toBe("transient_error");
-    expect((recorder.events[1] as AttemptEvent & { event: "outcome" }).status).toBe("transient_error");
+    expect(r).toMatchObject({ kind: "transient_error", providerRequestId: "req_err", retryAfterMs: 2500 });
+    expect(outcomes(recorder)[0]).toMatchObject({ status: "transient_error", providerRequestId: "req_err", costStatus: "unavailable" });
     expect(c.budget.reservedUsdMicro).toBe(0);
   });
-  it("refuses to dispatch when the reservation would exceed the budget, recording nothing", async () => {
+  it("refuses to dispatch when the reservation would exceed the budget, recording nothing and naming the limit", async () => {
     const provider = new FakeProvider([fakeResponse({ outputText: "{\"ok\":true}" })]);
     const recorder = new MemoryRecorder();
     const r = await callModel(req(), ctx(provider, recorder, 10));
-    expect(r).toMatchObject({ kind: "budget_refused" });
+    expect(r).toMatchObject({ kind: "budget_refused", limit: "spend" });
     expect(recorder.events).toEqual([]);
     expect(provider.requests).toEqual([]);
   });
   it("accounts reservations across concurrent in-flight attempts", async () => {
     const provider = new FakeProvider([fakeResponse({ outputText: "{\"ok\":true}" }), fakeResponse({ outputText: "{\"ok\":true}" })]);
-    const c = ctx(provider, new MemoryRecorder(), 0);
-    const one = c.budget;
-    const perCall = (await import("../src/llm/budget.js")).reserve(createBudget(1e12), req());
+    const perCall = reserve(createBudget({ usdMicro: 1e12 }, 0), req(), 0);
     if (!perCall.ok) throw new Error("unexpected");
-    one.limitUsdMicro = perCall.reservedUsdMicro * 1.5;
+    const c = ctx(provider, new MemoryRecorder(), Math.floor(perCall.reservedUsdMicro * 1.5));
     const [a, b] = await Promise.all([callModel(req(), { ...c, ids: () => "att-a" }), callModel(req(), { ...c, ids: () => "att-b" })]);
     expect([a.kind, b.kind].sort()).toEqual(["budget_refused", "ok"]);
   });
@@ -1085,10 +1309,10 @@ import { join } from "node:path";
 import { z } from "zod";
 import { FakeProvider, fakeResponse } from "../src/llm/fake-provider.js";
 import { RecordingProvider, ReplayProvider, ReplayMissError } from "../src/llm/replay-provider.js";
-import { toStrictJsonSchema } from "../src/llm/schema.js";
+import { toProviderSchema } from "../src/llm/schema.js";
 import { modelForRole } from "../src/llm/models.js";
 
-const req = { purpose: "extract" as const, model: modelForRole("extract"), system: "s", user: "u", maxOutputTokens: 10, outputSchema: toStrictJsonSchema(z.object({ a: z.number() })) };
+const req = { purpose: "extract" as const, model: modelForRole("extract"), system: "s", user: "u", maxOutputTokens: 10, outputSchema: toProviderSchema(z.object({ a: z.number() })) };
 
 describe("replay", () => {
   it("records a response and replays it for the identical request; misses name the purpose", async () => {
@@ -1110,34 +1334,80 @@ describe("replay", () => {
 ```ts
 import { z } from "zod";
 
-function tighten(node: unknown, path: string): void {
-  if (!node || typeof node !== "object" || Array.isArray(node)) return;
-  const obj = node as Record<string, unknown>;
-  if (obj["type"] === "object" && obj["properties"] && typeof obj["properties"] === "object") {
-    const props = obj["properties"] as Record<string, unknown>;
-    const names = Object.keys(props);
-    const required = new Set((obj["required"] as string[] | undefined) ?? []);
-    for (const name of names) {
-      if (!required.has(name)) throw new Error(`model output schema property ${path}${name} is optional; model output schemas must have every property required (use a nullable type instead)`);
-      const p = props[name] as Record<string, unknown>;
-      if ("default" in p) throw new Error(`model output schema property ${path}${name} has a default; defaults belong to the activity schema, not the model output`);
-    }
-    obj["additionalProperties"] = false;
-    obj["required"] = names;
-    for (const name of names) tighten(props[name], `${path}${name}.`);
+const REMOVED_KEYWORDS = ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength", "maxLength", "pattern", "maxItems", "uniqueItems"] as const;
+/** Keywords the structured-outputs grammar rejects (docs: "Structured outputs" → JSON Schema limitations). */
+export const UNSUPPORTED_SCHEMA_KEYWORDS: ReadonlySet<string> = new Set([...REMOVED_KEYWORDS, "$schema", "patternProperties", "propertyNames", "if", "then", "else", "not", "dependentRequired", "dependentSchemas", "contains", "minContains", "maxContains", "minProperties", "maxProperties"]);
+export const SUPPORTED_FORMATS: ReadonlySet<string> = new Set(["date-time", "time", "date", "duration", "email", "hostname", "uri", "ipv4", "ipv6", "uuid"]);
+
+type Node = Record<string, unknown>;
+const isNode = (v: unknown): v is Node => !!v && typeof v === "object" && !Array.isArray(v);
+
+function children(node: Node, path: string): Array<[Node, string]> {
+  const out: Array<[Node, string]> = [];
+  if (isNode(node["properties"])) for (const [k, v] of Object.entries(node["properties"])) if (isNode(v)) out.push([v, `${path}properties.${k}.`]);
+  if (isNode(node["$defs"])) for (const [k, v] of Object.entries(node["$defs"])) if (isNode(v)) out.push([v, `${path}$defs.${k}.`]);
+  for (const key of ["items", "anyOf", "oneOf", "allOf", "prefixItems"] as const) {
+    const v = node[key];
+    if (Array.isArray(v)) v.forEach((x, i) => { if (isNode(x)) out.push([x, `${path}${key}[${i}].`]); });
+    else if (isNode(v)) out.push([v, `${path}${key}.`]);
   }
-  for (const key of ["items", "anyOf", "oneOf", "allOf"] as const) {
-    const v = obj[key];
-    if (Array.isArray(v)) v.forEach((x, i) => tighten(x, `${path}${key}[${i}].`));
-    else if (v) tighten(v, `${path}${key}.`);
-  }
-  if (obj["$defs"] && typeof obj["$defs"] === "object") for (const [k, v] of Object.entries(obj["$defs"] as Record<string, unknown>)) tighten(v, `${path}$defs.${k}.`);
+  return out;
 }
 
-/** Draft 2020-12 JSON Schema for native structured outputs: closed objects, all properties required, no defaults. Refinements are not represented and are enforced by parsing the response in code. */
+function tighten(node: Node, path: string): void {
+  if (node["type"] === "object" && isNode(node["properties"])) {
+    const props = node["properties"];
+    const names = Object.keys(props);
+    const required = new Set((node["required"] as string[] | undefined) ?? []);
+    for (const name of names) {
+      if (!required.has(name)) throw new Error(`model output schema property ${path}${name} is optional; model output schemas must have every property required (use a nullable type instead)`);
+      const p = props[name];
+      if (isNode(p) && "default" in p) throw new Error(`model output schema property ${path}${name} has a default; defaults belong to the activity schema, not the model output`);
+    }
+    node["additionalProperties"] = false;
+    node["required"] = names;
+  }
+  for (const [child, childPath] of children(node, path)) tighten(child, childPath);
+}
+
+function project(node: Node): void {
+  const notes: string[] = [];
+  for (const keyword of REMOVED_KEYWORDS) if (keyword in node) { notes.push(`${keyword} ${JSON.stringify(node[keyword])}`); delete node[keyword]; }
+  if (typeof node["minItems"] === "number" && node["minItems"] > 1) { notes.push(`minItems ${node["minItems"]}`); delete node["minItems"]; }
+  if (typeof node["format"] === "string" && !SUPPORTED_FORMATS.has(node["format"])) { notes.push(`format ${node["format"]}`); delete node["format"]; }
+  if (notes.length > 0) node["description"] = [node["description"], `Constraint: ${notes.join("; ")}`].filter((s) => typeof s === "string" && s.length > 0).join(" ");
+  for (const [child] of children(node, "")) project(child);
+}
+
+/** Draft 2020-12 JSON Schema with closed objects, all properties required, no defaults. Refinements are not represented and are enforced by parsing the response in code. */
 export function toStrictJsonSchema(schema: z.ZodType): Record<string, unknown> {
-  const json = z.toJSONSchema(schema, { target: "draft-2020-12", unrepresentable: "throw", io: "output" }) as Record<string, unknown>;
+  const json = z.toJSONSchema(schema, { target: "draft-2020-12", unrepresentable: "throw", io: "output" }) as Node;
   tighten(json, "");
+  return json;
+}
+
+/** Throws when anything the API rejects is still present. Used on every schema before it is sent and by the Task 7 contract test. */
+export function assertProviderCompatible(schema: Record<string, unknown>): void {
+  const problems: string[] = [];
+  const walk = (node: Node, path: string): void => {
+    const where = path.replace(/\.$/, "") || "(root)";
+    for (const key of Object.keys(node)) if (UNSUPPORTED_SCHEMA_KEYWORDS.has(key)) problems.push(`${where}: unsupported keyword ${key}`);
+    if (node["type"] === "object" && node["additionalProperties"] !== false) problems.push(`${where}: object must set additionalProperties: false`);
+    if (typeof node["$ref"] === "string" && !node["$ref"].startsWith("#/")) problems.push(`${where}: external $ref ${node["$ref"]}`);
+    if (typeof node["minItems"] === "number" && node["minItems"] > 1) problems.push(`${where}: minItems above 1`);
+    if (typeof node["format"] === "string" && !SUPPORTED_FORMATS.has(node["format"])) problems.push(`${where}: unsupported format ${node["format"]}`);
+    for (const [child, childPath] of children(node, path)) walk(child, childPath);
+  };
+  walk(schema as Node, "");
+  if (problems.length > 0) throw new Error(`schema is not provider-compatible:\n${problems.join("\n")}`);
+}
+
+/** The strict schema projected to the subset native structured outputs accept; the full Zod schema still validates the parsed response. */
+export function toProviderSchema(schema: z.ZodType): Record<string, unknown> {
+  const json = toStrictJsonSchema(schema);
+  delete json["$schema"];
+  project(json);
+  assertProviderCompatible(json);
   return json;
 }
 ```
@@ -1153,9 +1423,13 @@ export interface ModelProvider {
 }
 
 export class ProviderError extends Error {
-  constructor(message: string, public readonly kind: "transient" | "permanent", public readonly status?: number) {
+  readonly requestId: string | null;
+  readonly retryAfterMs: number | null;
+  constructor(message: string, public readonly kind: "transient" | "permanent", public readonly status?: number, details: { requestId?: string | null; retryAfterMs?: number | null } = {}) {
     super(message);
     this.name = "ProviderError";
+    this.requestId = details.requestId ?? null;
+    this.retryAfterMs = details.retryAfterMs ?? null;
   }
 }
 ```
@@ -1210,7 +1484,7 @@ export function requestKey(request: ModelRequest): string {
 
 export class ReplayMissError extends Error {
   constructor(request: ModelRequest, key: string) {
-    super(`no recorded response for purpose ${request.purpose} (model ${request.model}, key ${key.slice(0, 12)}); run with --record to capture it`);
+    super(`no recorded response for purpose ${request.purpose} (model ${request.model}, key ${key.slice(0, 12)}); run with --provider record to capture it`);
     this.name = "ReplayMissError";
   }
 }
@@ -1242,54 +1516,83 @@ export class RecordingProvider implements ModelProvider {
 
 `packages/generator/src/llm/budget.ts`:
 ```ts
-import { estimateInputTokens } from "./cost.js";
-import { PRICING } from "./pricing.js";
+import { reservationCost, reserveInputTokens } from "./cost.js";
 import type { ModelRequest } from "./types.js";
 
-export interface Budget { limitUsdMicro: number; reservedUsdMicro: number; spentUsdMicro: number; }
+/** Spec §4 imports.budget: requests, tokens, seconds, spend. Spend is USD micro; time is milliseconds. */
+export interface BudgetLimits { usdMicro: number; requests: number; tokens: number; elapsedMs: number; }
+export const DEFAULT_BUDGET_LIMITS: Omit<BudgetLimits, "usdMicro"> = { requests: 200, tokens: 2_000_000, elapsedMs: 1_800_000 };
+export type BudgetLimitName = "spend" | "requests" | "tokens" | "elapsed";
 
-export function createBudget(limitUsdMicro: number): Budget {
-  return { limitUsdMicro, reservedUsdMicro: 0, spentUsdMicro: 0 };
+export interface Budget {
+  limits: BudgetLimits;
+  /** Epoch ms the elapsed limit counts from: the start of this run (a resumed import restarts the clock; documented in Task 14). */
+  startedAtMs: number;
+  reservedUsdMicro: number;
+  spentUsdMicro: number;
+  reservedTokens: number;
+  spentTokens: number;
+  /** Attempts reserved so far, never decremented: a refused attempt is not counted, a failed one is. */
+  requests: number;
 }
 
-export type Reservation = { ok: true; reservedUsdMicro: number; reservedInputTokens: number; reservedOutputTokens: number } | { ok: false; reason: string };
+export function createBudget(limits: { usdMicro: number } & Partial<BudgetLimits>, startedAtMs = Date.now()): Budget {
+  return { limits: { ...DEFAULT_BUDGET_LIMITS, ...limits }, startedAtMs, reservedUsdMicro: 0, spentUsdMicro: 0, reservedTokens: 0, spentTokens: 0, requests: 0 };
+}
 
-/** Reserves the attempt's maximum possible spend against the budget in one synchronous step (no await between check and update). */
-export function reserve(budget: Budget, request: ModelRequest): Reservation {
-  const rates = PRICING.models[request.model];
-  if (!rates) throw new Error(`no pricing for model ${request.model} (pricing version ${PRICING.version})`); // configuration error, not a budget refusal
-  const reservedInputTokens = estimateInputTokens(request.system + (request.cachedContext ?? "") + request.user);
+export type Reservation =
+  | { ok: true; reservedUsdMicro: number; reservedInputTokens: number; reservedOutputTokens: number }
+  | { ok: false; limit: BudgetLimitName; reason: string };
+
+/** Reserves the attempt's maximum possible spend and tokens against all four limits in one synchronous step (no await between check and update). */
+export function reserve(budget: Budget, request: ModelRequest, nowMs = Date.now()): Reservation {
+  const reservedInputTokens = reserveInputTokens(request);
   const reservedOutputTokens = request.maxOutputTokens;
-  const reservedUsdMicro = Math.ceil((reservedInputTokens * rates.inputPerMTok + reservedOutputTokens * rates.outputPerMTok) / 1_000_000 * 1_000_000);
-  const projected = budget.spentUsdMicro + budget.reservedUsdMicro + reservedUsdMicro;
-  if (projected > budget.limitUsdMicro) {
-    return { ok: false, reason: `budget: reserving ${reservedUsdMicro} µUSD would bring the import to ${projected} µUSD, above the limit of ${budget.limitUsdMicro} µUSD` };
-  }
+  const reservedUsdMicro = reservationCost(request.model, reservedInputTokens, reservedOutputTokens);
+  const tokens = reservedInputTokens + reservedOutputTokens;
+  const elapsed = nowMs - budget.startedAtMs;
+  if (elapsed > budget.limits.elapsedMs) return { ok: false, limit: "elapsed", reason: `budget: ${elapsed} ms elapsed, above the limit of ${budget.limits.elapsedMs} ms` };
+  if (budget.requests + 1 > budget.limits.requests) return { ok: false, limit: "requests", reason: `budget: request ${budget.requests + 1} would exceed the limit of ${budget.limits.requests} requests` };
+  const projectedTokens = budget.spentTokens + budget.reservedTokens + tokens;
+  if (projectedTokens > budget.limits.tokens) return { ok: false, limit: "tokens", reason: `budget: reserving ${tokens} tokens would bring the import to ${projectedTokens} tokens, above the limit of ${budget.limits.tokens}` };
+  const projectedUsd = budget.spentUsdMicro + budget.reservedUsdMicro + reservedUsdMicro;
+  if (projectedUsd > budget.limits.usdMicro) return { ok: false, limit: "spend", reason: `budget: reserving ${reservedUsdMicro} µUSD would bring the import to ${projectedUsd} µUSD of spend, above the limit of ${budget.limits.usdMicro} µUSD` };
+  budget.requests += 1;
   budget.reservedUsdMicro += reservedUsdMicro;
+  budget.reservedTokens += tokens;
   return { ok: true, reservedUsdMicro, reservedInputTokens, reservedOutputTokens };
 }
 
-/** Replaces a reservation with the actual cost; an unknown cost keeps the reservation as spent so an unbilled-looking attempt never frees budget. */
-export function settle(budget: Budget, reservedUsdMicro: number, actualUsdMicro: number | null): void {
-  budget.reservedUsdMicro -= reservedUsdMicro;
-  budget.spentUsdMicro += actualUsdMicro ?? reservedUsdMicro;
+/** Replaces a reservation with the actual cost and tokens; an unknown value keeps the reservation as spent so an unbilled-looking attempt never frees budget. */
+export function settle(budget: Budget, reservation: { reservedUsdMicro: number; reservedInputTokens: number; reservedOutputTokens: number }, actual: { costUsdMicro: number | null; tokens: number | null }): void {
+  const reservedTokens = reservation.reservedInputTokens + reservation.reservedOutputTokens;
+  budget.reservedUsdMicro -= reservation.reservedUsdMicro;
+  budget.spentUsdMicro += actual.costUsdMicro ?? reservation.reservedUsdMicro;
+  budget.reservedTokens -= reservedTokens;
+  budget.spentTokens += actual.tokens ?? reservedTokens;
+}
+
+export function budgetSnapshot(budget: Budget): { spentUsdMicro: number; reservedUsdMicro: number; spentTokens: number; requests: number } {
+  return { spentUsdMicro: budget.spentUsdMicro, reservedUsdMicro: budget.reservedUsdMicro, spentTokens: budget.spentTokens, requests: budget.requests };
 }
 ```
-The transient-error test expects `reservedUsdMicro` back to 0 — `settle` is called on every path, with `null` on a failure without usage (the reservation becomes spent, which is the conservative reading of "may have been billed").
 
 `packages/generator/src/llm/call-model.ts`:
 ```ts
 import { randomUUID } from "node:crypto";
 import { computeCost } from "./cost.js";
-import { reserve, settle, type Budget } from "./budget.js";
+import { reserve, settle, type Budget, type BudgetLimitName } from "./budget.js";
 import { ProviderError, type ModelProvider } from "./provider.js";
-import type { AttemptOutcome, AttemptRecorder, AttemptStatus, ModelRequest, ModelResponse } from "./types.js";
+import type { AttemptOutcome, AttemptRecorder, AttemptStatus, ModelRequest, ModelResponse, RetryReason } from "./types.js";
 
 export interface CallContext {
   provider: ModelProvider;
   recorder: AttemptRecorder;
   budget: Budget;
   operationId: string;
+  callKey: string;
+  retryIndex: number;
+  retryReason: RetryReason | null;
   attempt: number;
   clock?: () => Date;
   ids?: () => string;
@@ -1298,12 +1601,13 @@ export interface CallContext {
 export type CallResult =
   | { kind: "ok"; json: unknown; response: ModelResponse; attemptId: string }
   | { kind: "content_error"; reason: string; response: ModelResponse; attemptId: string }
-  | { kind: "transient_error" | "provider_error"; error: string; attemptId: string }
-  | { kind: "budget_refused"; reason: string };
+  | { kind: "transient_error" | "provider_error"; error: string; attemptId: string; providerRequestId: string | null; retryAfterMs: number | null }
+  | { kind: "budget_refused"; limit: BudgetLimitName; reason: string };
 
 function interpret(response: ModelResponse): { status: AttemptStatus; json?: unknown; reason?: string } {
   if (response.stopReason === "refusal") return { status: "content_error", reason: "the model refused the request" };
   if (response.stopReason === "max_tokens") return { status: "content_error", reason: "output truncated at the max_tokens limit; the request needs a smaller task or a larger limit" };
+  if (response.stopReason === "model_context_window_exceeded") return { status: "content_error", reason: "the request exceeded the model's context window; the input must be smaller" };
   if (response.outputText === undefined) return { status: "content_error", reason: "the response carried no structured output" };
   try {
     return { status: "ok", json: JSON.parse(response.outputText) };
@@ -1312,46 +1616,49 @@ function interpret(response: ModelResponse): { status: AttemptStatus; json?: unk
   }
 }
 
-/** The only path to a model: reserve budget, record the start, dispatch, record the outcome (always), settle the budget. Never retries. */
+/** The only path to a model: reserve budget, record the start, dispatch once, record the outcome (always), settle the budget. Never retries. */
 export async function callModel(request: ModelRequest, ctx: CallContext): Promise<CallResult> {
   const now = ctx.clock ?? (() => new Date());
-  const reservation = reserve(ctx.budget, request);
-  if (!reservation.ok) return { kind: "budget_refused", reason: reservation.reason };
+  const reservation = reserve(ctx.budget, request, now().getTime());
+  if (!reservation.ok) return { kind: "budget_refused", limit: reservation.limit, reason: reservation.reason };
 
   const attemptId = (ctx.ids ?? randomUUID)();
   await ctx.recorder.recordStart({
-    event: "start", attemptId, operationId: ctx.operationId, attempt: ctx.attempt, purpose: request.purpose, provider: ctx.provider.name, model: request.model,
-    credentialOwner: "server", reservedInputTokens: reservation.reservedInputTokens, reservedOutputTokens: reservation.reservedOutputTokens, reservedUsdMicro: reservation.reservedUsdMicro, startedAt: now().toISOString()
+    event: "start", attemptId, operationId: ctx.operationId, callKey: ctx.callKey, retryIndex: ctx.retryIndex, retryReason: ctx.retryReason, attempt: ctx.attempt,
+    purpose: request.purpose, provider: ctx.provider.name, model: request.model, credentialOwner: "server",
+    reservedInputTokens: reservation.reservedInputTokens, reservedOutputTokens: reservation.reservedOutputTokens, reservedUsdMicro: reservation.reservedUsdMicro, startedAt: now().toISOString()
   });
   const started = Date.now();
   let response: ModelResponse | undefined;
-  let failure: { status: AttemptStatus; error: string } | undefined;
+  let failure: { status: AttemptStatus; error: string; providerRequestId: string | null; retryAfterMs: number | null } | undefined;
   try {
     response = await ctx.provider.complete(request);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    failure = { status: err instanceof ProviderError && err.kind === "transient" ? "transient_error" : "provider_error", error: message };
+    const provider = err instanceof ProviderError ? err : undefined;
+    failure = { status: provider?.kind === "transient" ? "transient_error" : "provider_error", error: err instanceof Error ? err.message : String(err), providerRequestId: provider?.requestId ?? null, retryAfterMs: provider?.retryAfterMs ?? null };
   }
 
   const usage = response?.usage ?? null;
   const cost = computeCost(usage, request.model);
+  const actualInputTokens = usage ? usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens : null;
   const interpreted = response ? interpret(response) : undefined;
   const status: AttemptStatus = failure ? failure.status : interpreted!.status;
   const outcome: AttemptOutcome = {
     event: "outcome", attemptId, operationId: ctx.operationId,
-    providerRequestId: response?.providerRequestId ?? null,
+    providerRequestId: response?.providerRequestId ?? failure?.providerRequestId ?? null,
     rawUsage: response?.rawUsage ?? null,
     inputTokens: usage?.inputTokens ?? null, outputTokens: usage?.outputTokens ?? null, cacheReadTokens: usage?.cacheReadTokens ?? null, cacheWriteTokens: usage?.cacheWriteTokens ?? null,
     latencyMs: response?.latencyMs ?? Date.now() - started,
     pricingVersion: cost.pricingVersion, costUsdMicro: cost.costUsdMicro, costStatus: cost.costStatus,
     stopReason: response?.stopReason ?? null,
     status, error: failure?.error ?? interpreted?.reason ?? null,
+    reservationExceeded: actualInputTokens !== null && actualInputTokens > reservation.reservedInputTokens,
     completedAt: now().toISOString()
   };
   await ctx.recorder.recordOutcome(outcome);
-  settle(ctx.budget, reservation.reservedUsdMicro, cost.costUsdMicro);
+  settle(ctx.budget, reservation, { costUsdMicro: cost.costUsdMicro, tokens: usage && actualInputTokens !== null ? actualInputTokens + usage.outputTokens : null });
 
-  if (failure) return { kind: failure.status === "transient_error" ? "transient_error" : "provider_error", error: failure.error, attemptId };
+  if (failure) return { kind: failure.status === "transient_error" ? "transient_error" : "provider_error", error: failure.error, attemptId, providerRequestId: failure.providerRequestId, retryAfterMs: failure.retryAfterMs };
   if (interpreted!.status === "ok") return { kind: "ok", json: interpreted!.json, response: response!, attemptId };
   return { kind: "content_error", reason: interpreted!.reason ?? "content error", response: response!, attemptId };
 }
@@ -1364,7 +1671,7 @@ Run: `pnpm --filter @leaplearn/generator test && pnpm --filter @leaplearn/genera
 
 ```bash
 git add packages/generator
-git commit -m "feat(generator): callModel with two-event attempt records, budget reservation, strict output schemas, fake and replay providers
+git commit -m "feat(generator): callModel with two-event attempt records, a four-limit budget ceiling, provider-compatible output schemas, fake and replay providers
 
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 ```
@@ -1373,7 +1680,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ### Task 5: The Anthropic adapter, with contract tests derived from the verified SDK facts
 
-The only file that imports `@anthropic-ai/sdk`. Contract tests inject a fake client and assert the exact request the adapter builds and the exact mapping of the response, so the facts from `.superpowers/sdd/phase-2-research-web.md` §1 are pinned in code: `system` and cached context blocks carry `cache_control: { type: "ephemeral" }`; structured output is requested with `output_config.format = { type: "json_schema", schema }`; `usage.input_tokens/output_tokens/cache_read_input_tokens/cache_creation_input_tokens` map to `GenerationUsage`; `_request_id` is the provider request id; `stop_reason` passes through; SDK retries are left at 2 (408, 409, 429, ≥500 and connection errors) and a timeout is set; `APIError` statuses classify as transient (408, 409, 429, ≥500) or permanent (400, 401, 403, 404, 422), `APIConnectionError` as transient.
+Answers review findings 1 (model-specific request settings) and 2 (SDK retries set to zero so the recorded dispatch loop owns every retry). The only file that imports `@anthropic-ai/sdk`. Contract tests inject a fake client and assert the exact request the adapter builds and the exact mapping of the response, so the verified facts are pinned in code: `system` and cached context blocks carry `cache_control: { type: "ephemeral" }`; structured output is requested with `output_config.format = { type: "json_schema", schema }`; the request profile from `models.ts` decides sampling and thinking (Sonnet 5: no sampling parameter, `thinking: { type: "disabled" }`; Haiku 4.5: `temperature: 0`, no `thinking`); the text block is selected by `type` because thinking blocks can precede it; `usage.input_tokens/output_tokens/cache_read_input_tokens/cache_creation_input_tokens` map to `GenerationUsage`; `_request_id` is the provider request id; `stop_reason` passes through; the client is called with `maxRetries: 0` and a timeout; `APIError` statuses classify as transient (408, 409, 429, ≥500) or permanent (400, 401, 403, 404, 422) and carry `requestID` and any `retry-after` header; `APIConnectionError` is transient.
 
 **Files:**
 - Create: `packages/generator/src/llm/anthropic-provider.ts`
@@ -1390,20 +1697,22 @@ import { describe, it, expect, vi } from "vitest";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { buildMessageParams, classifyProviderError, createAnthropicProvider, mapMessage } from "../src/llm/anthropic-provider.js";
-import { toStrictJsonSchema } from "../src/llm/schema.js";
-import { modelForRole } from "../src/llm/models.js";
+import { toProviderSchema } from "../src/llm/schema.js";
+import { MODEL_ROLES, modelForRole } from "../src/llm/models.js";
 import type { ModelRequest } from "../src/llm/types.js";
 
-const schema = toStrictJsonSchema(z.object({ ok: z.boolean() }));
-const request: ModelRequest = { purpose: "extract", model: modelForRole("extract"), system: "SYSTEM", cachedContext: "CONTEXT", user: "USER", maxOutputTokens: 321, outputSchema: schema, temperature: 0.2 };
+const schema = toProviderSchema(z.object({ ok: z.boolean() }));
+const haikuRequest: ModelRequest = { purpose: "extract", model: modelForRole("extract"), system: "SYSTEM", cachedContext: "CONTEXT", user: "USER", maxOutputTokens: 321, outputSchema: schema };
+const sonnetRequest: ModelRequest = { purpose: "produce", model: modelForRole("produce"), system: "SYSTEM", cachedContext: "CONTEXT", user: "USER", maxOutputTokens: 321, outputSchema: schema };
 
 describe("anthropic adapter contract", () => {
-  it("builds a Messages request with cached system and context blocks and native structured output", () => {
-    const params = buildMessageParams(request);
+  it("builds a Sonnet 5 request with no sampling parameter and thinking disabled", () => {
+    expect(MODEL_ROLES.produce).toBe("claude-sonnet-5");
+    const params = buildMessageParams(sonnetRequest);
     expect(params).toEqual({
-      model: modelForRole("extract"),
+      model: "claude-sonnet-5",
       max_tokens: 321,
-      temperature: 0.2,
+      thinking: { type: "disabled" },
       system: [{ type: "text", text: "SYSTEM", cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: [
         { type: "text", text: "CONTEXT", cache_control: { type: "ephemeral" } },
@@ -1411,20 +1720,32 @@ describe("anthropic adapter contract", () => {
       ] }],
       output_config: { format: { type: "json_schema", schema } }
     });
-    const noContext = buildMessageParams({ ...request, cachedContext: undefined, temperature: undefined });
-    expect((noContext["messages"] as Array<{ content: unknown[] }>)[0]!.content).toHaveLength(1);
-    expect(noContext).not.toHaveProperty("temperature");
+    for (const key of ["temperature", "top_p", "top_k"]) expect(params).not.toHaveProperty(key);
   });
 
-  it("maps usage, request id, stop reason and the JSON text block", () => {
+  it("builds a Haiku 4.5 request with temperature 0 and no thinking field", () => {
+    expect(MODEL_ROLES.extract).toBe("claude-haiku-4-5-20251001");
+    const params = buildMessageParams(haikuRequest);
+    expect(params["temperature"]).toBe(0);
+    expect(params).not.toHaveProperty("thinking");
+    expect(params).not.toHaveProperty("top_p");
+    const noContext = buildMessageParams({ ...haikuRequest, cachedContext: undefined });
+    expect((noContext["messages"] as Array<{ content: unknown[] }>)[0]!.content).toHaveLength(1);
+  });
+
+  it("refuses a model with no request profile instead of guessing settings", () => {
+    expect(() => buildMessageParams({ ...haikuRequest, model: "claude-unknown" as ModelRequest["model"] })).toThrow(/no request profile/);
+  });
+
+  it("maps usage, request id, stop reason and the JSON text block, selecting the text block by type", () => {
     const message = {
-      id: "msg_1", type: "message", role: "assistant", model: "claude-haiku-4-5-20251001", stop_reason: "end_turn", stop_sequence: null,
-      content: [{ type: "text", text: "{\"ok\":true}" }],
+      id: "msg_1", type: "message", role: "assistant", model: "claude-sonnet-5", stop_reason: "end_turn", stop_sequence: null,
+      content: [{ type: "thinking", thinking: "", signature: "sig" }, { type: "text", text: "{\"ok\":true}" }],
       usage: { input_tokens: 1200, output_tokens: 40, cache_read_input_tokens: 1000, cache_creation_input_tokens: 0 },
       _request_id: "req_abc"
     };
     expect(mapMessage(message, 87)).toEqual({
-      providerRequestId: "req_abc", model: "claude-haiku-4-5-20251001", stopReason: "end_turn", outputText: "{\"ok\":true}",
+      providerRequestId: "req_abc", model: "claude-sonnet-5", stopReason: "end_turn", outputText: "{\"ok\":true}",
       rawUsage: message.usage, usage: { inputTokens: 1200, outputTokens: 40, cacheReadTokens: 1000, cacheWriteTokens: 0 }, latencyMs: 87
     });
   });
@@ -1438,30 +1759,33 @@ describe("anthropic adapter contract", () => {
     expect(mapMessage({ model: "m", stop_reason: "end_turn", content: [{ type: "text", text: "{}" }] }, 1).usage).toBeNull();
   });
 
-  it("calls the client with maxRetries 2 and the configured timeout", async () => {
+  it("calls the client with maxRetries 0 and the configured timeout", async () => {
     const create = vi.fn().mockResolvedValue({ model: "m", stop_reason: "end_turn", content: [{ type: "text", text: "{\"ok\":true}" }], usage: { input_tokens: 1, output_tokens: 1 }, _request_id: "req_1" });
     const provider = createAnthropicProvider({ client: { messages: { create } }, timeoutMs: 120_000 });
-    const response = await provider.complete(request);
-    expect(create).toHaveBeenCalledWith(buildMessageParams(request), { maxRetries: 2, timeout: 120_000 });
+    const response = await provider.complete(sonnetRequest);
+    expect(create).toHaveBeenCalledWith(buildMessageParams(sonnetRequest), { maxRetries: 0, timeout: 120_000 });
     expect(response.providerRequestId).toBe("req_1");
     expect(provider.name).toBe("anthropic");
   });
 
-  it("classifies SDK errors by status", () => {
-    const apiError = (status: number) => new Anthropic.APIError(status, { error: { type: "x", message: "m" } }, "m", new Headers());
+  it("classifies SDK errors by status and carries the request id and retry-after", () => {
+    const apiError = (status: number, headers = new Headers()) => new Anthropic.APIError(status, { error: { type: "x", message: "m" } }, "m", headers);
     expect(classifyProviderError(apiError(429)).kind).toBe("transient");
     expect(classifyProviderError(apiError(529)).kind).toBe("transient");
     expect(classifyProviderError(apiError(408)).kind).toBe("transient");
     expect(classifyProviderError(apiError(400)).kind).toBe("permanent");
     expect(classifyProviderError(apiError(401)).kind).toBe("permanent");
-    expect(classifyProviderError(new Anthropic.APIConnectionError({ message: "socket hang up" })).kind).toBe("transient");
+    const limited = classifyProviderError(apiError(429, new Headers({ "retry-after": "7", "request-id": "req_429" })));
+    expect(limited.retryAfterMs).toBe(7000);
+    expect(limited.requestId).toBe("req_429");
+    expect(classifyProviderError(new Anthropic.APIConnectionError({ message: "socket hang up" }))).toMatchObject({ kind: "transient", requestId: null, retryAfterMs: null });
     expect(classifyProviderError(new Error("weird")).kind).toBe("permanent");
   });
 
   it("wraps client failures as ProviderError so callModel can classify them", async () => {
-    const create = vi.fn().mockRejectedValue(new Anthropic.APIError(500, { error: { type: "api_error", message: "boom" } }, "boom", new Headers()));
+    const create = vi.fn().mockRejectedValue(new Anthropic.APIError(500, { error: { type: "api_error", message: "boom" } }, "boom", new Headers({ "request-id": "req_500" })));
     const provider = createAnthropicProvider({ client: { messages: { create } } });
-    await expect(provider.complete(request)).rejects.toMatchObject({ name: "ProviderError", kind: "transient", status: 500 });
+    await expect(provider.complete(sonnetRequest)).rejects.toMatchObject({ name: "ProviderError", kind: "transient", status: 500, requestId: "req_500" });
   });
 
   it("requires an api key when no client is injected", () => {
@@ -1471,7 +1795,7 @@ describe("anthropic adapter contract", () => {
   });
 });
 ```
-If `Anthropic.APIError`'s constructor signature in 0.127 differs from `(status, error, message, headers)`, construct the errors the way the installed `index.d.ts` declares and keep the assertions; the classification rule is the requirement.
+`Anthropic.APIError`'s constructor in 0.127 is `(status, error, message, headers, type?)` and the instance exposes `requestID` (verified against the published `core/error.d.ts`); if the SDK derives `requestID` from the headers differently from the test's `request-id` header, construct the error the way `index.d.ts` declares and keep the assertions — the classification and the carried ids are the requirement.
 
 - [ ] **Step 2: Run to see them fail**, then implement.
 
@@ -1479,6 +1803,7 @@ If `Anthropic.APIError`'s constructor signature in 0.127 differs from `(status, 
 ```ts
 import Anthropic from "@anthropic-ai/sdk";
 import type { GenerationUsage } from "@leaplearn/shared";
+import { requestProfile } from "./models.js";
 import { ProviderError, type ModelProvider } from "./provider.js";
 import type { ModelRequest, ModelResponse, StopReason } from "./types.js";
 
@@ -1490,6 +1815,7 @@ const TRANSIENT_STATUSES = new Set([408, 409, 429]);
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
 export function buildMessageParams(request: ModelRequest): Record<string, unknown> {
+  const profile = requestProfile(request.model);
   const content: Array<Record<string, unknown>> = [];
   if (request.cachedContext !== undefined) content.push({ type: "text", text: request.cachedContext, cache_control: { type: "ephemeral" } });
   content.push({ type: "text", text: request.user });
@@ -1500,11 +1826,12 @@ export function buildMessageParams(request: ModelRequest): Record<string, unknow
     messages: [{ role: "user", content }],
     output_config: { format: { type: "json_schema", schema: request.outputSchema } }
   };
-  if (request.temperature !== undefined) params["temperature"] = request.temperature;
+  if (profile.temperature !== null) params["temperature"] = profile.temperature;
+  if (profile.thinking !== null) params["thinking"] = profile.thinking;
   return params;
 }
 
-interface RawUsage { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number; [k: string]: unknown; }
+interface RawUsage { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null; [k: string]: unknown; }
 interface RawMessage { model?: string; stop_reason?: string | null; content?: Array<{ type: string; text?: string }>; usage?: RawUsage; _request_id?: string | null; }
 
 function toUsage(raw: RawUsage | undefined): GenerationUsage | null {
@@ -1512,6 +1839,7 @@ function toUsage(raw: RawUsage | undefined): GenerationUsage | null {
   return { inputTokens: raw.input_tokens, outputTokens: raw.output_tokens, cacheReadTokens: raw.cache_read_input_tokens ?? 0, cacheWriteTokens: raw.cache_creation_input_tokens ?? 0 };
 }
 
+/** Content blocks are selected by type: with thinking on, thinking blocks precede the text block. */
 export function mapMessage(message: unknown, latencyMs: number): ModelResponse {
   const m = message as RawMessage;
   const text = m.content?.find((c) => c.type === "text" && typeof c.text === "string")?.text;
@@ -1526,25 +1854,41 @@ export function mapMessage(message: unknown, latencyMs: number): ModelResponse {
   };
 }
 
+function headerValue(headers: unknown, name: string): string | null {
+  if (headers instanceof Headers) return headers.get(name);
+  if (headers && typeof headers === "object") { const v = (headers as Record<string, unknown>)[name]; return typeof v === "string" ? v : null; }
+  return null;
+}
+
+function retryAfterMs(headers: unknown): number | null {
+  const raw = headerValue(headers, "retry-after");
+  if (raw === null) return null;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) return Math.max(0, Math.round(seconds * 1000));
+  const at = Date.parse(raw);
+  return Number.isNaN(at) ? null : Math.max(0, at - Date.now());
+}
+
 export function classifyProviderError(err: unknown): ProviderError {
   if (err instanceof Anthropic.APIConnectionError) return new ProviderError(err.message, "transient");
   if (err instanceof Anthropic.APIError) {
     const status = typeof err.status === "number" ? err.status : undefined;
     const transient = status !== undefined && (TRANSIENT_STATUSES.has(status) || status >= 500);
-    return new ProviderError(err.message, transient ? "transient" : "permanent", status);
+    const requestId = typeof err.requestID === "string" ? err.requestID : headerValue(err.headers, "request-id");
+    return new ProviderError(err.message, transient ? "transient" : "permanent", status, { requestId, retryAfterMs: retryAfterMs(err.headers) });
   }
   return new ProviderError(err instanceof Error ? err.message : String(err), "permanent");
 }
 
-/** The only place the Anthropic SDK is called. SDK retries stay at their default of 2 (408/409/429/5xx/connection errors); callModel never retries. */
+/** The only place the Anthropic SDK is called. SDK retries are off (maxRetries 0): the stage runner retries, and every retry is its own recorded attempt. */
 export function createAnthropicProvider(options: { apiKey?: string; client?: MessagesClient; timeoutMs?: number } = {}): ModelProvider {
   let client = options.client;
   if (!client) {
     const apiKey = options.apiKey ?? process.env["ANTHROPIC_API_KEY"];
     if (!apiKey) throw new ProviderError("ANTHROPIC_API_KEY is not set and no api key was injected", "permanent");
-    client = new Anthropic({ apiKey }) as unknown as MessagesClient;
+    client = new Anthropic({ apiKey, maxRetries: 0 }) as unknown as MessagesClient;
   }
-  const requestOptions = { maxRetries: 2, timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS };
+  const requestOptions = { maxRetries: 0, timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS };
   return {
     name: "anthropic",
     async complete(request) {
@@ -1564,11 +1908,11 @@ Append `export * from "./llm/anthropic-provider.js";` to `src/index.ts`.
 
 - [ ] **Step 3: Verify and commit**
 
-Run: `pnpm --filter @leaplearn/generator test && pnpm --filter @leaplearn/generator typecheck && pnpm --filter @leaplearn/generator lint; echo "exit=$?"`. Expected `exit=0`. Also confirm the boundary: `grep -rn "@anthropic-ai/sdk" packages/generator/src | grep -v anthropic-provider.ts` prints nothing, and `grep -rn "process\.env" packages/generator/src` prints only the one line in `anthropic-provider.ts`.
+Run: `pnpm --filter @leaplearn/generator test && pnpm --filter @leaplearn/generator typecheck && pnpm --filter @leaplearn/generator lint; echo "exit=$?"`. Expected `exit=0`. Also confirm the boundaries: `grep -rn "@anthropic-ai/sdk" packages/generator/src | grep -v anthropic-provider.ts` prints nothing; `grep -rn "process\.env" packages/generator/src` prints only the one line in `anthropic-provider.ts`; `grep -rn "temperature\|top_p\|top_k\|thinking" packages/generator/src | grep -v "llm/models.ts\|llm/anthropic-provider.ts"` prints nothing.
 
 ```bash
 git add packages/generator
-git commit -m "feat(generator): Anthropic adapter with contract tests for request shape, usage mapping and error classification
+git commit -m "feat(generator): Anthropic adapter with per-model request profiles, no SDK retries, and contract tests for request shape, usage mapping and error classification
 
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 ```
@@ -1577,16 +1921,16 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ### Task 6: SSRF-guarded fetch, wired into the only network fetch that exists
 
-The owner's rule: SSRF protection is implemented and tested before any server-side URL fetching. Phase 2 has no server, but `apps/cli`'s `networkImageResolver` fetches arbitrary URLs behind `--allow-network`, so it switches to `safeFetch` now, and the phase-5 web ingestion and preview origin will reuse the same guard.
+Answers review finding 6. The owner's rule: SSRF protection is implemented and tested before any server-side URL fetching, and it is not called a reusable guard while its essential protection is deferred. So this task closes both gaps the review found: addresses are classified after IPv6 normalisation (Node turns `http://[::ffff:127.0.0.1]` into `[::ffff:7f00:1]`; IPv4-compatible, NAT64 and 6to4 embeddings and IPv6 multicast are covered too), and the connection is **pinned** to the validated address through an undici `Agent` whose `connect.lookup` never resolves the name again, which closes the rebinding gap. DNS resolution counts against one total deadline. Phase 2 has no server, but `apps/cli`'s `networkImageResolver` fetches arbitrary URLs behind `--allow-network`, so it switches to `safeFetch` now, and the phase-5 web ingestion and preview origin reuse the same guard.
 
 **Files:**
 - Create: `packages/generator/src/net/safe-fetch.ts`
-- Modify: `apps/cli/src/image-resolver.ts`, `apps/cli/package.json` (add `@leaplearn/generator` dependency)
+- Modify: `packages/generator/package.json` (add `undici` `^6.21.0`), `apps/cli/src/image-resolver.ts`, `apps/cli/package.json` (add `@leaplearn/generator` dependency)
 - Test: `packages/generator/test/safe-fetch.test.ts`, `apps/cli/test/image-resolver.test.ts` (adjust)
 
 **Interfaces:**
-- Produces: `safeFetch(url: string, options?: SafeFetchOptions): Promise<SafeFetchResult>` with `SafeFetchOptions = { maxRedirects?: number (5); maxBytes?: number (10 MiB); timeoutMs?: number (15 000); allowedContentTypes?: string[]; lookup?: (hostname) => Promise<string[]>; unsafeAllowPrivateNetworks?: boolean (false; test-only) }`, `SafeFetchResult = { status: number; contentType: string | null; body: Buffer; finalUrl: string }`; `isBlockedAddress(ip: string): boolean` (IPv4: `0.0.0.0/8`, `10/8`, `100.64/10`, `127/8`, `169.254/16`, `172.16/12`, `192.168/16`, `224/4`, `240/4`; IPv6: `::`, `::1`, `fc00::/7`, `fe80::/10`, `::ffff:` mapped IPv4 checked as IPv4); `SafeFetchError` with `reason: "scheme" | "blocked_address" | "dns" | "too_many_redirects" | "redirect_target" | "timeout" | "too_large" | "content_type" | "http"`.
-- Rules: only `http:` and `https:`; the hostname is resolved with `dns.promises.lookup(host, { all: true })` and every address must pass `isBlockedAddress` (an IP-literal host is checked directly); `redirect: "manual"`; each `Location` is resolved against the current URL, re-validated (scheme, address) and counted; the body is read incrementally and aborted past `maxBytes`; `AbortSignal.timeout(timeoutMs)` bounds each hop. Residual risk recorded in a comment: the connection made by `fetch` resolves the name again, so a DNS answer that changes between the check and the connect (rebinding) is not caught; phase 5 pins the connection to the checked address with an undici `Agent` when the server exists.
+- Produces: `safeFetch(url: string, options?: SafeFetchOptions): Promise<SafeFetchResult>` with `SafeFetchOptions = { maxRedirects?: number (5); maxBytes?: number (10 MiB); timeoutMs?: number (15 000, one total deadline covering DNS, every hop and the body); allowedContentTypes?: string[]; lookup?: (hostname) => Promise<string[]>; unsafeAllowPrivateNetworks?: boolean (false; test-only) }`, `SafeFetchResult = { status: number; contentType: string | null; body: Buffer; finalUrl: string; connectedAddress: string }`; `parseIPv6(ip): number[] | null` (eight 16-bit groups; accepts an embedded dotted IPv4 tail and surrounding brackets); `embeddedIPv4(groups): string | null` (mapped `::ffff:0:0/96`, compatible `::/96`, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`); `isBlockedAddress(ip: string): boolean` (IPv4: `0.0.0.0/8`, `10/8`, `100.64/10`, `127/8`, `169.254/16`, `172.16/12`, `192.168/16`, `224/4`, `240/4`; IPv6: unspecified, loopback, `fc00::/7`, `fe80::/10`, `ff00::/8`, any embedded IPv4 checked as IPv4; anything unparsable is blocked); `SafeFetchError` with `reason: "scheme" | "blocked_address" | "dns" | "too_many_redirects" | "redirect_target" | "timeout" | "too_large" | "content_type" | "http"`.
+- Rules: only `http:` and `https:`; the hostname is resolved by the injected `lookup` or `dns.promises.lookup(host, { all: true })` within the deadline; every address must pass (an IP-literal host is checked directly; the metadata address is blocked even under `unsafeAllowPrivateNetworks`); the request is sent through an undici `Agent` whose `connect.lookup` returns the first validated address, so the socket can only reach that address; `redirect: "manual"`; each `Location` is resolved against the current URL, re-validated and counted; the body is read incrementally and aborted past `maxBytes`; the agent is closed after the hop.
 
 - [ ] **Step 1: Failing tests**
 
@@ -1594,32 +1938,54 @@ The owner's rule: SSRF protection is implemented and tested before any server-si
 ```ts
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
-import { isBlockedAddress, safeFetch, SafeFetchError } from "../src/net/safe-fetch.js";
+import { embeddedIPv4, isBlockedAddress, parseIPv6, safeFetch, SafeFetchError } from "../src/net/safe-fetch.js";
 
-let server: Server; let base: string; const timers: NodeJS.Timeout[] = [];
+let server: Server; let base: string; let port: number; const timers: NodeJS.Timeout[] = [];
 beforeAll(async () => {
   server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://x");
     if (url.pathname === "/ok") { res.writeHead(200, { "content-type": "image/jpeg" }); res.end(Buffer.alloc(1024, 1)); return; }
+    if (url.pathname === "/host") { res.writeHead(200, { "content-type": "text/plain" }); res.end(req.headers.host ?? ""); return; }
     if (url.pathname === "/big") { res.writeHead(200, { "content-type": "application/octet-stream" }); res.end(Buffer.alloc(200_000, 2)); return; }
     if (url.pathname === "/hop") { res.writeHead(302, { location: "/ok" }); res.end(); return; }
     if (url.pathname === "/loop") { res.writeHead(302, { location: "/loop" }); res.end(); return; }
     if (url.pathname === "/metadata") { res.writeHead(302, { location: "http://169.254.169.254/latest/meta-data/" }); res.end(); return; }
+    if (url.pathname === "/mapped") { res.writeHead(302, { location: "http://[::ffff:127.0.0.1]/ok" }); res.end(); return; }
     if (url.pathname === "/slow") { timers.push(setTimeout(() => { res.writeHead(200); res.end("late"); }, 2000)); return; }
     if (url.pathname === "/html") { res.writeHead(200, { "content-type": "text/html" }); res.end("<p>"); return; }
     res.writeHead(404); res.end();
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
-  base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  port = (server.address() as { port: number }).port;
+  base = `http://127.0.0.1:${port}`;
 });
 afterAll(() => { for (const t of timers) clearTimeout(t); server.close(); });
 
-describe("isBlockedAddress", () => {
-  it("blocks private, loopback, link-local, metadata, multicast and mapped addresses", () => {
-    for (const ip of ["127.0.0.1", "10.1.2.3", "172.16.0.9", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "::1", "::", "fc00::1", "fd12::1", "fe80::1", "::ffff:10.0.0.1", "::ffff:127.0.0.1"]) expect(isBlockedAddress(ip), ip).toBe(true);
+describe("address classification", () => {
+  it("parses IPv6 in every notation Node may hand back", () => {
+    expect(parseIPv6("::1")).toEqual([0, 0, 0, 0, 0, 0, 0, 1]);
+    expect(parseIPv6("[::ffff:7f00:1]")).toEqual([0, 0, 0, 0, 0, 0xffff, 0x7f00, 1]);
+    expect(parseIPv6("::ffff:127.0.0.1")).toEqual([0, 0, 0, 0, 0, 0xffff, 0x7f00, 1]);
+    expect(parseIPv6("2606:4700::1111")).toEqual([0x2606, 0x4700, 0, 0, 0, 0, 0, 0x1111]);
+    expect(parseIPv6("1:2:3:4:5:6:7:8:9")).toBeNull();
+    expect(parseIPv6("::g")).toBeNull();
   });
-  it("allows public addresses", () => {
-    for (const ip of ["8.8.8.8", "172.32.0.1", "1.1.1.1", "2606:4700::1111", "203.0.113.5"]) expect(isBlockedAddress(ip), ip).toBe(false);
+  it("extracts embedded IPv4 from mapped, compatible, NAT64 and 6to4 forms", () => {
+    expect(embeddedIPv4(parseIPv6("::ffff:7f00:1")!)).toBe("127.0.0.1");
+    expect(embeddedIPv4(parseIPv6("::a9fe:a9fe")!)).toBe("169.254.169.254");
+    expect(embeddedIPv4(parseIPv6("64:ff9b::7f00:1")!)).toBe("127.0.0.1");
+    expect(embeddedIPv4(parseIPv6("2002:c0a8:101::")!)).toBe("192.168.1.1");
+    expect(embeddedIPv4(parseIPv6("2606:4700::1111")!)).toBeNull();
+  });
+  it("blocks private, loopback, link-local, metadata, multicast, unspecified and every embedded form", () => {
+    const blocked = ["127.0.0.1", "10.1.2.3", "172.16.0.9", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255",
+      "::1", "::", "fc00::1", "fd12::1", "fe80::1", "ff02::1", "ff0e::1",
+      "::ffff:10.0.0.1", "::ffff:127.0.0.1", "::ffff:7f00:1", "[::ffff:7f00:1]", "::ffff:a9fe:a9fe", "::7f00:1", "64:ff9b::7f00:1", "64:ff9b::a9fe:a9fe", "2002:7f00:1::", "2002:a9fe:a9fe::",
+      "not-an-ip", "1.2.3", "::ffff:999.1.1.1"];
+    for (const ip of blocked) expect(isBlockedAddress(ip), ip).toBe(true);
+  });
+  it("allows public addresses in both families", () => {
+    for (const ip of ["8.8.8.8", "172.32.0.1", "1.1.1.1", "2606:4700::1111", "203.0.113.5", "::ffff:8.8.8.8", "64:ff9b::808:808", "2002:808:808::"]) expect(isBlockedAddress(ip), ip).toBe(false);
   });
 });
 
@@ -1629,36 +1995,50 @@ describe("safeFetch", () => {
     await expect(safeFetch("file:///etc/passwd")).rejects.toMatchObject({ reason: "scheme" });
     await expect(safeFetch(`${base}/ok`)).rejects.toMatchObject({ reason: "blocked_address" });
     await expect(safeFetch("http://localhost/ok")).rejects.toMatchObject({ reason: "blocked_address" });
+    await expect(safeFetch(`http://[::ffff:127.0.0.1]:${port}/ok`)).rejects.toMatchObject({ reason: "blocked_address" });
   });
-  it("fetches, follows a relative redirect, and reports the final url (private networks allowed for the test server only)", async () => {
+  it("fetches, follows a relative redirect, and reports the final url and connected address (private networks allowed for the test server only)", async () => {
     const r = await safeFetch(`${base}/hop`, { ...allow, allowedContentTypes: ["image/jpeg"] });
     expect(r.status).toBe(200);
     expect(r.body.length).toBe(1024);
     expect(r.finalUrl).toBe(`${base}/ok`);
+    expect(r.connectedAddress).toBe("127.0.0.1");
   });
-  it("re-validates every redirect target", async () => {
+  it("pins the connection to the validated address: a name only the injected lookup can resolve is reached, and the Host header keeps the name", async () => {
+    let lookups = 0;
+    const r = await safeFetch(`http://pinned.test:${port}/host`, { ...allow, lookup: async (hostname) => { lookups += 1; expect(hostname).toBe("pinned.test"); return ["127.0.0.1"]; } });
+    expect(r.body.toString()).toBe(`pinned.test:${port}`);
+    expect(r.connectedAddress).toBe("127.0.0.1");
+    expect(lookups).toBe(1);
+  });
+  it("re-validates every redirect target, after normalisation", async () => {
     await expect(safeFetch(`${base}/metadata`, allow)).rejects.toMatchObject({ reason: "redirect_target" });
+    await expect(safeFetch(`${base}/mapped`)).rejects.toMatchObject({ reason: "blocked_address" });
     await expect(safeFetch(`${base}/loop`, { ...allow, maxRedirects: 3 })).rejects.toMatchObject({ reason: "too_many_redirects" });
   });
-  it("caps the body size, the time, and the content type", async () => {
+  it("caps the body size, the total time (DNS included), and the content type", async () => {
     await expect(safeFetch(`${base}/big`, { ...allow, maxBytes: 100_000 })).rejects.toMatchObject({ reason: "too_large" });
     await expect(safeFetch(`${base}/slow`, { ...allow, timeoutMs: 200 })).rejects.toMatchObject({ reason: "timeout" });
+    await expect(safeFetch(`http://slow-dns.test:${port}/ok`, { ...allow, timeoutMs: 200, lookup: () => new Promise((resolve) => timers.push(setTimeout(() => resolve(["127.0.0.1"]), 2000))) })).rejects.toMatchObject({ reason: "timeout" });
     await expect(safeFetch(`${base}/html`, { ...allow, allowedContentTypes: ["image/jpeg", "image/png"] })).rejects.toMatchObject({ reason: "content_type" });
     await expect(safeFetch(`${base}/missing`, allow)).rejects.toMatchObject({ reason: "http", status: 404 });
   });
-  it("uses the injected lookup and blocks a public name that resolves privately", async () => {
+  it("blocks a public name that resolves privately, and a name with no address", async () => {
     await expect(safeFetch("http://example.test/ok", { lookup: async () => ["10.0.0.5"] })).rejects.toMatchObject({ reason: "blocked_address" });
+    await expect(safeFetch("http://example.test/ok", { lookup: async () => ["8.8.8.8", "::ffff:7f00:1"] })).rejects.toMatchObject({ reason: "blocked_address" });
+    await expect(safeFetch("http://example.test/ok", { lookup: async () => [] })).rejects.toMatchObject({ reason: "dns" });
   });
 });
 ```
-The metadata redirect test relies on `169.254.169.254` being blocked even when `unsafeAllowPrivateNetworks` is true — the metadata address is always blocked (a separate rule), which is also the behaviour the code below implements.
+`/mapped` proves normalisation: the redirect target `http://[::ffff:127.0.0.1]/ok` becomes `[::ffff:7f00:1]` inside `URL`, and the guard must still see loopback (the earlier dotted-only regex did not). The metadata redirect relies on `169.254.169.254` being blocked even when `unsafeAllowPrivateNetworks` is true (a separate rule, implemented below).
 
 - [ ] **Step 2: Run to see them fail**, then implement.
 
 `packages/generator/src/net/safe-fetch.ts`:
 ```ts
 import { promises as dns } from "node:dns";
-import { isIP } from "node:net";
+import { isIPv4 } from "node:net";
+import { Agent, fetch as undiciFetch, type Dispatcher } from "undici";
 
 export type SafeFetchReason = "scheme" | "blocked_address" | "dns" | "too_many_redirects" | "redirect_target" | "timeout" | "too_large" | "content_type" | "http";
 
@@ -1669,13 +2049,14 @@ export class SafeFetchError extends Error {
 export interface SafeFetchOptions {
   maxRedirects?: number;
   maxBytes?: number;
+  /** One total deadline: DNS, every hop and the body read all count against it. */
   timeoutMs?: number;
   allowedContentTypes?: string[];
   lookup?: (hostname: string) => Promise<string[]>;
   /** Test-only escape hatch (a loopback test server); never set it in application code. The metadata address stays blocked. */
   unsafeAllowPrivateNetworks?: boolean;
 }
-export interface SafeFetchResult { status: number; contentType: string | null; body: Buffer; finalUrl: string; }
+export interface SafeFetchResult { status: number; contentType: string | null; body: Buffer; finalUrl: string; connectedAddress: string; }
 
 const METADATA_V4 = "169.254.169.254";
 
@@ -1688,56 +2069,130 @@ function inCidr4(ip: string, base: string, bits: number): boolean {
 }
 const BLOCKED_V4: Array<[string, number]> = [["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.168.0.0", 16], ["224.0.0.0", 4], ["240.0.0.0", 4]];
 
-function expandV6(ip: string): number[] | null {
-  const [head, tail] = ip.split("::");
-  const parse = (s: string | undefined): number[] => (s ? s.split(":").filter(Boolean).map((h) => parseInt(h, 16)) : []);
-  const h = parse(head); const t = parse(tail);
+/** Eight 16-bit groups, or null when the text is not an IPv6 address. Brackets and an embedded dotted IPv4 tail are accepted. */
+export function parseIPv6(input: string): number[] | null {
+  let ip = input.trim();
+  if (ip.startsWith("[") && ip.endsWith("]")) ip = ip.slice(1, -1);
+  const zone = ip.indexOf("%");
+  if (zone >= 0) ip = ip.slice(0, zone);
+  if (ip.split("::").length > 2) return null;
+  const lastColon = ip.lastIndexOf(":");
+  const tail = ip.slice(lastColon + 1);
+  if (tail.includes(".")) {
+    if (!isIPv4(tail)) return null;
+    const [a, b, c, d] = tail.split(".").map(Number) as [number, number, number, number];
+    ip = `${ip.slice(0, lastColon)}:${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const [head = "", rest] = ip.split("::");
+  const parse = (s: string): number[] | null => {
+    if (s === "") return [];
+    const groups = s.split(":").map((h) => (/^[0-9a-f]{1,4}$/i.test(h) ? parseInt(h, 16) : NaN));
+    return groups.some(Number.isNaN) ? null : groups;
+  };
+  const h = parse(head); const t = rest === undefined ? [] : parse(rest);
+  if (h === null || t === null) return null;
+  if (rest === undefined) return h.length === 8 ? h : null;
   const zeros = 8 - h.length - t.length;
-  return zeros < 0 ? null : [...h, ...Array<number>(zeros).fill(0), ...t];
+  return zeros < 1 ? null : [...h, ...Array<number>(zeros).fill(0), ...t];
+}
+
+function dotted(hi: number, lo: number): string {
+  return `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
+}
+
+/** The IPv4 address an IPv6 address carries, if any: mapped ::ffff:0:0/96, compatible ::/96, NAT64 64:ff9b::/96, 6to4 2002::/16. */
+export function embeddedIPv4(groups: number[]): string | null {
+  const [g0, g1, g2, g3, g4, g5, g6, g7] = groups as [number, number, number, number, number, number, number, number];
+  const leadingZero = g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0;
+  if (leadingZero && g5 === 0xffff) return dotted(g6, g7);
+  if (leadingZero && g5 === 0 && (g6 !== 0 || g7 > 1)) return dotted(g6, g7);
+  if (g0 === 0x64 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) return dotted(g6, g7);
+  if (g0 === 0x2002) return dotted(g1, g2);
+  return null;
+}
+
+function isBlockedV4(ip: string): boolean {
+  return !isIPv4(ip) || BLOCKED_V4.some(([base, bits]) => inCidr4(ip, base, bits));
 }
 
 export function isBlockedAddress(ip: string): boolean {
-  const family = isIP(ip);
-  if (family === 4) return BLOCKED_V4.some(([base, bits]) => inCidr4(ip, base, bits));
-  if (family !== 6) return true;
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip);
-  if (mapped) return isBlockedAddress(mapped[1]!);
-  const groups = expandV6(ip);
+  if (isIPv4(ip)) return isBlockedV4(ip);
+  const groups = parseIPv6(ip);
   if (!groups) return true;
+  const embedded = embeddedIPv4(groups);
+  if (embedded !== null) return isBlockedV4(embedded);
   const first = groups[0]!;
-  if (groups.every((g) => g === 0)) return true;                         // ::
-  if (groups.slice(0, 7).every((g) => g === 0) && groups[7] === 1) return true; // ::1
-  if ((first & 0xfe00) === 0xfc00) return true;                          // fc00::/7
-  if ((first & 0xffc0) === 0xfe80) return true;                          // fe80::/10
+  if (groups.every((g) => g === 0)) return true;                                   // ::
+  if (groups.slice(0, 7).every((g) => g === 0) && groups[7] === 1) return true;   // ::1
+  if ((first & 0xfe00) === 0xfc00) return true;                                    // fc00::/7
+  if ((first & 0xffc0) === 0xfe80) return true;                                    // fe80::/10
+  if ((first & 0xff00) === 0xff00) return true;                                    // ff00::/8 multicast
   return false;
 }
 
-async function assertAllowedHost(url: URL, options: SafeFetchOptions, reason: "blocked_address" | "redirect_target"): Promise<void> {
+function isMetadata(ip: string): boolean {
+  if (ip === METADATA_V4) return true;
+  const groups = parseIPv6(ip);
+  return groups !== null && embeddedIPv4(groups) === METADATA_V4;
+}
+
+function familyOf(ip: string): 4 | 6 {
+  return isIPv4(ip) ? 4 : 6;
+}
+
+class Deadline {
+  private readonly endsAt: number;
+  constructor(timeoutMs: number) { this.endsAt = Date.now() + timeoutMs; }
+  remaining(): number { return this.endsAt - Date.now(); }
+  signal(): AbortSignal { return AbortSignal.timeout(Math.max(1, this.remaining())); }
+  async race<T>(work: Promise<T>, what: string): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new SafeFetchError(`timed out while ${what}`, "timeout")), Math.max(1, this.remaining())); });
+    try { return await Promise.race([work, timeout]); } finally { clearTimeout(timer); }
+  }
+}
+
+/** Resolves and validates every address for the URL's host; returns the address the connection will be pinned to. */
+async function resolveAllowed(url: URL, options: SafeFetchOptions, deadline: Deadline, reason: "blocked_address" | "redirect_target"): Promise<string> {
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new SafeFetchError(`unsupported scheme ${url.protocol}`, reason === "redirect_target" ? "redirect_target" : "scheme");
   const host = url.hostname.replace(/^\[|\]$/g, "");
   let addresses: string[];
-  if (isIP(host)) addresses = [host];
+  if (isIPv4(host) || parseIPv6(host)) addresses = [host];
   else {
     try {
-      addresses = options.lookup ? await options.lookup(host) : (await dns.lookup(host, { all: true })).map((a) => a.address);
+      const resolved = options.lookup ? options.lookup(host) : dns.lookup(host, { all: true }).then((rows) => rows.map((r) => r.address));
+      addresses = await deadline.race(resolved, `resolving ${host}`);
     } catch (err) {
+      if (err instanceof SafeFetchError) throw err;
       throw new SafeFetchError(`cannot resolve ${host}: ${err instanceof Error ? err.message : String(err)}`, "dns");
     }
     if (addresses.length === 0) throw new SafeFetchError(`no addresses for ${host}`, "dns");
   }
   for (const a of addresses) {
-    if (a === METADATA_V4 || a === `::ffff:${METADATA_V4}`) throw new SafeFetchError(`${host} resolves to the metadata address`, reason);
+    if (isMetadata(a)) throw new SafeFetchError(`${host} resolves to the metadata address`, reason);
     if (!options.unsafeAllowPrivateNetworks && isBlockedAddress(a)) throw new SafeFetchError(`${host} resolves to a blocked address ${a}`, reason);
+    if (options.unsafeAllowPrivateNetworks && !isIPv4(a) && !parseIPv6(a)) throw new SafeFetchError(`${host} resolves to an unparsable address ${a}`, reason);
   }
+  return addresses[0]!;
 }
 
-async function readCapped(res: Response, maxBytes: number, signal: AbortSignal): Promise<Buffer> {
+/** An agent that can only ever connect to `address`: the name is never resolved again after validation. */
+function pinnedAgent(address: string): Dispatcher {
+  const family = familyOf(address);
+  return new Agent({
+    connect: {
+      lookup: (_hostname: string, _options: unknown, callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void) => { callback(null, address, family); }
+    }
+  });
+}
+
+async function readCapped(res: Response, maxBytes: number, deadline: Deadline): Promise<Buffer> {
   const chunks: Buffer[] = []; let total = 0;
   const reader = res.body?.getReader();
   if (!reader) return Buffer.alloc(0);
   for (;;) {
-    if (signal.aborted) throw new SafeFetchError("timed out while reading the body", "timeout");
-    const { done, value } = await reader.read();
+    if (deadline.remaining() <= 0) { await reader.cancel(); throw new SafeFetchError("timed out while reading the body", "timeout"); }
+    const { done, value } = await deadline.race(reader.read(), "reading the body");
     if (done) break;
     total += value.byteLength;
     if (total > maxBytes) { await reader.cancel(); throw new SafeFetchError(`body exceeds ${maxBytes} bytes`, "too_large"); }
@@ -1748,52 +2203,56 @@ async function readCapped(res: Response, maxBytes: number, signal: AbortSignal):
 
 /**
  * Fetches a URL for application code with SSRF controls: http(s) only; every hostname resolved and
- * checked against private, loopback, link-local, metadata and multicast ranges before connecting;
- * redirects followed manually and re-checked; per-hop timeout; capped body. Residual risk: the
- * connection resolves the name again, so an answer that changes between check and connect is not
- * caught here; the phase-5 server pins the connection to the checked address.
+ * every address classified (after IPv6 normalisation) against private, loopback, link-local, metadata
+ * and multicast ranges; the connection pinned to the validated address so the name is never resolved
+ * again; redirects followed manually and re-checked; one total deadline; capped body.
  */
 export async function safeFetch(input: string, options: SafeFetchOptions = {}): Promise<SafeFetchResult> {
   const maxRedirects = options.maxRedirects ?? 5;
   const maxBytes = options.maxBytes ?? 10 * 1024 * 1024;
-  const timeoutMs = options.timeoutMs ?? 15_000;
+  const deadline = new Deadline(options.timeoutMs ?? 15_000);
   let url: URL;
   try { url = new URL(input); } catch { throw new SafeFetchError(`invalid url ${input}`, "scheme"); }
-  await assertAllowedHost(url, options, "blocked_address");
+  let address = await resolveAllowed(url, options, deadline, "blocked_address");
 
   for (let hop = 0; ; hop++) {
-    const signal = AbortSignal.timeout(timeoutMs);
+    const agent = pinnedAgent(address);
     let res: Response;
     try {
-      res = await fetch(url, { redirect: "manual", signal, headers: { accept: options.allowedContentTypes?.join(", ") ?? "*/*" } });
+      res = (await undiciFetch(url.href, { redirect: "manual", signal: deadline.signal(), dispatcher: agent, headers: { accept: options.allowedContentTypes?.join(", ") ?? "*/*" } })) as unknown as Response;
     } catch (err) {
-      if (signal.aborted) throw new SafeFetchError(`timed out after ${timeoutMs} ms fetching ${url.href}`, "timeout");
+      await agent.close();
+      if (deadline.remaining() <= 0 || (err instanceof Error && err.name === "TimeoutError")) throw new SafeFetchError(`timed out fetching ${url.href}`, "timeout");
       throw new SafeFetchError(`fetch failed for ${url.href}: ${err instanceof Error ? err.message : String(err)}`, "http");
     }
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get("location");
-      await res.body?.cancel();
-      if (!location) throw new SafeFetchError(`redirect without location from ${url.href}`, "http", res.status);
-      if (hop + 1 > maxRedirects) throw new SafeFetchError(`more than ${maxRedirects} redirects from ${input}`, "too_many_redirects");
-      const next = new URL(location, url);
-      await assertAllowedHost(next, options, "redirect_target");
-      url = next;
-      continue;
+    try {
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get("location");
+        await res.body?.cancel();
+        if (!location) throw new SafeFetchError(`redirect without location from ${url.href}`, "http", res.status);
+        if (hop + 1 > maxRedirects) throw new SafeFetchError(`more than ${maxRedirects} redirects from ${input}`, "too_many_redirects");
+        const next = new URL(location, url);
+        address = await resolveAllowed(next, options, deadline, "redirect_target");
+        url = next;
+        continue;
+      }
+      if (!res.ok) { await res.body?.cancel(); throw new SafeFetchError(`HTTP ${res.status} from ${url.href}`, "http", res.status); }
+      const contentType = (res.headers.get("content-type") ?? "").split(";")[0]!.trim() || null;
+      if (options.allowedContentTypes && (!contentType || !options.allowedContentTypes.includes(contentType))) {
+        await res.body?.cancel();
+        throw new SafeFetchError(`content-type ${contentType ?? "(none)"} not allowed for ${url.href}`, "content_type", res.status);
+      }
+      const declared = Number(res.headers.get("content-length") ?? "0");
+      if (declared > maxBytes) { await res.body?.cancel(); throw new SafeFetchError(`body of ${declared} bytes exceeds ${maxBytes}`, "too_large"); }
+      const body = await readCapped(res, maxBytes, deadline);
+      return { status: res.status, contentType, body, finalUrl: url.href, connectedAddress: address };
+    } finally {
+      await agent.close();
     }
-    if (!res.ok) { await res.body?.cancel(); throw new SafeFetchError(`HTTP ${res.status} from ${url.href}`, "http", res.status); }
-    const contentType = (res.headers.get("content-type") ?? "").split(";")[0]!.trim() || null;
-    if (options.allowedContentTypes && (!contentType || !options.allowedContentTypes.includes(contentType))) {
-      await res.body?.cancel();
-      throw new SafeFetchError(`content-type ${contentType ?? "(none)"} not allowed for ${url.href}`, "content_type", res.status);
-    }
-    const declared = Number(res.headers.get("content-length") ?? "0");
-    if (declared > maxBytes) { await res.body?.cancel(); throw new SafeFetchError(`body of ${declared} bytes exceeds ${maxBytes}`, "too_large"); }
-    const body = await readCapped(res, maxBytes, signal);
-    return { status: res.status, contentType, body, finalUrl: url.href };
   }
 }
 ```
-Append `export * from "./net/safe-fetch.js";` to `src/index.ts`.
+Append `export * from "./net/safe-fetch.js";` to `src/index.ts`. `packages/generator/package.json` adds `"undici": "^6.21.0"` (the major Node 20.19 bundles; `fetch` and `Agent` are imported from the package so the dispatcher and the fetch implementation are the same version). If undici's `connect.lookup` callback signature in the installed version differs from `(err, address, family)`, follow the installed `types/connector.d.ts` and keep the pinning test — reaching `pinned.test` through the injected lookup is the requirement.
 
 `apps/cli/src/image-resolver.ts` — `networkImageResolver` becomes:
 ```ts
@@ -1812,15 +2271,15 @@ export const networkImageResolver: ImageResolver = async (ref, baseDir) => {
   return { assetId: "", sha256: createHash("sha256").update(bytes).digest("hex"), byteLength: bytes.length, mimeType: fetched.contentType!, open: () => Readable.from([bytes]) };
 };
 ```
-`apps/cli/package.json` adds `"@leaplearn/generator": "workspace:*"`. The existing `apps/cli/test/image-resolver.test.ts` fetches from a `127.0.0.1` test server, which the guard now blocks: change that test to assert the loopback fetch is rejected with `/blocked address/`, and add a second case that passes an injected-lookup-free public-looking URL only through the `generator`'s own tests (already covered above). The CLI test therefore proves the wiring, the generator test proves the behaviour.
+`apps/cli/package.json` adds `"@leaplearn/generator": "workspace:*"`. The existing `apps/cli/test/image-resolver.test.ts` fetches from a `127.0.0.1` test server, which the guard now blocks: change that test to assert the loopback fetch is rejected with `/blocked address/`. The CLI test proves the wiring; the generator test proves the behaviour.
 
 - [ ] **Step 3: Verify and commit**
 
-Run: `pnpm --filter @leaplearn/generator build && pnpm --filter @leaplearn/generator test && pnpm --filter @leaplearn/cli test && pnpm -r typecheck && pnpm -r lint; echo "exit=$?"`. Expected `exit=0`. Manual check: `node apps/cli/dist/index.js flashcards apps/cli-legacy/tests/flash1.csv /tmp/flash1.h5p --allow-network; echo "exit=$?"` still builds when the network is available (pixabay is public), and `leap flashcards` with an image URL pointing at `http://127.0.0.1/…` now fails with `blocked address`.
+Run: `pnpm --filter @leaplearn/generator build && pnpm --filter @leaplearn/generator test && pnpm --filter @leaplearn/cli test && pnpm -r typecheck && pnpm -r lint; echo "exit=$?"`. Expected `exit=0`. Also confirm the boundary: `grep -rn "fetch(" apps/cli/src packages/generator/src | grep -v "safe-fetch.ts"` prints nothing. Manual check: `node apps/cli/dist/index.js flashcards apps/cli-legacy/tests/flash1.csv /tmp/flash1.h5p --allow-network; echo "exit=$?"` still builds when the network is available (pixabay is public), and `leap flashcards` with an image URL pointing at `http://127.0.0.1/…` or `http://[::ffff:127.0.0.1]/…` now fails with `blocked address`.
 
 ```bash
 git add packages/generator apps/cli pnpm-lock.yaml
-git commit -m "feat(generator): SSRF-guarded safeFetch; route the CLI image resolver through it
+git commit -m "feat(generator): SSRF-guarded safeFetch with normalised address checks and a pinned connection; route the CLI image resolver through it
 
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 ```
@@ -1829,16 +2288,16 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ### Task 7: Stage runner with content-attempt feedback, the system prompt tables, model-output schemas, and unit parsing
 
-Every later stage calls the model through one `StageRunner.run({ request, schema, verify })`: it dispatches through `callModel`, parses the JSON with the stage's Zod schema, runs the stage's `verify` (reference validity, answer checks), and on a **content failure** feeds the reasons back into the next attempt, up to three attempts; a **transient** provider failure is retried without consuming a content attempt (at most three in a row, with 1 s / 2 s / 4 s waits, injectable); a **permanent** provider failure or a budget refusal ends the operation without regeneration (spec §5).
+Every later stage calls the model through one `StageRunner.run({ key, request, schema, verify })`: it dispatches through `callModel`, parses the JSON with the stage's Zod schema, runs the stage's `verify` (reference validity, answer checks), and on a **content failure** feeds the reasons back into the next attempt, up to three attempts; a **transient** provider failure is retried without consuming a content attempt (at most three in a row, waiting the larger of 1 s / 2 s / 4 s and the provider's `retry-after`, injectable); a **permanent** provider failure or a budget refusal ends the operation without regeneration (spec §5). The runner is the **only** retry loop in the system (review finding 2): every retry is a fresh `callModel`, so it has its own reservation, start and outcome records. Every attempt carries the call's stable `key` and a `retryIndex` that counts earlier attempts for that key, including attempts recorded before a resumption (review finding 9). This task also adds the contract test that every real model-output schema reaches the wire in the provider-compatible projection (review finding 1).
 
 **Files:**
 - Create: `packages/generator/src/llm/runner.ts`, `src/prompts/system.ts`, `src/schemas/model-output.ts`, `src/competency/parse-unit.ts`
-- Test: `packages/generator/test/runner.test.ts`, `test/system-prompt.test.ts`, `test/parse-unit.test.ts`
+- Test: `packages/generator/test/runner.test.ts`, `test/system-prompt.test.ts`, `test/model-output.test.ts`, `test/parse-unit.test.ts`
 
 **Interfaces:**
-- Produces: `StageCall<T> = { request: ModelRequest; schema: z.ZodType<T>; verify?: (value: T) => string[] | Promise<string[]> }`; `StageRunner { run<T>(call: StageCall<T>): Promise<StageResult<T>> }` with `StageResult<T> = { value: T; attempts: number; attemptIds: string[] }`; `ContentFailure` (`reasons: string[]`, `attempts`), `BudgetRefused`, `InfrastructureFailure` (all `Error` subclasses with `name`); `createRunner(options: { provider; recorder; budget; operationId; maxContentAttempts?: 3; maxTransientRetries?: 3; sleep?: (ms) => Promise<void>; ids?; clock? }): StageRunner`; `FEEDBACK_HEADER = "YOUR PREVIOUS ATTEMPT WAS REJECTED FOR THESE REASONS:"`.
+- Produces: `StageCall<T> = { key: string; request: ModelRequest; schema: z.ZodType<T>; verify?: (value: T) => string[] | Promise<string[]> }`; `StageRunner { run<T>(call: StageCall<T>): Promise<StageResult<T>> }` with `StageResult<T> = { value: T; attempts: number; attemptIds: string[] }`; `ContentFailure` (`reasons: string[]`, `attempts`), `BudgetRefused` (`limit: BudgetLimitName`), `InfrastructureFailure` (all `Error` subclasses with `name`); `createRunner(options: { provider; recorder; budget; operationId; maxContentAttempts?: 3; maxTransientRetries?: 3; sleep?: (ms) => Promise<void>; ids?; clock?; priorAttempts?: (key: string) => number }): StageRunner`; `FEEDBACK_HEADER = "YOUR PREVIOUS ATTEMPT WAS REJECTED FOR THESE REASONS:"`.
 - Produces (prompts): `READING_LEVELS`, `TONES` (the legacy tables verbatim), `GROUNDING_RULES`, `buildSystemPrompt(config: PromptConfig): string` where `PromptConfig = { readingLevel: ReadingLevel; tone: Tone; language: string; instructionalLanguage?: string; customisation?: string }`; defaults for generation: `readingLevel: "high-school"`, `tone: "educational"`, `language: "en"`.
-- Produces (schemas): strict Zod objects (no optionals, no defaults) `UnitOut`, `ConceptsOut`, `MergeOut`, `AlignmentOut`, `PlanOut`, `MultiChoiceOut`, `BlanksOut`, `FlashcardsOut`, each with a `…Schema` JSON export produced once by `toStrictJsonSchema`.
+- Produces (schemas): strict Zod objects (no optionals, no defaults) `UnitOut`, `ConceptsOut`, `MergeOut`, `AlignmentOut`, `PlanOut`, `MultiChoiceOut`, `BlanksOut`, `FlashcardsOut`, each with a `…Schema` JSON export produced once by `toProviderSchema`. `BlanksOut` and `FlashcardsOut` carry evidence ids **per item only**; the activity's evidence is derived as the union in the producers (review finding 8).
 - Produces (competency): `parseUnit(unitText: string, runner: StageRunner): Promise<UnitOfCompetency>`; ids assigned in code from the numbers the model returns (`E1`, `PC1.1`), by position when a number is not numeric; `textHash` of the trimmed unit text.
 
 - [ ] **Step 1: Failing tests**
@@ -1851,17 +2310,20 @@ import { createRunner, ContentFailure, BudgetRefused, InfrastructureFailure, FEE
 import { FakeProvider, fakeResponse } from "../src/llm/fake-provider.js";
 import { ProviderError } from "../src/llm/provider.js";
 import { createBudget } from "../src/llm/budget.js";
-import { toStrictJsonSchema } from "../src/llm/schema.js";
+import { toProviderSchema } from "../src/llm/schema.js";
 import { modelForRole } from "../src/llm/models.js";
-import type { AttemptEvent, AttemptRecorder } from "../src/llm/types.js";
+import type { AttemptEvent, AttemptOutcome, AttemptRecorder, AttemptStart } from "../src/llm/types.js";
 
-class MemoryRecorder implements AttemptRecorder { events: AttemptEvent[] = []; async recordStart(e: AttemptEvent) { this.events.push(e); } async recordOutcome(e: AttemptEvent) { this.events.push(e); } }
+class MemoryRecorder implements AttemptRecorder { events: AttemptEvent[] = []; async recordStart(e: AttemptStart) { this.events.push(e); } async recordOutcome(e: AttemptOutcome) { this.events.push(e); } }
+const starts = (r: MemoryRecorder) => r.events.filter((e): e is AttemptStart => e.event === "start");
+const outcomes = (r: MemoryRecorder) => r.events.filter((e): e is AttemptOutcome => e.event === "outcome");
 const Out = z.object({ n: z.number() });
-const call = (verify?: (v: { n: number }) => string[]) => ({ request: { purpose: "produce" as const, model: modelForRole("produce"), system: "s", user: "u", maxOutputTokens: 100, outputSchema: toStrictJsonSchema(Out) }, schema: Out, verify });
-const mk = (provider: FakeProvider, recorder = new MemoryRecorder()) => createRunner({ provider, recorder, budget: createBudget(10_000_000), operationId: "op", sleep: async () => undefined });
+const call = (verify?: (v: { n: number }) => string[]) => ({ key: "produce:act-1", request: { purpose: "produce" as const, model: modelForRole("produce"), system: "s", user: "u", maxOutputTokens: 100, outputSchema: toProviderSchema(Out) }, schema: Out, ...(verify ? { verify } : {}) });
+type RunnerOptions = Parameters<typeof createRunner>[0];
+const mk = (provider: FakeProvider, recorder = new MemoryRecorder(), extra: Partial<RunnerOptions> = {}) => createRunner({ provider, recorder, budget: createBudget({ usdMicro: 10_000_000 }, 0), operationId: "op", sleep: async () => undefined, ...extra });
 
 describe("stage runner", () => {
-  it("feeds schema and verify failures back and succeeds within three content attempts", async () => {
+  it("feeds schema and verify failures back and succeeds within three content attempts, numbering the retries", async () => {
     const provider = new FakeProvider([fakeResponse({ outputText: "{\"n\":\"x\"}" }), fakeResponse({ outputText: "{\"n\":0}" }), fakeResponse({ outputText: "{\"n\":3}" })]);
     const recorder = new MemoryRecorder();
     const result = await mk(provider, recorder).run(call((v) => (v.n > 0 ? [] : ["n must be positive"])));
@@ -1869,24 +2331,84 @@ describe("stage runner", () => {
     expect(provider.requests[1]?.user).toContain(FEEDBACK_HEADER);
     expect(provider.requests[2]?.user).toContain("n must be positive");
     expect(provider.requests[2]?.user).not.toContain("Invalid input"); // only the latest reasons are fed back
-    expect(recorder.events.filter((e) => e.event === "outcome")).toHaveLength(3);
+    expect(outcomes(recorder)).toHaveLength(3);
+    expect(starts(recorder).map((s) => [s.callKey, s.retryIndex, s.retryReason, s.attempt])).toEqual([["produce:act-1", 0, null, 1], ["produce:act-1", 1, "content", 2], ["produce:act-1", 2, "content", 3]]);
   });
   it("fails as ContentFailure after the third rejected attempt, carrying every reason", async () => {
     const provider = new FakeProvider([fakeResponse({ outputText: "{\"n\":0}" }), fakeResponse({ outputText: "{\"n\":0}" }), fakeResponse({ outputText: "{\"n\":0}" }), fakeResponse({ outputText: "{\"n\":9}" })]);
     await expect(mk(provider).run(call((v) => (v.n > 0 ? [] : ["n must be positive"])))).rejects.toMatchObject({ name: "ContentFailure", attempts: 3 });
     expect(provider.requests).toHaveLength(3);
   });
-  it("retries transient provider failures without consuming a content attempt", async () => {
-    const provider = new FakeProvider([new ProviderError("overloaded", "transient", 529), new ProviderError("overloaded", "transient", 529), fakeResponse({ outputText: "{\"n\":1}" })]);
+  it("retries a transient failure as a new metered attempt: two starts, two outcomes, two reservations, one content attempt", async () => {
+    const provider = new FakeProvider([new ProviderError("overloaded", "transient", 529), fakeResponse({ outputText: "{\"n\":1}" })]);
     const recorder = new MemoryRecorder();
-    const result = await mk(provider, recorder).run(call());
+    const budget = createBudget({ usdMicro: 10_000_000 }, 0);
+    const result = await mk(provider, recorder, { budget }).run(call());
     expect(result.attempts).toBe(1);
-    expect(recorder.events.filter((e) => e.event === "outcome").map((e) => (e as AttemptEvent & { event: "outcome" }).status)).toEqual(["transient_error", "transient_error", "ok"]);
+    expect(starts(recorder)).toHaveLength(2);
+    expect(outcomes(recorder).map((o) => o.status)).toEqual(["transient_error", "ok"]);
+    expect(starts(recorder).map((s) => [s.retryIndex, s.retryReason, s.attempt])).toEqual([[0, null, 1], [1, "transient", 1]]);
+    for (const s of starts(recorder)) expect(s.reservedUsdMicro).toBeGreaterThan(0);
+    expect(budget.requests).toBe(2);
+    expect(budget.reservedUsdMicro).toBe(0);
+    expect(budget.spentUsdMicro).toBeGreaterThanOrEqual(starts(recorder)[0]!.reservedUsdMicro); // the failed attempt keeps its reservation as spent
+  });
+  it("waits with backoff, honouring the provider's retry-after when it is longer, and gives up after three transient failures in a row", async () => {
+    const waits: number[] = [];
+    const sleep = async (ms: number) => { waits.push(ms); };
+    const provider = new FakeProvider([new ProviderError("busy", "transient", 429, { retryAfterMs: 2500 }), new ProviderError("busy", "transient", 529), fakeResponse({ outputText: "{\"n\":1}" })]);
+    await mk(provider, new MemoryRecorder(), { sleep }).run(call());
+    expect(waits).toEqual([2500, 2000]);
+    const dead = new FakeProvider(Array.from({ length: 4 }, () => new ProviderError("down", "transient", 503)));
+    await expect(mk(dead).run(call())).rejects.toBeInstanceOf(InfrastructureFailure);
+    expect(dead.requests).toHaveLength(4);
+  });
+  it("numbers a resumed call's first attempt after the attempts already in the ledger", async () => {
+    const provider = new FakeProvider([fakeResponse({ outputText: "{\"n\":1}" })]);
+    const recorder = new MemoryRecorder();
+    await mk(provider, recorder, { priorAttempts: (key) => (key === "produce:act-1" ? 2 : 0) }).run(call());
+    expect(starts(recorder)[0]).toMatchObject({ retryIndex: 2, retryReason: "resume", attempt: 1 });
   });
   it("stops on a permanent provider failure and on a budget refusal without regeneration", async () => {
-    await expect(mk(new FakeProvider([new ProviderError("bad key", "permanent", 401)])).run(call())).rejects.toBeInstanceOf(InfrastructureFailure);
-    const runner = createRunner({ provider: new FakeProvider([fakeResponse({ outputText: "{\"n\":1}" })]), recorder: new MemoryRecorder(), budget: createBudget(1), operationId: "op", sleep: async () => undefined });
-    await expect(runner.run(call())).rejects.toBeInstanceOf(BudgetRefused);
+    await expect(mk(new FakeProvider([new ProviderError("bad key", "permanent", 401, { requestId: "req_401" })])).run(call())).rejects.toMatchObject({ name: "InfrastructureFailure", message: expect.stringMatching(/req_401/) });
+    const runner = createRunner({ provider: new FakeProvider([fakeResponse({ outputText: "{\"n\":1}" })]), recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 1 }, 0), operationId: "op", sleep: async () => undefined });
+    await expect(runner.run(call())).rejects.toMatchObject({ name: "BudgetRefused", limit: "spend" });
+  });
+});
+```
+
+`packages/generator/test/model-output.test.ts` (the contract test over the real schemas):
+```ts
+import { describe, it, expect } from "vitest";
+import { assertProviderCompatible, UNSUPPORTED_SCHEMA_KEYWORDS } from "../src/llm/schema.js";
+import * as out from "../src/schemas/model-output.js";
+
+const SCHEMAS: Record<string, Record<string, unknown>> = {
+  UnitOutSchema: out.UnitOutSchema, ConceptsOutSchema: out.ConceptsOutSchema, MergeOutSchema: out.MergeOutSchema, AlignmentOutSchema: out.AlignmentOutSchema,
+  PlanOutSchema: out.PlanOutSchema, MultiChoiceOutSchema: out.MultiChoiceOutSchema, BlanksOutSchema: out.BlanksOutSchema, FlashcardsOutSchema: out.FlashcardsOutSchema
+};
+
+describe("model-output schemas on the wire", () => {
+  it("every real schema is provider-compatible: closed objects, every property required, no unsupported keyword anywhere, no $schema", () => {
+    expect(Object.keys(SCHEMAS)).toHaveLength(8);
+    for (const [name, schema] of Object.entries(SCHEMAS)) {
+      expect(() => assertProviderCompatible(schema), name).not.toThrow();
+      const text = JSON.stringify(schema);
+      for (const keyword of UNSUPPORTED_SCHEMA_KEYWORDS) expect(text, `${name} carries ${keyword}`).not.toContain(`"${keyword}":`);
+    }
+  });
+  it("PlanOut's integer slot reaches the wire as a plain integer while the Zod schema still rejects non-integers", () => {
+    const activities = (out.PlanOutSchema["properties"] as Record<string, Record<string, unknown>>)["activities"]!;
+    const slot = ((activities["items"] as Record<string, unknown>)["properties"] as Record<string, Record<string, unknown>>)["slot"]!;
+    expect(slot["type"]).toBe("integer");
+    expect(slot).not.toHaveProperty("minimum");
+    expect(slot).not.toHaveProperty("maximum");
+    expect(out.PlanOut.safeParse({ activities: [{ slot: 1.5, type: "blanks", conceptIds: ["c1"], criteriaIds: [], focus: "f" }] }).success).toBe(false);
+  });
+  it("item schemas carry evidence per item only", () => {
+    expect(Object.keys(out.BlanksOutSchema["properties"] as object)).not.toContain("evidenceIds");
+    expect(Object.keys(out.FlashcardsOutSchema["properties"] as object)).not.toContain("evidenceIds");
+    expect(Object.keys(out.MultiChoiceOutSchema["properties"] as object)).toContain("evidenceIds");
   });
 });
 ```
@@ -1950,7 +2472,7 @@ describe("parseUnit", () => {
   it("assigns element and criterion ids in code and hashes the unit text", async () => {
     const text = await readFile(resolve(fixtures, "unit-synele001.txt"), "utf8");
     const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(unitOut) })]);
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget(10_000_000), operationId: "op-unit", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }, 0), operationId: "op-unit", sleep: async () => undefined });
     const unit = await parseUnit(text, runner);
     expect(unit.code).toBe("SYNELE001");
     expect(unit.elements.map((e) => e.id)).toEqual(["E1", "E2", "E3"]);
@@ -1961,7 +2483,7 @@ describe("parseUnit", () => {
   });
   it("rejects an element without criteria as a content failure", async () => {
     const provider = new FakeProvider(Array.from({ length: 3 }, () => fakeResponse({ outputText: JSON.stringify({ ...unitOut, elements: [{ number: "1", text: "x", performanceCriteria: [] }] }) })));
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget(10_000_000), operationId: "op-unit", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }, 0), operationId: "op-unit", sleep: async () => undefined });
     await expect(parseUnit("SYNELE001 …", runner)).rejects.toMatchObject({ name: "ContentFailure" });
   });
 });
@@ -1973,18 +2495,18 @@ describe("parseUnit", () => {
 ```ts
 import type { z } from "zod";
 import { callModel, type CallContext } from "./call-model.js";
-import type { Budget } from "./budget.js";
+import type { Budget, BudgetLimitName } from "./budget.js";
 import type { ModelProvider } from "./provider.js";
-import type { AttemptRecorder, ModelRequest } from "./types.js";
+import type { AttemptRecorder, ModelRequest, RetryReason } from "./types.js";
 
-export interface StageCall<T> { request: ModelRequest; schema: z.ZodType<T>; verify?: (value: T) => string[] | Promise<string[]>; }
+export interface StageCall<T> { key: string; request: ModelRequest; schema: z.ZodType<T>; verify?: (value: T) => string[] | Promise<string[]>; }
 export interface StageResult<T> { value: T; attempts: number; attemptIds: string[]; }
 export interface StageRunner { run<T>(call: StageCall<T>): Promise<StageResult<T>>; }
 
 export class ContentFailure extends Error {
   constructor(public readonly reasons: string[], public readonly attempts: number) { super(`content rejected after ${attempts} attempt(s): ${reasons.join("; ")}`); this.name = "ContentFailure"; }
 }
-export class BudgetRefused extends Error { constructor(reason: string) { super(reason); this.name = "BudgetRefused"; } }
+export class BudgetRefused extends Error { constructor(reason: string, public readonly limit: BudgetLimitName) { super(reason); this.name = "BudgetRefused"; } }
 export class InfrastructureFailure extends Error { constructor(message: string) { super(message); this.name = "InfrastructureFailure"; } }
 
 export const FEEDBACK_HEADER = "YOUR PREVIOUS ATTEMPT WAS REJECTED FOR THESE REASONS:";
@@ -2000,6 +2522,8 @@ export interface RunnerOptions {
   sleep?: (ms: number) => Promise<void>;
   ids?: () => string;
   clock?: () => Date;
+  /** Attempts already recorded for a call key earlier in the import (the pipeline reads them from the ledger); a resumed call's first attempt starts its retryIndex there. */
+  priorAttempts?: (key: string) => number;
 }
 
 function withFeedback(request: ModelRequest, reasons: string[]): ModelRequest {
@@ -2011,39 +2535,45 @@ function zodReasons(err: z.ZodError): string[] {
   return err.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`);
 }
 
-/** One operation's dispatch loop (spec §5 step 5): content failures feed back, transient failures retry, everything else stops. */
+/** The only retry loop (spec §5 step 5): content failures feed back, transient failures retry as new metered attempts, everything else stops. */
 export function createRunner(options: RunnerOptions): StageRunner {
   const maxContent = options.maxContentAttempts ?? 3;
   const maxTransient = options.maxTransientRetries ?? 3;
   const sleep = options.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
+  const priorAttempts = options.priorAttempts ?? (() => 0);
   return {
     async run<T>(call: StageCall<T>): Promise<StageResult<T>> {
       let request = call.request;
       let attempt = 0;
       let transientInARow = 0;
+      let retryIndex = priorAttempts(call.key);
+      let retryReason: RetryReason | null = retryIndex > 0 ? "resume" : null;
       const attemptIds: string[] = [];
       let lastReasons: string[] = [];
       while (attempt < maxContent) {
-        const ctx: CallContext = { provider: options.provider, recorder: options.recorder, budget: options.budget, operationId: options.operationId, attempt: attempt + 1 };
+        const ctx: CallContext = { provider: options.provider, recorder: options.recorder, budget: options.budget, operationId: options.operationId, callKey: call.key, retryIndex, retryReason, attempt: attempt + 1 };
         if (options.ids) ctx.ids = options.ids;
         if (options.clock) ctx.clock = options.clock;
         const result = await callModel(request, ctx);
-        if (result.kind === "budget_refused") throw new BudgetRefused(result.reason);
-        if (result.kind === "provider_error") throw new InfrastructureFailure(result.error);
+        if (result.kind === "budget_refused") throw new BudgetRefused(result.reason, result.limit);
+        if (result.kind === "provider_error") throw new InfrastructureFailure(`${result.error}${result.providerRequestId ? ` (request ${result.providerRequestId})` : ""}`);
         if (result.kind === "transient_error") {
           attemptIds.push(result.attemptId);
-          if (++transientInARow > maxTransient) throw new InfrastructureFailure(`provider unavailable after ${maxTransient} transient failures: ${result.error}`);
-          await sleep(TRANSIENT_WAITS_MS[Math.min(transientInARow - 1, TRANSIENT_WAITS_MS.length - 1)]!);
+          retryIndex += 1;
+          retryReason = "transient";
+          if (++transientInARow > maxTransient) throw new InfrastructureFailure(`provider unavailable after ${maxTransient} transient failures: ${result.error}${result.providerRequestId ? ` (request ${result.providerRequestId})` : ""}`);
+          await sleep(Math.max(TRANSIENT_WAITS_MS[Math.min(transientInARow - 1, TRANSIENT_WAITS_MS.length - 1)]!, result.retryAfterMs ?? 0));
           continue;
         }
         transientInARow = 0;
         attempt += 1;
         attemptIds.push(result.attemptId);
-        if (result.kind === "content_error") { lastReasons = [result.reason]; request = withFeedback(request, lastReasons); continue; }
+        const reject = (reasons: string[]): void => { lastReasons = reasons; request = withFeedback(request, reasons); retryIndex += 1; retryReason = "content"; };
+        if (result.kind === "content_error") { reject([result.reason]); continue; }
         const parsed = call.schema.safeParse(result.json);
-        if (!parsed.success) { lastReasons = zodReasons(parsed.error); request = withFeedback(request, lastReasons); continue; }
+        if (!parsed.success) { reject(zodReasons(parsed.error)); continue; }
         const issues = call.verify ? await call.verify(parsed.data) : [];
-        if (issues.length > 0) { lastReasons = issues; request = withFeedback(request, lastReasons); continue; }
+        if (issues.length > 0) { reject(issues); continue; }
         return { value: parsed.data, attempts: attempt, attemptIds };
       }
       throw new ContentFailure(lastReasons, attempt);
@@ -2125,7 +2655,7 @@ export function buildSystemPrompt(config: PromptConfig): string {
 `packages/generator/src/schemas/model-output.ts` (strict: every property required, nullable instead of optional, no defaults; refinements live in each stage's `verify`):
 ```ts
 import { z } from "zod";
-import { toStrictJsonSchema } from "../llm/schema.js";
+import { toProviderSchema } from "../llm/schema.js";
 
 export const UnitOut = z.object({
   code: z.string(), title: z.string(),
@@ -2143,25 +2673,24 @@ export const MultiChoiceOut = z.object({
 });
 export const BlanksOut = z.object({
   title: z.string(), taskDescription: z.string(), passage: z.string(),
-  blanks: z.array(z.object({ answers: z.array(z.string()), tip: z.string().nullable(), evidenceIds: z.array(z.string()) })),
-  evidenceIds: z.array(z.string())
+  blanks: z.array(z.object({ answers: z.array(z.string()), tip: z.string().nullable(), evidenceIds: z.array(z.string()) }))
 });
 export const FlashcardsOut = z.object({
   title: z.string(), description: z.string(),
-  cards: z.array(z.object({ front: z.string(), back: z.string(), tip: z.string().nullable(), evidenceIds: z.array(z.string()) })),
-  evidenceIds: z.array(z.string())
+  cards: z.array(z.object({ front: z.string(), back: z.string(), tip: z.string().nullable(), evidenceIds: z.array(z.string()) }))
 });
 export type UnitOut = z.infer<typeof UnitOut>; export type ConceptsOut = z.infer<typeof ConceptsOut>; export type MergeOut = z.infer<typeof MergeOut>; export type AlignmentOut = z.infer<typeof AlignmentOut>; export type PlanOut = z.infer<typeof PlanOut>; export type MultiChoiceOut = z.infer<typeof MultiChoiceOut>; export type BlanksOut = z.infer<typeof BlanksOut>; export type FlashcardsOut = z.infer<typeof FlashcardsOut>;
 
-export const UnitOutSchema = toStrictJsonSchema(UnitOut);
-export const ConceptsOutSchema = toStrictJsonSchema(ConceptsOut);
-export const MergeOutSchema = toStrictJsonSchema(MergeOut);
-export const AlignmentOutSchema = toStrictJsonSchema(AlignmentOut);
-export const PlanOutSchema = toStrictJsonSchema(PlanOut);
-export const MultiChoiceOutSchema = toStrictJsonSchema(MultiChoiceOut);
-export const BlanksOutSchema = toStrictJsonSchema(BlanksOut);
-export const FlashcardsOutSchema = toStrictJsonSchema(FlashcardsOut);
+export const UnitOutSchema = toProviderSchema(UnitOut);
+export const ConceptsOutSchema = toProviderSchema(ConceptsOut);
+export const MergeOutSchema = toProviderSchema(MergeOut);
+export const AlignmentOutSchema = toProviderSchema(AlignmentOut);
+export const PlanOutSchema = toProviderSchema(PlanOut);
+export const MultiChoiceOutSchema = toProviderSchema(MultiChoiceOut);
+export const BlanksOutSchema = toProviderSchema(BlanksOut);
+export const FlashcardsOutSchema = toProviderSchema(FlashcardsOut);
 ```
+`toProviderSchema` throws at module load if any schema still carries an unsupported keyword, so a schema change that breaks the projection fails every test, not just the contract test.
 
 `packages/generator/src/competency/parse-unit.ts`:
 ```ts
@@ -2184,7 +2713,8 @@ function criterionId(elementIndex: number, elementNumber: string, index: number,
 export async function parseUnit(unitText: string, runner: StageRunner): Promise<UnitOfCompetency> {
   const trimmed = unitText.trim();
   const { value } = await runner.run({
-    request: { purpose: "parseUnit", model: modelForRole("parseUnit"), system: SYSTEM, user: `UNIT TEXT:\n${trimmed}`, maxOutputTokens: 4000, outputSchema: UnitOutSchema, temperature: 0 },
+    key: "parseUnit",
+    request: { purpose: "parseUnit", model: modelForRole("parseUnit"), system: SYSTEM, user: `UNIT TEXT:\n${trimmed}`, maxOutputTokens: 4000, outputSchema: UnitOutSchema },
     schema: UnitOut,
     verify: (u) => {
       const issues: string[] = [];
@@ -2209,7 +2739,7 @@ Run: `pnpm --filter @leaplearn/generator test && pnpm --filter @leaplearn/genera
 
 ```bash
 git add packages/generator
-git commit -m "feat(generator): stage runner with content-attempt feedback, system prompt tables, strict model-output schemas and unit parsing
+git commit -m "feat(generator): stage runner with metered retries and call keys, system prompt tables, provider-compatible model-output schemas and unit parsing
 
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 ```
@@ -2224,7 +2754,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Produces: `Chunk { chunkIndex; sentences: Sentence[]; estimatedTokens }`; `chunkSentences(sentences, budgetTokens): Chunk[]` (greedy, sentence boundaries, a sentence above the budget gets its own chunk); `evidenceForSentence(doc, sentenceId): Evidence` (`evidenceId = "ev-" + sentenceId`, quote = sentence text, offsets = sentence span); `verifyEvidence(text, evidence): string | null` (null when `text.slice(charStart, charEnd) === quote`); `ChunkConcept { tempId; name; summary; evidence: Evidence[] }`; `extractChunkConcepts(doc, chunk, runner, opts): Promise<ChunkConcept[]>`; `mergeConcepts(chunkConcepts, runner): Promise<Concept[]>` (ids `c1…` in merged order; a single chunk skips the model call); `alignConcepts(concepts, unit, runner): Promise<Alignment>`; `extractConceptMap(doc, unit | null, runner, opts: { chunkTokens?: number (6000); promptConfig? }): Promise<ConceptMap>`.
-- Rules: the model chooses sentence ids from a numbered list; every returned id must be in the chunk (verify issue otherwise); evidence is rebuilt in code from the sentence and verified against the stored text; merging requires every temp id assigned exactly once; alignment requires every criterion exactly once; unsupported criteria are those with no concepts.
+- Rules: the model chooses sentence ids from a numbered list; every returned id must be in the chunk (verify issue otherwise); evidence is rebuilt in code from the sentence and verified against the stored text; merging requires every temp id assigned exactly once; alignment requires every criterion exactly once; unsupported criteria are those with no concepts. The alignment prompt shows each concept's **evidence quotes** (up to `MAX_ALIGN_QUOTES = 8` per concept, with a count of any more), because the model is asked to judge evidential support and cannot do so from names and summaries alone (review finding 8). Call keys: `extract:chunk-<index>`, `merge`, `align`.
 
 - [ ] **Step 1: Failing tests**
 
@@ -2311,7 +2841,7 @@ describe("extractConceptMap", () => {
     ] };
     const script = [...perChunk.map((c) => fakeResponse({ outputText: JSON.stringify({ concepts: c }) })), fakeResponse({ outputText: JSON.stringify(mergeOut) }), fakeResponse({ outputText: JSON.stringify(alignOut) })];
     const provider = new FakeProvider(script);
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget(50_000_000), operationId: "op-concepts", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }, 0), operationId: "op-concepts", sleep: async () => undefined });
 
     const map = await extractConceptMap(doc, unit, runner, { chunkTokens: 330 });
     expect(map.textHash).toBe(doc.textHash);
@@ -2325,12 +2855,15 @@ describe("extractConceptMap", () => {
     expect(map.alignment?.criteria.map((c) => c.criterionId)).toEqual(criteriaOf(unit).map((c) => c.id));
     expect(provider.requests.map((r) => r.purpose)).toEqual([...chunks.map(() => "extract"), "merge", "align"]);
     expect(provider.requests[0]?.user).toMatch(/\[s\d+\] /);
+    const alignRequest = provider.requests.at(-1)!;
+    expect(alignRequest.user).toContain(doc.sentences.find((s) => s.sentenceId === lotoEarly)!.text); // the alignment judges support from the evidence itself
+    expect(alignRequest.user).toContain(`[ev-${tfdB}]`);
   });
   it("rejects sentence ids outside the chunk as a content failure with feedback", async () => {
     const doc = await ingestMarkdown("One sentence here. Second sentence here.", { sourceId: "src" });
     const bad = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "x", summary: "y", sentenceIds: ["s99"] }] }) });
     const provider = new FakeProvider([bad, bad, bad]);
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget(50_000_000), operationId: "op", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }, 0), operationId: "op", sleep: async () => undefined });
     await expect(extractConceptMap(doc, null, runner, { chunkTokens: 6000 })).rejects.toMatchObject({ name: "ContentFailure" });
     expect(provider.requests[1]?.user).toContain("s99");
   });
@@ -2406,7 +2939,8 @@ export async function extractChunkConcepts(doc: SourceDocument, chunk: Chunk, ru
   const max = options.maxConceptsPerChunk ?? 8;
   const allowed = new Set(chunk.sentences.map((s) => s.sentenceId));
   const { value } = await runner.run({
-    request: { purpose: "extract", model: modelForRole("extract"), system: buildSystemPrompt(options.promptConfig ?? DEFAULT_PROMPT_CONFIG), user: `${TASK(max)}\n\nEVIDENCE:\n${numberedSentences(chunk)}`, maxOutputTokens: 3000, outputSchema: ConceptsOutSchema, temperature: 0 },
+    key: `extract:chunk-${chunk.chunkIndex}`,
+    request: { purpose: "extract", model: modelForRole("extract"), system: buildSystemPrompt(options.promptConfig ?? DEFAULT_PROMPT_CONFIG), user: `${TASK(max)}\n\nEVIDENCE:\n${numberedSentences(chunk)}`, maxOutputTokens: 3000, outputSchema: ConceptsOutSchema },
     schema: ConceptsOut,
     verify: (out) => {
       const issues: string[] = [];
@@ -2450,7 +2984,8 @@ export async function mergeConcepts(chunkConcepts: ChunkConcept[][], runner: Sta
   const ids = new Set(all.map((c) => c.tempId));
   const listing = chunkConcepts.map((cs, i) => `PART ${i + 1}:\n${cs.map((c) => `- ${c.tempId}: ${c.name} — ${c.summary}`).join("\n")}`).join("\n\n");
   const { value } = await runner.run({
-    request: { purpose: "merge", model: modelForRole("merge"), system: SYSTEM, user: `CONCEPTS BY PART:\n${listing}\n\nReturn the consolidated concept list; each input id appears in exactly one memberIds list.`, maxOutputTokens: 3000, outputSchema: MergeOutSchema, temperature: 0 },
+    key: "merge",
+    request: { purpose: "merge", model: modelForRole("merge"), system: SYSTEM, user: `CONCEPTS BY PART:\n${listing}\n\nReturn the consolidated concept list; each input id appears in exactly one memberIds list.`, maxOutputTokens: 3000, outputSchema: MergeOutSchema },
     schema: MergeOut,
     verify: (out) => {
       const issues: string[] = []; const seen = new Set<string>();
@@ -2475,15 +3010,24 @@ import { modelForRole } from "../llm/models.js";
 import type { StageRunner } from "../llm/runner.js";
 import { AlignmentOut, AlignmentOutSchema } from "../schemas/model-output.js";
 
-const SYSTEM = "You map performance criteria from a unit of competency to concepts extracted from a source document. A criterion is supported by a concept only when the concept's evidence would help a learner meet that criterion. Return every criterion exactly once; an empty conceptIds list means the source does not support that criterion. This is a suggested alignment for revision activities, not an assessment judgement.";
+const SYSTEM = "You map performance criteria from a unit of competency to concepts extracted from a source document. Each concept is shown with the evidence sentences it was extracted from. A criterion is supported by a concept only when that evidence itself would help a learner meet the criterion; judge from the quoted sentences, not from the concept's name. Return every criterion exactly once; an empty conceptIds list means the source does not support that criterion. This is a suggested alignment for revision activities, not an assessment judgement.";
+
+export const MAX_ALIGN_QUOTES = 8;
+
+function conceptWithEvidence(c: Concept): string {
+  const shown = c.evidence.slice(0, MAX_ALIGN_QUOTES).map((e) => `    [${e.evidenceId}] ${e.quote}`);
+  const more = c.evidence.length > MAX_ALIGN_QUOTES ? [`    (${c.evidence.length - MAX_ALIGN_QUOTES} more sentences not shown)`] : [];
+  return [`- ${c.conceptId}: ${c.name} — ${c.summary}`, ...shown, ...more].join("\n");
+}
 
 export async function alignConcepts(concepts: Concept[], unit: UnitOfCompetency, runner: StageRunner): Promise<Alignment> {
   const criteria = criteriaOf(unit);
   const criterionIds = new Set(criteria.map((c) => c.id));
   const conceptIds = new Set(concepts.map((c) => c.conceptId));
-  const user = `UNIT ${unit.code} ${unit.title}\nCRITERIA:\n${criteria.map((c) => `- ${c.id}: ${c.text}`).join("\n")}\n\nCONCEPTS:\n${concepts.map((c) => `- ${c.conceptId}: ${c.name} — ${c.summary}`).join("\n")}\n\nReturn one entry per criterion id, with the concept ids that support it (possibly none).`;
+  const user = `UNIT ${unit.code} ${unit.title}\nCRITERIA:\n${criteria.map((c) => `- ${c.id}: ${c.text}`).join("\n")}\n\nCONCEPTS WITH THEIR EVIDENCE:\n${concepts.map(conceptWithEvidence).join("\n")}\n\nReturn one entry per criterion id, with the concept ids whose evidence supports it (possibly none).`;
   const { value } = await runner.run({
-    request: { purpose: "align", model: modelForRole("align"), system: SYSTEM, user, maxOutputTokens: 2000, outputSchema: AlignmentOutSchema, temperature: 0 },
+    key: "align",
+    request: { purpose: "align", model: modelForRole("align"), system: SYSTEM, user, maxOutputTokens: 2000, outputSchema: AlignmentOutSchema },
     schema: AlignmentOut,
     verify: (out) => {
       const issues: string[] = []; const seen = new Set<string>();
@@ -2586,7 +3130,7 @@ describe("planner", () => {
       { slot: 7, type: "flashcards", conceptIds: ["c1", "c2", "c3"], criteriaIds: ["PC2.1", "PC2.2"], focus: "key terms" }
     ] };
     const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(out) })]);
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget(10_000_000), operationId: "op-plan", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }, 0), operationId: "op-plan", sleep: async () => undefined });
     const plan = await planActivities(map, ["multiChoice", "blanks", "flashcards"], runner);
     expect(plan.map((p) => p.activityId)).toEqual(["act-1", "act-2", "act-3", "act-4", "act-5", "act-6", "act-7"]);
     expect(plan[6]).toMatchObject({ type: "flashcards", conceptIds: ["c1", "c2", "c3"] });
@@ -2595,7 +3139,7 @@ describe("planner", () => {
   it("rejects a plan whose slots or ids do not match", async () => {
     const bad = { activities: [{ slot: 1, type: "multiChoice", conceptIds: ["c9"], criteriaIds: ["PC2.1"], focus: "x" }] };
     const provider = new FakeProvider(Array.from({ length: 3 }, () => fakeResponse({ outputText: JSON.stringify(bad) })));
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget(10_000_000), operationId: "op-plan", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }, 0), operationId: "op-plan", sleep: async () => undefined });
     await expect(planActivities(map, ["multiChoice"], runner)).rejects.toMatchObject({ name: "ContentFailure" });
     expect(provider.requests[1]?.user).toMatch(/unknown concept c9|slot/);
   });
@@ -2639,7 +3183,8 @@ export async function planActivities(map: ConceptMap, selectedTypes: PlannedType
     : "";
   const user = `CONCEPTS:\n${map.concepts.map((c) => `- ${c.conceptId}: ${c.name} — ${c.summary} (evidence: ${c.evidence.length} sentence${c.evidence.length === 1 ? "" : "s"})`).join("\n")}${criteriaText}\n\nSLOTS (return exactly these, in order):\n${slots.map((s) => `- slot ${s.slot}: ${s.type}`).join("\n")}\n\nFor each slot give conceptIds (at least one), criteriaIds (only criteria supported by those concepts; empty when none) and a one-line focus.`;
   const { value } = await runner.run({
-    request: { purpose: "plan", model: modelForRole("plan"), system: SYSTEM, user, maxOutputTokens: 3000, outputSchema: PlanOutSchema, temperature: 0 },
+    key: "plan",
+    request: { purpose: "plan", model: modelForRole("plan"), system: SYSTEM, user, maxOutputTokens: 3000, outputSchema: PlanOutSchema },
     schema: PlanOut,
     verify: (out) => {
       const issues: string[] = [];
@@ -2679,14 +3224,14 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ### Task 10: Quality checks
 
-Pure functions the producers and the pipeline call (spec §3 `quality/`): reference validity, markup, exact/near-duplicate detection, and the per-type answer checks for the three phase-2 types.
+Pure functions the producers and the pipeline call (spec §3 `quality/`): reference validity, markup, exact/near-duplicate detection, and the per-type answer checks for the three phase-2 types. Answers review finding 8 for blanks: each answer is checked against the evidence **that blank** cites, not the whole context's combined evidence.
 
 **Files:**
 - Create: `packages/generator/src/quality/checks.ts`
 - Test: `packages/generator/test/quality.test.ts`
 
 **Interfaces:**
-- Produces: `normaliseText(s): string` (lowercase, letters/digits/spaces only, collapsed whitespace); `wordSet(s): Set<string>`; `jaccard(a, b): number`; `isNearDuplicate(a, b, threshold = 0.8): boolean` (exact normalised match or Jaccard ≥ threshold); `checkReferences(ids: { evidenceIds: string[]; conceptIds: string[]; criteriaIds: string[] }, allowed: { evidence: Set<string>; concepts: Set<string>; criteria: Set<string> }, where: string): string[]`; `checkPlainText(value: string, where: string): string[]` (rejects `<…>` tags, markdown emphasis/heading markers, and empty strings); `checkMultiChoice(out: MultiChoiceOut): string[]` (2–8 answers; exactly one correct; distinct normalised answer texts; non-empty question; every string plain text); `checkBlanks(out: BlanksOut, evidenceText: string): string[]` (1–5 blanks; the passage contains `{{b1}}…{{bN}}` each exactly once and no other `{{…}}`; ≥ 8 words outside tokens; no `*` in the passage; no `*`, `/`, `:` in answers or tips; every answer occurs in `normaliseText(evidenceText)` as a whole-word phrase); `checkFlashcards(out: FlashcardsOut, min, max): string[]` (card count within bounds; distinct normalised fronts; back ≠ front; plain text); `checkAgainstExisting(kind: "question" | "passage" | "front", candidate: string, existing: string[]): string[]` (near-duplicate across the import).
+- Produces: `normaliseText(s): string` (lowercase, letters/digits/spaces only, collapsed whitespace); `wordSet(s): Set<string>`; `jaccard(a, b): number`; `isNearDuplicate(a, b, threshold = 0.8): boolean` (exact normalised match or Jaccard ≥ threshold); `AllowedRefs { evidence: Set<string>; concepts: Set<string>; criteria: Set<string> | null }`; `checkReferences(ids: { evidenceIds: string[]; conceptIds: string[]; criteriaIds: string[] }, allowed: AllowedRefs, where: string): string[]`; `checkPlainText(value: string, where: string): string[]` (rejects `<…>` tags, markdown emphasis/heading markers, and empty strings); `checkMultiChoice(out: MultiChoiceOut): string[]` (2–8 answers; exactly one correct; distinct normalised answer texts; non-empty question; every string plain text); `checkBlanks(out: BlanksOut, evidenceTextFor: (evidenceIds: string[]) => string): string[]` (1–5 blanks; the passage contains `{{b1}}…{{bN}}` each exactly once and no other `{{…}}`; ≥ 8 words outside tokens; no `*` in the passage; no `*`, `/`, `:` in answers or tips; every answer occurs in `normaliseText(evidenceTextFor(blank.evidenceIds))` as a whole-word phrase; a blank citing no evidence is reported); `checkFlashcards(out: FlashcardsOut, min, max): string[]` (card count within bounds; distinct normalised fronts; back ≠ front; plain text); `checkAgainstExisting(kind: "question" | "passage" | "front", candidate: string, existing: string[]): string[]` (near-duplicate across the import).
 
 - [ ] **Step 1: Failing tests**
 
@@ -2707,6 +3252,7 @@ describe("quality checks", () => {
     const allowed = { evidence: new Set(["ev-s1"]), concepts: new Set(["c1"]), criteria: new Set(["PC1.1"]) };
     expect(checkReferences({ evidenceIds: ["ev-s1", "ev-s9"], conceptIds: ["c2"], criteriaIds: [] }, allowed, "activity")).toEqual(["activity cites unknown evidence ev-s9", "activity cites unknown concept c2"]);
     expect(checkReferences({ evidenceIds: [], conceptIds: ["c1"], criteriaIds: [] }, allowed, "activity")).toEqual(["activity cites no evidence"]);
+    expect(checkReferences({ evidenceIds: ["ev-s1"], conceptIds: [], criteriaIds: ["PC9.9"] }, { ...allowed, criteria: null }, "activity")).toEqual([]);
     expect(checkPlainText("<p>hi</p>", "question")).toEqual(["question contains HTML tags"]);
     expect(checkPlainText("**bold**", "question")).toEqual(["question contains markdown markers"]);
     expect(checkPlainText("", "question")).toEqual(["question is empty"]);
@@ -2718,19 +3264,22 @@ describe("quality checks", () => {
     expect(checkMultiChoice({ ...ok, answers: [ok.answers[0]!, { text: "the worker who applied it", correct: false, feedback: "" }] })).toContain("answer 2 duplicates another answer");
     expect(checkMultiChoice({ ...ok, answers: [ok.answers[0]!] })).toContain("between 2 and 8 answers are required");
   });
-  it("blanks: tokens, delimiters, and passage-grounded answers", () => {
-    const evidence = "Only the worker who applied a lock may remove it. A tag names the worker, the date and the reason.";
-    const ok = { title: "T", taskDescription: "Fill the gaps.", passage: "Only the {{b1}} who applied a lock may remove it, and the tag names the {{b2}}.", blanks: [{ answers: ["worker"], tip: null, evidenceIds: ["ev-s1"] }, { answers: ["date", "reason"], tip: "on the tag", evidenceIds: ["ev-s2"] }], evidenceIds: ["ev-s1", "ev-s2"] };
-    expect(checkBlanks(ok, evidence)).toEqual([]);
-    expect(checkBlanks({ ...ok, passage: "Only the {{b1}} and {{b1}}." }, evidence)).toContain("token {{b1}} must appear exactly once");
-    expect(checkBlanks({ ...ok, passage: "Only the {{b1}} 5* rated {{b2}}." }, evidence)).toContain("passage must not contain *");
-    expect(checkBlanks({ ...ok, blanks: [{ answers: ["1/2"], tip: null, evidenceIds: ["ev-s1"] }, ok.blanks[1]!] }, evidence)).toContain("blank 1 answer contains a forbidden character (* / :)");
-    expect(checkBlanks({ ...ok, blanks: [{ answers: ["electrician"], tip: null, evidenceIds: ["ev-s1"] }, ok.blanks[1]!] }, evidence)).toContain('blank 1 answer "electrician" does not occur in the cited evidence');
-    expect(checkBlanks({ ...ok, passage: "{{b1}} {{b2}}" }, evidence)).toContain("passage needs at least 8 words around the blanks");
+  it("blanks: tokens, delimiters, and answers grounded in the evidence each blank cites", () => {
+    const texts: Record<string, string> = { "ev-s1": "Only the worker who applied a lock may remove it.", "ev-s2": "A tag names the worker, the date and the reason." };
+    const evidenceTextFor = (ids: string[]) => ids.map((id) => texts[id] ?? "").join(" ");
+    const ok = { title: "T", taskDescription: "Fill the gaps.", passage: "Only the {{b1}} who applied a lock may remove it, and the tag names the {{b2}}.", blanks: [{ answers: ["worker"], tip: null, evidenceIds: ["ev-s1"] }, { answers: ["date", "reason"], tip: "on the tag", evidenceIds: ["ev-s2"] }] };
+    expect(checkBlanks(ok, evidenceTextFor)).toEqual([]);
+    expect(checkBlanks({ ...ok, passage: "Only the {{b1}} and {{b1}}." }, evidenceTextFor)).toContain("token {{b1}} must appear exactly once");
+    expect(checkBlanks({ ...ok, passage: "Only the {{b1}} 5* rated {{b2}}." }, evidenceTextFor)).toContain("passage must not contain *");
+    expect(checkBlanks({ ...ok, blanks: [{ answers: ["1/2"], tip: null, evidenceIds: ["ev-s1"] }, ok.blanks[1]!] }, evidenceTextFor)).toContain("blank 1 answer contains a forbidden character (* / :)");
+    expect(checkBlanks({ ...ok, blanks: [{ answers: ["electrician"], tip: null, evidenceIds: ["ev-s1"] }, ok.blanks[1]!] }, evidenceTextFor)).toContain('blank 1 answer "electrician" does not occur in the evidence it cites');
+    expect(checkBlanks({ ...ok, blanks: [{ answers: ["date"], tip: null, evidenceIds: ["ev-s1"] }, ok.blanks[1]!] }, evidenceTextFor)).toContain('blank 1 answer "date" does not occur in the evidence it cites'); // present in ev-s2, but the blank cites ev-s1
+    expect(checkBlanks({ ...ok, blanks: [{ answers: ["worker"], tip: null, evidenceIds: [] }, ok.blanks[1]!] }, evidenceTextFor)).toContain("blank 1 cites no evidence");
+    expect(checkBlanks({ ...ok, passage: "{{b1}} {{b2}}" }, evidenceTextFor)).toContain("passage needs at least 8 words around the blanks");
   });
   it("flashcards: bounds, distinct fronts, back differs from front", () => {
     const card = (front: string, back: string) => ({ front, back, tip: null, evidenceIds: ["ev-s1"] });
-    const ok = { title: "T", description: "d", cards: [card("Spanner", "Tightens hex nuts"), card("Saw", "Cuts timber"), card("Tag", "Names the worker"), card("Lock", "Prevents closing an isolator")], evidenceIds: ["ev-s1"] };
+    const ok = { title: "T", description: "d", cards: [card("Spanner", "Tightens hex nuts"), card("Saw", "Cuts timber"), card("Tag", "Names the worker"), card("Lock", "Prevents closing an isolator")] };
     expect(checkFlashcards(ok, 4, 12)).toEqual([]);
     expect(checkFlashcards({ ...ok, cards: ok.cards.slice(0, 3) }, 4, 12)).toContain("between 4 and 12 cards are required");
     expect(checkFlashcards({ ...ok, cards: [...ok.cards.slice(0, 3), card("spanner", "x")] }, 4, 12)).toContain("card 4 duplicates another card's front");
@@ -2798,7 +3347,8 @@ export function checkMultiChoice(out: MultiChoiceOut): string[] {
 const TOKEN = /\{\{([^}]*)\}\}/g;
 const FORBIDDEN = ["*", "/", ":"];
 
-export function checkBlanks(out: BlanksOut, evidenceText: string): string[] {
+/** Each blank's answers must occur in the evidence that blank cites; the whole context's evidence is not enough. */
+export function checkBlanks(out: BlanksOut, evidenceTextFor: (evidenceIds: string[]) => string): string[] {
   const issues = [...checkPlainText(out.title, "title"), ...checkPlainText(out.taskDescription, "taskDescription")];
   if (out.blanks.length < 1 || out.blanks.length > 5) issues.push("between 1 and 5 blanks are required");
   if (out.passage.includes("*")) issues.push("passage must not contain *");
@@ -2808,12 +3358,13 @@ export function checkBlanks(out: BlanksOut, evidenceText: string): string[] {
   for (const id of counts.keys()) if (!/^b\d+$/.test(id) || Number(id.slice(1)) > out.blanks.length) issues.push(`unexpected token {{${id}}}`);
   const words = out.passage.replace(TOKEN, " ").split(/\s+/).filter(Boolean);
   if (words.length < 8) issues.push("passage needs at least 8 words around the blanks");
-  const haystack = ` ${normaliseText(evidenceText)} `;
   out.blanks.forEach((b, i) => {
     if (b.answers.length === 0) issues.push(`blank ${i + 1} has no answers`);
+    if (b.evidenceIds.length === 0) { issues.push(`blank ${i + 1} cites no evidence`); return; }
+    const haystack = ` ${normaliseText(evidenceTextFor(b.evidenceIds))} `;
     for (const a of b.answers) {
       if (FORBIDDEN.some((ch) => a.includes(ch))) issues.push(`blank ${i + 1} answer contains a forbidden character (* / :)`);
-      else if (!haystack.includes(` ${normaliseText(a)} `)) issues.push(`blank ${i + 1} answer "${a}" does not occur in the cited evidence`);
+      else if (!haystack.includes(` ${normaliseText(a)} `)) issues.push(`blank ${i + 1} answer "${a}" does not occur in the evidence it cites`);
     }
     if (b.tip !== null && FORBIDDEN.some((ch) => b.tip!.includes(ch))) issues.push(`blank ${i + 1} tip contains a forbidden character (* / :)`);
   });
@@ -2842,7 +3393,7 @@ Run: `pnpm --filter @leaplearn/generator test && pnpm --filter @leaplearn/genera
 
 ```bash
 git add packages/generator
-git commit -m "feat(generator): quality checks for references, markup, near-duplicates and the three phase-2 types
+git commit -m "feat(generator): quality checks for references, markup, near-duplicates and the three phase-2 types, with per-blank evidence grounding
 
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 ```
@@ -2851,15 +3402,15 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ### Task 11: Producer contract and the `multiChoice` producer
 
-A producer takes one `ActivityPlan` entry, the concept map and the source document, prompts the model with the cited evidence, converts the model output into an `ActivitySpec` with ids and provenance assigned in code, runs the quality checks and the engine's `validate()` inside the runner's `verify` (so failures feed back), and returns the spec. New prompts are written against the shared schemas with evidence-id grounding required; the legacy multiple-choice prompt is not reused (it has no grounding rule and asks for a bare JSON array).
+A producer takes one `ActivityPlan` entry, the concept map and the source document, prompts the model with the cited evidence, converts the model output into an `ActivitySpec` with ids and provenance assigned in code, runs the quality checks and the engine's `validate()` inside the runner's `verify` (so failures feed back), and returns the spec. New prompts are written against the shared schemas with evidence-id grounding required; the legacy multiple-choice prompt is not reused (it has no grounding rule and asks for a bare JSON array). Provenance is **derived from the cited evidence** (review finding 8): `deriveProvenance` maps the cited evidence ids to the planned concepts that own them and keeps only the plan's criteria that those concepts support in the alignment; with no unit (no alignment) the plan's criteria are kept as they are. Items get their own derived provenance; an activity with items gets the union of its items' evidence.
 
 **Files:**
 - Create: `packages/generator/src/produce/producer.ts`, `src/produce/multi-choice.ts`, `src/produce/index.ts`
 - Test: `packages/generator/test/produce-multi-choice.test.ts`
 
 **Interfaces:**
-- Produces: `ProduceInput { plan: ActivityPlan; map: ConceptMap; unit: UnitOfCompetency | null; promptConfig: PromptConfig; language: string; existing: { questions: string[]; passages: string[]; fronts: string[] }; rules: PlanRules }`; `EngineHandle { registry: LibraryRegistry }`; `Producer { type; produce(input, runner, engine): Promise<Produced> }` with `Produced = { spec: ActivitySpec; attempts: number; attemptIds: string[] }`; helpers `evidenceBlock(map, conceptIds): { text: string; allowed: AllowedRefs; evidenceText: string }` (lists `[ev-s12] quote` per concept; `evidenceText` is the concatenated quotes; `allowed.criteria` is the alignment's criterion ids, or null without a unit), `paragraph(text)` (= `<p>${escapeHtml(text)}</p>`), `engineIssues(spec, registry): Promise<string[]>` (calls `validate` from `@leaplearn/engine` with an empty asset manifest and formats issues as `path: message`), `createProducers(): Map<PlannedType, Producer>`; `PROMPT_VERSION = "2026-09-19.1"` exported from `prompts/system.ts` (bump when any prompt text changes).
-- MultiChoice conversion: `id = plan.activityId`, `title`, `question = paragraph(out.question)`, `answers[].text` plain, `feedbackChosen = out.answers[].feedback` when non-empty, `randomAnswers: true`, `language`, `provenance = { conceptIds: plan.conceptIds, evidenceIds: out.evidenceIds, criteriaIds: plan.criteriaIds }`.
+- Produces: `ProduceInput { plan: ActivityPlan; map: ConceptMap; unit: UnitOfCompetency | null; promptConfig: PromptConfig; language: string; existing: { questions: string[]; passages: string[]; fronts: string[] }; rules: PlanRules }`; `EngineHandle { registry: LibraryRegistry }`; `Producer { type; produce(input, runner, engine): Promise<Produced> }` with `Produced = { spec: ActivitySpec; attempts: number; attemptIds: string[] }`; helpers `evidenceBlock(map, conceptIds): EvidenceBlock` with `EvidenceBlock = { text: string; allowed: AllowedRefs; byId: Map<string, { quote: string; conceptIds: string[] }> }` (lists `[ev-s12] quote` under each planned concept; `allowed.criteria` is the alignment's criterion ids, or null without a unit), `evidenceTextFor(block, evidenceIds): string` (the cited quotes joined), `deriveProvenance(input, block, evidenceIds): Provenance` (`evidenceIds` deduplicated in cited order; `conceptIds` = the planned concepts, in plan order, whose evidence includes any cited id; `criteriaIds` = `plan.criteriaIds` filtered to those the alignment lists as supported by at least one of those concepts, or `plan.criteriaIds` unchanged when the map has no alignment), `paragraph(text)` (= `<p>${escapeHtml(text)}</p>`), `engineIssues(spec, registry): Promise<string[]>` (calls `validate` from `@leaplearn/engine` with an empty asset manifest and formats issues as `path: message`), `createProducers(): Map<PlannedType, Producer>`; `PROMPT_VERSION = "2026-09-19.2"` exported from `prompts/system.ts` (bump when any prompt text changes). Call key: `produce:<activityId>`.
+- MultiChoice conversion: `id = plan.activityId`, `title`, `question = paragraph(out.question)`, `answers[].text` plain, `feedbackChosen = out.answers[].feedback` when non-empty, `randomAnswers: true`, `language`, `provenance = deriveProvenance(input, block, out.evidenceIds)`.
 
 - [ ] **Step 1: Failing test**
 
@@ -2882,14 +3433,13 @@ const root = resolve(import.meta.dirname, "../../..");
 let registry: LibraryRegistry;
 beforeAll(async () => { registry = await createRegistry({ lockPath: resolve(root, "libraries/libraries.lock.json"), cacheDir: resolve(root, "libraries/cache") }); });
 
-const text = "Only the worker who applied a lock may remove it. A tag names the worker, the date and the reason.";
 const map: ConceptMap = { sourceId: "src", textHash: "0".repeat(64), concepts: [{ conceptId: "c1", name: "Lockout and tagout", summary: "s", evidence: [
   { evidenceId: "ev-s1", sentenceId: "s1", charStart: 0, charEnd: 50, quote: "Only the worker who applied a lock may remove it." },
   { evidenceId: "ev-s2", sentenceId: "s2", charStart: 51, charEnd: 101, quote: "A tag names the worker, the date and the reason." }
 ] }] };
 const input = { plan: { activityId: "act-1", slot: 1, type: "multiChoice" as const, conceptIds: ["c1"], criteriaIds: ["PC2.1"], focus: "who removes a lock" }, map, unit: null, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", existing: { questions: [], passages: [], fronts: [] }, rules: DEFAULT_PLAN_RULES };
 const good = { title: "Removing a lock", question: "Who may remove a lockout device from an isolator?", answers: [{ text: "The worker who applied it", correct: true, feedback: "Only the worker who applied a lock may remove it." }, { text: "Any supervisor", correct: false, feedback: "" }, { text: "The last person to leave", correct: false, feedback: "" }], evidenceIds: ["ev-s1"] };
-const mk = (script: ReturnType<typeof fakeResponse>[]) => { const provider = new FakeProvider(script); return { provider, runner: createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget(10_000_000), operationId: "op-act-1", sleep: async () => undefined }) }; };
+const mk = (script: ReturnType<typeof fakeResponse>[]) => { const provider = new FakeProvider(script); return { provider, runner: createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }, 0), operationId: "op-act-1", sleep: async () => undefined }) }; };
 
 describe("multiChoice producer", () => {
   it("prompts with the cited evidence, converts to a spec with ids and provenance, and passes engine validation", async () => {
@@ -2900,6 +3450,7 @@ describe("multiChoice producer", () => {
     expect(() => assertGeneratedProvenance(produced.spec)).not.toThrow();
     const req = provider.requests[0]!;
     expect(req.purpose).toBe("produce");
+    expect(req).not.toHaveProperty("temperature");
     expect(req.cachedContext).toContain("[ev-s1] Only the worker who applied a lock may remove it.");
     expect(req.user).toContain("who removes a lock");
     expect(req.system).toContain("GROUNDING RULES");
@@ -2915,6 +3466,13 @@ describe("multiChoice producer", () => {
     expect(provider.requests[1]?.user).toContain("exactly one answer must be correct");
     expect(provider.requests[2]?.user).toContain("unknown evidence ev-s9");
     if (produced.spec.type === "multiChoice") expect(produced.spec.question).toBe("<p>Which rule applies to locks &amp; tags?</p>");
+  });
+  it("derives criteria from the alignment: a question citing only one concept's evidence keeps only that concept's criteria", async () => {
+    const aligned: ConceptMap = { ...map, concepts: [map.concepts[0]!, { conceptId: "c2", name: "Testing for dead", summary: "s", evidence: [{ evidenceId: "ev-s3", sentenceId: "s3", charStart: 102, charEnd: 120, quote: "Test for dead now." }] }],
+      alignment: { criteria: [{ criterionId: "PC2.1", conceptIds: ["c1"] }, { criterionId: "PC2.2", conceptIds: ["c2"] }], unsupportedCriteriaIds: [] } };
+    const { runner } = mk([fakeResponse({ outputText: JSON.stringify(good) })]);
+    const produced = await createProducers().get("multiChoice")!.produce({ ...input, map: aligned, plan: { ...input.plan, conceptIds: ["c1", "c2"], criteriaIds: ["PC2.1", "PC2.2"] } }, runner, { registry });
+    expect(produced.spec.provenance).toEqual({ conceptIds: ["c1"], evidenceIds: ["ev-s1"], criteriaIds: ["PC2.1"] });
   });
   it("rejects a near-duplicate of an existing question in the import", async () => {
     const { provider, runner } = mk([fakeResponse({ outputText: JSON.stringify(good) }), fakeResponse({ outputText: JSON.stringify({ ...good, question: "What does a tag record?" }) })]);
@@ -2954,16 +3512,40 @@ export function paragraph(text: string): string {
   return `<p>${escapeHtml(text.trim())}</p>`;
 }
 
-/** The evidence the model may cite: every sentence of every planned concept, listed under its concept. */
-export function evidenceBlock(map: ConceptMap, conceptIds: string[]): { text: string; allowed: AllowedRefs; evidenceText: string } {
-  const concepts = map.concepts.filter((c) => conceptIds.includes(c.conceptId));
-  const evidence = new Set<string>(); const quotes: string[] = [];
+export interface EvidenceBlock { text: string; allowed: AllowedRefs; byId: Map<string, { quote: string; conceptIds: string[] }>; }
+export interface Provenance { conceptIds: string[]; evidenceIds: string[]; criteriaIds: string[]; }
+
+/** The evidence the model may cite: every sentence of every planned concept, listed under its concept. A sentence shared by two concepts is listed under both and owned by both. */
+export function evidenceBlock(map: ConceptMap, conceptIds: string[]): EvidenceBlock {
+  const concepts = conceptIds.map((id) => map.concepts.find((c) => c.conceptId === id)).filter((c): c is ConceptMap["concepts"][number] => c !== undefined);
+  const byId = new Map<string, { quote: string; conceptIds: string[] }>();
   const lines = concepts.map((c) => {
-    const rows = c.evidence.map((e) => { evidence.add(e.evidenceId); quotes.push(e.quote); return `[${e.evidenceId}] ${e.quote}`; });
+    const rows = c.evidence.map((e) => {
+      const entry = byId.get(e.evidenceId) ?? { quote: e.quote, conceptIds: [] };
+      entry.conceptIds.push(c.conceptId);
+      byId.set(e.evidenceId, entry);
+      return `[${e.evidenceId}] ${e.quote}`;
+    });
     return `CONCEPT ${c.conceptId}: ${c.name}\n${c.summary}\n${rows.join("\n")}`;
   });
   const criteria = map.alignment ? new Set(map.alignment.criteria.map((c) => c.criterionId)) : null;
-  return { text: `EVIDENCE (cite these ids):\n${lines.join("\n\n")}`, allowed: { evidence, concepts: new Set(concepts.map((c) => c.conceptId)), criteria }, evidenceText: quotes.join(" ") };
+  return { text: `EVIDENCE (cite these ids):\n${lines.join("\n\n")}`, allowed: { evidence: new Set(byId.keys()), concepts: new Set(concepts.map((c) => c.conceptId)), criteria }, byId };
+}
+
+export function evidenceTextFor(block: EvidenceBlock, evidenceIds: string[]): string {
+  return evidenceIds.map((id) => block.byId.get(id)?.quote ?? "").filter(Boolean).join(" ");
+}
+
+/** Provenance from what was actually cited: the concepts that own the cited evidence, and the plan's criteria those concepts support. */
+export function deriveProvenance(input: ProduceInput, block: EvidenceBlock, evidenceIds: string[]): Provenance {
+  const cited = [...new Set(evidenceIds)];
+  const owners = new Set(cited.flatMap((id) => block.byId.get(id)?.conceptIds ?? []));
+  const conceptIds = input.plan.conceptIds.filter((id) => owners.has(id));
+  const alignment = input.map.alignment;
+  const criteriaIds = alignment
+    ? input.plan.criteriaIds.filter((id) => alignment.criteria.find((c) => c.criterionId === id)?.conceptIds.some((c) => conceptIds.includes(c)) ?? false)
+    : [...input.plan.criteriaIds];
+  return { conceptIds, evidenceIds: cited, criteriaIds };
 }
 
 export function criteriaBlock(input: ProduceInput): string {
@@ -2996,7 +3578,7 @@ import type { StageRunner } from "../llm/runner.js";
 import { buildSystemPrompt } from "../prompts/system.js";
 import { checkAgainstExisting, checkMultiChoice, checkReferences } from "../quality/checks.js";
 import { MultiChoiceOut, MultiChoiceOutSchema } from "../schemas/model-output.js";
-import { criteriaBlock, engineIssues, evidenceBlock, paragraph, tryConvert, type EngineHandle, type Produced, type ProduceInput, type Producer } from "./producer.js";
+import { criteriaBlock, deriveProvenance, engineIssues, evidenceBlock, paragraph, tryConvert, type EngineHandle, type EvidenceBlock, type Produced, type ProduceInput, type Producer } from "./producer.js";
 
 const TASK = `Write ONE multiple-choice revision question from the evidence.
 - The question tests understanding of the focus, not recall of exact wording.
@@ -3004,12 +3586,12 @@ const TASK = `Write ONE multiple-choice revision question from the evidence.
 - feedback for the correct answer restates the evidence in one sentence; feedback for a wrong answer explains briefly why it is wrong (may be empty).
 - Plain text only. Cite in evidenceIds the evidence sentence ids the question and correct answer rely on.`;
 
-export function toMultiChoiceSpec(out: MultiChoiceOut, input: ProduceInput): MultiChoiceSpec {
+export function toMultiChoiceSpec(out: MultiChoiceOut, input: ProduceInput, block: EvidenceBlock): MultiChoiceSpec {
   const answers = out.answers.map((a) => (a.feedback.trim() ? { text: a.text.trim(), correct: a.correct, feedbackChosen: a.feedback.trim() } : { text: a.text.trim(), correct: a.correct }));
   return ActivitySpec.parse({
     id: input.plan.activityId, title: out.title.trim(), type: "multiChoice", language: input.language,
     question: paragraph(out.question), answers, randomAnswers: true,
-    provenance: { conceptIds: input.plan.conceptIds, evidenceIds: [...new Set(out.evidenceIds)], criteriaIds: input.plan.criteriaIds }
+    provenance: deriveProvenance(input, block, out.evidenceIds)
   }) as MultiChoiceSpec;
 }
 
@@ -3018,11 +3600,12 @@ export const multiChoiceProducer: Producer = {
   async produce(input: ProduceInput, runner: StageRunner, engine: EngineHandle): Promise<Produced> {
     const evidence = evidenceBlock(input.map, input.plan.conceptIds);
     const { value, attempts, attemptIds } = await runner.run({
+      key: `produce:${input.plan.activityId}`,
       request: {
         purpose: "produce", model: modelForRole("produce"),
         system: buildSystemPrompt(input.promptConfig), cachedContext: evidence.text,
         user: `${TASK}\n\nFOCUS: ${input.plan.focus}${criteriaBlock(input)}`,
-        maxOutputTokens: 1500, outputSchema: MultiChoiceOutSchema, temperature: 0.4
+        maxOutputTokens: 1500, outputSchema: MultiChoiceOutSchema
       },
       schema: MultiChoiceOut,
       verify: async (out) => {
@@ -3032,11 +3615,11 @@ export const multiChoiceProducer: Producer = {
           ...checkAgainstExisting("question", out.question, input.existing.questions)
         ];
         if (issues.length > 0) return issues;
-        const converted = tryConvert(() => toMultiChoiceSpec(out, input));
+        const converted = tryConvert(() => toMultiChoiceSpec(out, input, evidence));
         return "issues" in converted ? converted.issues : engineIssues(converted.spec, engine.registry);
       }
     });
-    return { spec: toMultiChoiceSpec(value, input), attempts, attemptIds };
+    return { spec: toMultiChoiceSpec(value, input, evidence), attempts, attemptIds };
   }
 };
 ```
@@ -3054,7 +3637,7 @@ export function createProducers(): Map<PlannedType, Producer> {
   return new Map<PlannedType, Producer>([[multiChoiceProducer.type, multiChoiceProducer]]);
 }
 ```
-Add to `prompts/system.ts`: `export const PROMPT_VERSION = "2026-09-19.1";` and append `export * from "./produce/index.js";` to `src/index.ts`.
+Add to `prompts/system.ts`: `export const PROMPT_VERSION = "2026-09-19.2";` (`.2` because the alignment prompt and the producers' prompts differ from revision 1 of this plan) and append `export * from "./produce/index.js";` to `src/index.ts`.
 
 - [ ] **Step 3: Verify and commit**
 
@@ -3076,7 +3659,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Test: `packages/generator/test/produce-blanks.test.ts`
 
 **Interfaces:**
-- Produces: `blanksProducer: Producer` and `toBlanksSpec(out, input): BlanksSpec` (`id = plan.activityId`; `taskDescription = escapeHtml(out.taskDescription)` — the engine's blanks handler adds the `<p>` wrapper; `passage` plain text with `{{bN}}`; blanks `id: b<N>` by position with `answers`, `tip` (omitted when null) and item provenance `{ conceptIds: plan.conceptIds, evidenceIds: blank.evidenceIds, criteriaIds: plan.criteriaIds }`; `caseSensitive: false`; activity provenance from `out.evidenceIds`).
+- Produces: `blanksProducer: Producer` and `toBlanksSpec(out, input, block): BlanksSpec` (`id = plan.activityId`; `taskDescription = escapeHtml(out.taskDescription)` — the engine's blanks handler adds the `<p>` wrapper; `passage` plain text with `{{bN}}`; blanks `id: b<N>` by position with `answers`, `tip` (omitted when null) and item provenance `deriveProvenance(input, block, blank.evidenceIds)`; `caseSensitive: false`; activity provenance `deriveProvenance(input, block, union of the blanks' evidence ids)`). Each blank's answers are checked against the evidence **that blank** cites (`checkBlanks(out, (ids) => evidenceTextFor(block, ids))`).
 
 - [ ] **Step 1: Failing test**
 
@@ -3085,12 +3668,11 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 const good = {
   title: "Locks and tags", taskDescription: "Complete the sentences about lockout and tagout.",
   passage: "Only the {{b1}} who applied a lock may remove it. A tag names the worker, the {{b2}} and the reason for the isolation.",
-  blanks: [{ answers: ["worker"], tip: "the person, not the role", evidenceIds: ["ev-s1"] }, { answers: ["date"], tip: null, evidenceIds: ["ev-s2"] }],
-  evidenceIds: ["ev-s1", "ev-s2"]
+  blanks: [{ answers: ["worker"], tip: "the person, not the role", evidenceIds: ["ev-s1"] }, { answers: ["date"], tip: null, evidenceIds: ["ev-s2"] }]
 };
 describe("blanks producer", () => {
-  it("converts to a BlanksSpec with positional blank ids, item provenance and escaped task description", async () => {
-    const { runner } = mk([fakeResponse({ outputText: JSON.stringify(good) })]);
+  it("converts to a BlanksSpec with positional blank ids, derived item provenance, the evidence union on the activity, and an escaped task description", async () => {
+    const { provider, runner } = mk([fakeResponse({ outputText: JSON.stringify(good) })]);
     const produced = await createProducers().get("blanks")!.produce({ ...input, plan: { ...input.plan, activityId: "act-4", type: "blanks" } }, runner, { registry });
     expect(produced.spec.type).toBe("blanks");
     if (produced.spec.type !== "blanks") return;
@@ -3098,16 +3680,30 @@ describe("blanks producer", () => {
     expect(produced.spec.blanks.map((b) => b.id)).toEqual(["b1", "b2"]);
     expect(produced.spec.blanks[0]).toEqual({ id: "b1", answers: ["worker"], tip: "the person, not the role", provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1"], criteriaIds: ["PC2.1"] } });
     expect(produced.spec.blanks[1]).not.toHaveProperty("tip");
+    expect(produced.spec.provenance).toEqual({ conceptIds: ["c1"], evidenceIds: ["ev-s1", "ev-s2"], criteriaIds: ["PC2.1"] });
     expect(() => assertGeneratedProvenance(produced.spec)).not.toThrow();
+    expect(provider.requests[0]).not.toHaveProperty("temperature");
   });
-  it("rejects an answer that is not in the cited evidence and a passage with *", async () => {
+  it("rejects an answer that is not in the evidence its own blank cites, and a passage with *", async () => {
     const ungrounded = { ...good, blanks: [{ ...good.blanks[0]!, answers: ["electrician"] }, good.blanks[1]!] };
+    const wrongSentence = { ...good, blanks: [{ ...good.blanks[0]!, answers: ["date"] }, good.blanks[1]!] }; // "date" is in ev-s2, but blank 1 cites ev-s1
     const star = { ...good, passage: good.passage.replace("A tag", "A 5* tag") };
-    const { provider, runner } = mk([fakeResponse({ outputText: JSON.stringify(ungrounded) }), fakeResponse({ outputText: JSON.stringify(star) }), fakeResponse({ outputText: JSON.stringify(good) })]);
-    const produced = await createProducers().get("blanks")!.produce({ ...input, plan: { ...input.plan, activityId: "act-4", type: "blanks" } }, runner, { registry });
-    expect(produced.attempts).toBe(3);
-    expect(provider.requests[1]?.user).toContain('answer "electrician" does not occur in the cited evidence');
-    expect(provider.requests[2]?.user).toContain("passage must not contain *");
+    const { provider, runner } = mk([fakeResponse({ outputText: JSON.stringify(ungrounded) }), fakeResponse({ outputText: JSON.stringify(wrongSentence) }), fakeResponse({ outputText: JSON.stringify(star) }), fakeResponse({ outputText: JSON.stringify(good) })]);
+    await expect(createProducers().get("blanks")!.produce({ ...input, plan: { ...input.plan, activityId: "act-4", type: "blanks" } }, runner, { registry })).rejects.toMatchObject({ name: "ContentFailure", attempts: 3 });
+    expect(provider.requests[1]?.user).toContain('blank 1 answer "electrician" does not occur in the evidence it cites');
+    expect(provider.requests[2]?.user).toContain('blank 1 answer "date" does not occur in the evidence it cites');
+    expect(provider.requests).toHaveLength(3);
+  });
+  it("derives each blank's criteria from the concept its evidence belongs to", async () => {
+    const aligned: ConceptMap = { ...map, concepts: [map.concepts[0]!, { conceptId: "c2", name: "Testing for dead", summary: "s", evidence: [{ evidenceId: "ev-s3", sentenceId: "s3", charStart: 102, charEnd: 145, quote: "Test for dead at the point of work every time." }] }],
+      alignment: { criteria: [{ criterionId: "PC2.1", conceptIds: ["c1"] }, { criterionId: "PC2.2", conceptIds: ["c2"] }], unsupportedCriteriaIds: [] } };
+    const twoConcepts = { ...good, passage: "Only the {{b1}} who applied a lock may remove it. Test for dead at the {{b2}} of work every time.", blanks: [good.blanks[0]!, { answers: ["point"], tip: null, evidenceIds: ["ev-s3"] }] };
+    const { runner } = mk([fakeResponse({ outputText: JSON.stringify(twoConcepts) })]);
+    const produced = await createProducers().get("blanks")!.produce({ ...input, map: aligned, plan: { ...input.plan, activityId: "act-4", type: "blanks", conceptIds: ["c1", "c2"], criteriaIds: ["PC2.1", "PC2.2"] } }, runner, { registry });
+    if (produced.spec.type !== "blanks") throw new Error("type");
+    expect(produced.spec.blanks[0]!.provenance).toEqual({ conceptIds: ["c1"], evidenceIds: ["ev-s1"], criteriaIds: ["PC2.1"] });
+    expect(produced.spec.blanks[1]!.provenance).toEqual({ conceptIds: ["c2"], evidenceIds: ["ev-s3"], criteriaIds: ["PC2.2"] });
+    expect(produced.spec.provenance).toEqual({ conceptIds: ["c1", "c2"], evidenceIds: ["ev-s1", "ev-s3"], criteriaIds: ["PC2.1", "PC2.2"] });
   });
 });
 ```
@@ -3123,24 +3719,24 @@ import type { StageRunner } from "../llm/runner.js";
 import { buildSystemPrompt } from "../prompts/system.js";
 import { checkAgainstExisting, checkBlanks, checkReferences } from "../quality/checks.js";
 import { BlanksOut, BlanksOutSchema } from "../schemas/model-output.js";
-import { criteriaBlock, engineIssues, evidenceBlock, tryConvert, type EngineHandle, type Produced, type ProduceInput, type Producer } from "./producer.js";
+import { criteriaBlock, deriveProvenance, engineIssues, evidenceBlock, evidenceTextFor, tryConvert, type EngineHandle, type EvidenceBlock, type Produced, type ProduceInput, type Producer } from "./producer.js";
 
 const TASK = `Write ONE fill-in-the-blanks revision passage from the evidence.
 - The passage is 2 to 4 sentences of plain text that closely follows the evidence, with 2 to 4 blanks written as {{b1}}, {{b2}}, ... in order of appearance, each exactly once.
-- Each blank removes a key term or value that appears word-for-word in the evidence; list that exact wording in answers (add a second accepted spelling only if it also appears in the evidence).
+- Each blank removes a key term or value that appears word-for-word in the evidence sentence that blank cites; list that exact wording in answers (add a second accepted spelling only if it also appears in that sentence).
 - Never use the characters * / : in answers or tips, and never put * in the passage.
-- tip is a short hint or null. Cite in each blank's evidenceIds the sentence the answer comes from, and in the top-level evidenceIds every sentence the passage relies on.`;
+- tip is a short hint or null. Cite in each blank's evidenceIds the sentence its answer comes from.`;
 
-export function toBlanksSpec(out: BlanksOut, input: ProduceInput): BlanksSpec {
+export function toBlanksSpec(out: BlanksOut, input: ProduceInput, block: EvidenceBlock): BlanksSpec {
   const blanks = out.blanks.map((b, i) => {
-    const item: Record<string, unknown> = { id: `b${i + 1}`, answers: b.answers.map((a) => a.trim()), provenance: { conceptIds: input.plan.conceptIds, evidenceIds: [...new Set(b.evidenceIds)], criteriaIds: input.plan.criteriaIds } };
+    const item: Record<string, unknown> = { id: `b${i + 1}`, answers: b.answers.map((a) => a.trim()), provenance: deriveProvenance(input, block, b.evidenceIds) };
     if (b.tip !== null && b.tip.trim()) item["tip"] = b.tip.trim();
     return item;
   });
   return ActivitySpec.parse({
     id: input.plan.activityId, title: out.title.trim(), type: "blanks", language: input.language,
     taskDescription: escapeHtml(out.taskDescription.trim()), passage: out.passage.trim(), blanks, caseSensitive: false,
-    provenance: { conceptIds: input.plan.conceptIds, evidenceIds: [...new Set(out.evidenceIds)], criteriaIds: input.plan.criteriaIds }
+    provenance: deriveProvenance(input, block, out.blanks.flatMap((b) => b.evidenceIds))
   }) as BlanksSpec;
 }
 
@@ -3149,21 +3745,21 @@ export const blanksProducer: Producer = {
   async produce(input: ProduceInput, runner: StageRunner, engine: EngineHandle): Promise<Produced> {
     const evidence = evidenceBlock(input.map, input.plan.conceptIds);
     const { value, attempts, attemptIds } = await runner.run({
-      request: { purpose: "produce", model: modelForRole("produce"), system: buildSystemPrompt(input.promptConfig), cachedContext: evidence.text, user: `${TASK}\n\nFOCUS: ${input.plan.focus}${criteriaBlock(input)}`, maxOutputTokens: 1500, outputSchema: BlanksOutSchema, temperature: 0.3 },
+      key: `produce:${input.plan.activityId}`,
+      request: { purpose: "produce", model: modelForRole("produce"), system: buildSystemPrompt(input.promptConfig), cachedContext: evidence.text, user: `${TASK}\n\nFOCUS: ${input.plan.focus}${criteriaBlock(input)}`, maxOutputTokens: 1500, outputSchema: BlanksOutSchema },
       schema: BlanksOut,
       verify: async (out) => {
         const issues = [
-          ...checkBlanks(out, evidence.evidenceText),
-          ...checkReferences({ evidenceIds: out.evidenceIds, conceptIds: input.plan.conceptIds, criteriaIds: input.plan.criteriaIds }, evidence.allowed, "the passage"),
+          ...checkBlanks(out, (ids) => evidenceTextFor(evidence, ids)),
           ...out.blanks.flatMap((b, i) => checkReferences({ evidenceIds: b.evidenceIds, conceptIds: [], criteriaIds: [] }, evidence.allowed, `blank ${i + 1}`)),
           ...checkAgainstExisting("passage", out.passage, input.existing.passages)
         ];
         if (issues.length > 0) return issues;
-        const converted = tryConvert(() => toBlanksSpec(out, input));
+        const converted = tryConvert(() => toBlanksSpec(out, input, evidence));
         return "issues" in converted ? converted.issues : engineIssues(converted.spec, engine.registry);
       }
     });
-    return { spec: toBlanksSpec(value, input), attempts, attemptIds };
+    return { spec: toBlanksSpec(value, input, evidence), attempts, attemptIds };
   }
 };
 ```
@@ -3189,23 +3785,36 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Test: `packages/generator/test/produce-flashcards.test.ts`
 
 **Interfaces:**
-- Produces: `flashcardsProducer: Producer` and `toFlashcardsSpec(out, input): FlashcardsSpec` (`id = plan.activityId`; `description` plain (omitted when empty); cards `id: c<N>` by position with `front`, `back`, `tip` (omitted when null) and item provenance from each card's `evidenceIds`; card count bounds from `input.rules.flashcards`).
+- Produces: `flashcardsProducer: Producer` and `toFlashcardsSpec(out, input, block): FlashcardsSpec` (`id = plan.activityId`; `description` plain (omitted when empty); cards `id: c<N>` by position with `front`, `back`, `tip` (omitted when null) and item provenance `deriveProvenance(input, block, card.evidenceIds)`; activity provenance from the union of the cards' evidence; card count bounds from `input.rules.flashcards`).
 
 - [ ] **Step 1: Failing test**
 
 `packages/generator/test/produce-flashcards.test.ts` (same harness as Task 11 — one concept `c1` with two evidence sentences, which the four cards cite between them; `activityId: "act-7"`, `type: "flashcards"`):
 ```ts
 const card = (front: string, back: string, ev: string) => ({ front, back, tip: null, evidenceIds: [ev] });
-const good = { title: "Key terms", description: "Isolation vocabulary.", cards: [card("Lockout device", "A padlock or hasp that physically prevents an isolator from being closed", "ev-s1"), card("Tag", "A warning label naming the worker, the date and the reason", "ev-s2"), card("Who may remove a lock", "Only the worker who applied it", "ev-s1"), card("Tag without a lock", "A warning, not a control", "ev-s2")], evidenceIds: ["ev-s1", "ev-s2"] };
+const good = { title: "Key terms", description: "Isolation vocabulary.", cards: [card("Lockout device", "A padlock or hasp that physically prevents an isolator from being closed", "ev-s1"), card("Tag", "A warning label naming the worker, the date and the reason", "ev-s2"), card("Who may remove a lock", "Only the worker who applied it", "ev-s1"), card("Tag without a lock", "A warning, not a control", "ev-s2")] };
 describe("flashcards producer", () => {
-  it("converts to a FlashcardsSpec with positional card ids and per-card provenance", async () => {
-    const { runner } = mk([fakeResponse({ outputText: JSON.stringify(good) })]);
+  it("converts to a FlashcardsSpec with positional card ids, per-card derived provenance and the evidence union on the set", async () => {
+    const { provider, runner } = mk([fakeResponse({ outputText: JSON.stringify(good) })]);
     const produced = await createProducers().get("flashcards")!.produce({ ...input, plan: { ...input.plan, activityId: "act-7", type: "flashcards" } }, runner, { registry });
     if (produced.spec.type !== "flashcards") throw new Error("type");
     expect(produced.spec.cards.map((c) => c.id)).toEqual(["c1", "c2", "c3", "c4"]);
     expect(produced.spec.cards[1]).toEqual({ id: "c2", front: "Tag", back: "A warning label naming the worker, the date and the reason", provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s2"], criteriaIds: ["PC2.1"] } });
+    expect(produced.spec.provenance).toEqual({ conceptIds: ["c1"], evidenceIds: ["ev-s1", "ev-s2"], criteriaIds: ["PC2.1"] });
     expect(produced.spec.description).toBe("Isolation vocabulary.");
     expect(() => assertGeneratedProvenance(produced.spec)).not.toThrow();
+    expect(provider.requests[0]).not.toHaveProperty("temperature");
+  });
+  it("a card citing only concept B's evidence is mapped only to concept B's criteria, never to concept A's", async () => {
+    const aligned: ConceptMap = { ...map, concepts: [map.concepts[0]!, { conceptId: "c2", name: "Testing for dead", summary: "s", evidence: [{ evidenceId: "ev-s3", sentenceId: "s3", charStart: 102, charEnd: 145, quote: "Test for dead at the point of work every time." }] }],
+      alignment: { criteria: [{ criterionId: "PC2.1", conceptIds: ["c1"] }, { criterionId: "PC2.2", conceptIds: ["c2"] }], unsupportedCriteriaIds: [] } };
+    const mixed = { ...good, cards: [...good.cards.slice(0, 3), card("When to test for dead", "At the point of work, every time", "ev-s3")] };
+    const { runner } = mk([fakeResponse({ outputText: JSON.stringify(mixed) })]);
+    const produced = await createProducers().get("flashcards")!.produce({ ...input, map: aligned, plan: { ...input.plan, activityId: "act-7", type: "flashcards", conceptIds: ["c1", "c2"], criteriaIds: ["PC2.1", "PC2.2"] } }, runner, { registry });
+    if (produced.spec.type !== "flashcards") throw new Error("type");
+    expect(produced.spec.cards[0]!.provenance).toEqual({ conceptIds: ["c1"], evidenceIds: ["ev-s1"], criteriaIds: ["PC2.1"] });
+    expect(produced.spec.cards[3]!.provenance).toEqual({ conceptIds: ["c2"], evidenceIds: ["ev-s3"], criteriaIds: ["PC2.2"] });
+    expect(produced.spec.provenance).toEqual({ conceptIds: ["c1", "c2"], evidenceIds: ["ev-s1", "ev-s2", "ev-s3"], criteriaIds: ["PC2.1", "PC2.2"] });
   });
   it("enforces the card bounds from the plan rules and distinct fronts", async () => {
     const few = { ...good, cards: good.cards.slice(0, 2) };
@@ -3229,20 +3838,20 @@ import type { StageRunner } from "../llm/runner.js";
 import { buildSystemPrompt } from "../prompts/system.js";
 import { checkAgainstExisting, checkFlashcards, checkReferences } from "../quality/checks.js";
 import { FlashcardsOut, FlashcardsOutSchema } from "../schemas/model-output.js";
-import { criteriaBlock, engineIssues, evidenceBlock, tryConvert, type EngineHandle, type Produced, type ProduceInput, type Producer } from "./producer.js";
+import { criteriaBlock, deriveProvenance, engineIssues, evidenceBlock, tryConvert, type EngineHandle, type EvidenceBlock, type Produced, type ProduceInput, type Producer } from "./producer.js";
 
 const TASK = (min: number, max: number) => `Write a set of ${min} to ${max} revision flashcards from the evidence.
 - front is a term, question or prompt (short); back is the answer or definition in one or two sentences drawn from the evidence; tip is an optional hint or null.
 - Fronts are distinct; no two cards test the same idea.
-- Plain text only. Cite in each card's evidenceIds the sentence(s) the card is based on, and in the top-level evidenceIds every sentence used.`;
+- Plain text only. Cite in each card's evidenceIds the sentence(s) that card is based on.`;
 
-export function toFlashcardsSpec(out: FlashcardsOut, input: ProduceInput): FlashcardsSpec {
+export function toFlashcardsSpec(out: FlashcardsOut, input: ProduceInput, block: EvidenceBlock): FlashcardsSpec {
   const cards = out.cards.map((c, i) => {
-    const item: Record<string, unknown> = { id: `c${i + 1}`, front: c.front.trim(), back: c.back.trim(), provenance: { conceptIds: input.plan.conceptIds, evidenceIds: [...new Set(c.evidenceIds)], criteriaIds: input.plan.criteriaIds } };
+    const item: Record<string, unknown> = { id: `c${i + 1}`, front: c.front.trim(), back: c.back.trim(), provenance: deriveProvenance(input, block, c.evidenceIds) };
     if (c.tip !== null && c.tip.trim()) item["tip"] = c.tip.trim();
     return item;
   });
-  const spec: Record<string, unknown> = { id: input.plan.activityId, title: out.title.trim(), type: "flashcards", language: input.language, cards, provenance: { conceptIds: input.plan.conceptIds, evidenceIds: [...new Set(out.evidenceIds)], criteriaIds: input.plan.criteriaIds } };
+  const spec: Record<string, unknown> = { id: input.plan.activityId, title: out.title.trim(), type: "flashcards", language: input.language, cards, provenance: deriveProvenance(input, block, out.cards.flatMap((c) => c.evidenceIds)) };
   if (out.description.trim()) spec["description"] = out.description.trim();
   return ActivitySpec.parse(spec) as FlashcardsSpec;
 }
@@ -3253,21 +3862,21 @@ export const flashcardsProducer: Producer = {
     const { cardsMin, cardsMax } = input.rules.flashcards;
     const evidence = evidenceBlock(input.map, input.plan.conceptIds);
     const { value, attempts, attemptIds } = await runner.run({
-      request: { purpose: "produce", model: modelForRole("produce"), system: buildSystemPrompt(input.promptConfig), cachedContext: evidence.text, user: `${TASK(cardsMin, cardsMax)}\n\nFOCUS: ${input.plan.focus}${criteriaBlock(input)}`, maxOutputTokens: 3000, outputSchema: FlashcardsOutSchema, temperature: 0.4 },
+      key: `produce:${input.plan.activityId}`,
+      request: { purpose: "produce", model: modelForRole("produce"), system: buildSystemPrompt(input.promptConfig), cachedContext: evidence.text, user: `${TASK(cardsMin, cardsMax)}\n\nFOCUS: ${input.plan.focus}${criteriaBlock(input)}`, maxOutputTokens: 3000, outputSchema: FlashcardsOutSchema },
       schema: FlashcardsOut,
       verify: async (out) => {
         const issues = [
           ...checkFlashcards(out, cardsMin, cardsMax),
-          ...checkReferences({ evidenceIds: out.evidenceIds, conceptIds: input.plan.conceptIds, criteriaIds: input.plan.criteriaIds }, evidence.allowed, "the card set"),
           ...out.cards.flatMap((c, i) => checkReferences({ evidenceIds: c.evidenceIds, conceptIds: [], criteriaIds: [] }, evidence.allowed, `card ${i + 1}`)),
           ...out.cards.flatMap((c) => checkAgainstExisting("front", c.front, input.existing.fronts))
         ];
         if (issues.length > 0) return issues;
-        const converted = tryConvert(() => toFlashcardsSpec(out, input));
+        const converted = tryConvert(() => toFlashcardsSpec(out, input, evidence));
         return "issues" in converted ? converted.issues : engineIssues(converted.spec, engine.registry);
       }
     });
-    return { spec: toFlashcardsSpec(value, input), attempts, attemptIds };
+    return { spec: toFlashcardsSpec(value, input, evidence), attempts, attemptIds };
   }
 };
 ```
@@ -3279,7 +3888,7 @@ Run: `pnpm --filter @leaplearn/generator test && pnpm --filter @leaplearn/genera
 
 ```bash
 git add packages/generator
-git commit -m "feat(generator): flashcards producer with per-card provenance
+git commit -m "feat(generator): flashcards producer with per-card derived provenance
 
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 ```
@@ -3288,22 +3897,24 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ### Task 14: The import store, the resumable pipeline, and operations with failure categories
 
-The orchestration of spec §5 for the CLI: every step persists its artefact so a rerun skips finished work; every activity is one operation with an idempotency key; content failures regenerate (inside the runner), transient failures retry, infrastructure failures stop the import; the terminal status follows the §4 rules; attempt starts without outcomes are reconciled as billing-uncertain on restart.
+The orchestration of spec §5 for the CLI, rebuilt around the review's recovery findings (4, 5, 7): every operation persists its result **before** it is marked succeeded and a persisted result is reused on resume even when the operation record was interrupted; activity records are reconciled from the saved plan; a saved candidate revision resumes at compilation; promotion is idempotent and repairable; the import stores an immutable `fingerprint` and refuses a resume whose inputs differ; the store grants one exclusive lock per import; activities run in one serial lane per type (exact near-duplicate checks) with lanes concurrent; a budget refusal or infrastructure failure sets a shared stop, in-flight attempts settle, and every undispatched activity gets an explicit outcome. Attempt starts without outcomes are reconciled as billing-uncertain on restart. Acceptance and alignment-review records (spec §4) are part of the store from this task so Task 15's `FileStore` and Task 16's `leap review` share one interface.
 
 **Files:**
-- Create: `packages/generator/src/store/types.ts`, `src/store/memory-store.ts`, `src/pipeline/operations.ts`, `src/pipeline/run-import.ts`, `src/pipeline/index.ts`
+- Create: `packages/generator/src/store/types.ts`, `src/store/memory-store.ts`, `src/pipeline/fingerprint.ts`, `src/pipeline/operations.ts`, `src/pipeline/run-import.ts`, `src/pipeline/index.ts`
 - Modify: `packages/generator/src/concepts/index.ts` (per-chunk persistence hook)
-- Test: `packages/generator/test/helpers/synthetic.ts`, `packages/generator/test/pipeline.test.ts`
+- Test: `packages/generator/test/helpers/synthetic.ts`, `test/helpers/crashing-store.ts`, `test/helpers/routed-provider.ts`, `packages/generator/test/pipeline.test.ts`
 
 **Interfaces:**
-- Records (spec §4, tenancy fields kept): `ImportRecord { importId; orgId; name; sourceType; status: ImportStatus; customisation: string | null; language; unitTextHash: string | null; selectedTypes: PlannedType[]; budget: { limitUsdMicro }; budgetUsed: { spentUsdMicro; reservedUsdMicro }; error: string | null; idempotencyKey; createdAt; updatedAt }`; `ActivityRecord { activityId; importId; type; order; status: ActivityStatus; currentRevision: number | null; conceptIds; criteriaIds; error: string | null; dropped: boolean }`; `RevisionRecord { activityId; revision; state: RevisionState; spec: ActivitySpec; schemaVersion; promptVersion; modelConfig: { provider; models: Record<string, string> }; engineFingerprint; note: string | null; buildKey: string | null; attemptIds: string[]; createdAt }`; `OperationRecord { operationId; importId; activityId: string | null; purpose: Purpose | "build"; status: "running" | "succeeded" | "failed"; idempotencyKey; contentAttempts; outcome: string | null; billingUncertain: boolean; startedAt; completedAt: string | null }`.
-- `ImportStore`: `getImport(importId)`, `putImport(record)`; `getArtifact<T>(importId, name: ArtifactName)`, `putArtifact(importId, name, value)` with `ArtifactName = "source" | "unit" | "conceptMap" | "plan" | \`chunk-${number}\``; `listActivities(importId)`, `putActivity(record)`; `getRevision(activityId, revision)`, `listRevisions(activityId)`, `putRevision(record)`; `listOperations(importId)`, `putOperation(record)`; `recorderFor(importId): AttemptRecorder`; `listAttempts(importId): Promise<AttemptEvent[]>`; `putBuild(importId, activityId, revision, bytes): Promise<string>` (returns the build key), `getBuild(buildKey): Promise<Buffer | null>`.
-- `MemoryStore implements ImportStore` (maps; builds kept as Buffers).
-- `extractConceptMap(doc, unit, runner, options)` gains `options.chunkCache?: { get(index): Promise<ChunkConcept[] | null>; put(index, concepts): Promise<void> }`; when present, finished chunks are reused on rerun.
-- `runImport(input: RunImportInput, deps: RunImportDeps): Promise<ImportRecord>` with `RunImportInput = { importId; name; source: SourceDocument; unitText: string | null; selectedTypes; budgetUsdMicro; promptConfig; language; customisation: string | null; orgId?: string }` and `RunImportDeps = { store; provider; registry; engineFingerprint; concurrency?: 4; chunkTokens?; rules?; clock?; sleep?; onProgress?: (event: ProgressEvent) => void }`; `ProgressEvent = { kind: "status"; status } | { kind: "activity"; activityId; status; error?: string } | { kind: "attempt"; purpose; status; costUsdMicro: number | null }`.
+- Records (spec §4, tenancy fields kept): `ImportRecord { importId; orgId; name; sourceType; status: ImportStatus; customisation: string | null; language; unitTextHash: string | null; selectedTypes: PlannedType[]; fingerprint: string; budget: BudgetLimits; budgetUsed: { spentUsdMicro; reservedUsdMicro; spentTokens; requests }; error: string | null; idempotencyKey; createdAt; updatedAt }`; `ActivityRecord { activityId; importId; type; order; status: ActivityStatus; currentRevision: number | null; conceptIds; criteriaIds; error: string | null; dropped: boolean }`; `RevisionRecord { activityId; revision; state: RevisionState; spec: ActivitySpec; schemaVersion; promptVersion; modelConfig: { provider; models: Record<string, string>; profiles: Record<string, RequestProfile> }; engineFingerprint; note: string | null; buildKey: string | null; attemptIds: string[]; createdAt }`; `OperationRecord { operationId; importId; activityId: string | null; purpose: Purpose | "build"; status: "running" | "succeeded" | "failed"; idempotencyKey; contentAttempts; outcome: string | null; billingUncertain: boolean; startedAt; completedAt: string | null }`; `AcceptanceRecord { importId; activityId; revision; decision: AcceptanceDecision; reviewer; notes: string | null; decidedAt }`; `AlignmentReviewRecord { importId; activityId; revision; itemId: string | null; unitTextHash: string | null; criterionId; decision: AlignmentDecision; reviewer; decidedAt }`.
+- `ImportStore`: `lock(importId): Promise<StoreLock>` (rejects with `StoreLockedError` while another holder has it; `StoreLock = { release(): Promise<void> }`); `getImport`, `putImport`; `getArtifact<T>(importId, name)`, `putArtifact(importId, name, value)` with `ArtifactName = "source" | "unit" | "conceptMap" | "plan" | \`chunk-${number}\``; `listActivities`, `putActivity`; `getRevision`, `listRevisions`, `putRevision`; `listOperations`, `putOperation`; `recorderFor(importId)`, `listAttempts(importId)`; `putBuild(importId, activityId, revision, bytes): Promise<string>`, `getBuild(buildKey)`; `listAcceptances(importId)`, `putAcceptance(record)` (latest per activity + revision wins); `listAlignmentReviews(importId)`, `putAlignmentReview(record)` (latest per activity + revision + item + criterion wins).
+- `MemoryStore implements ImportStore` (maps; builds kept as Buffers; locks in a `Set`).
+- `runFingerprint(input: FingerprintInput): string` over `{ sourceTextHash, unitTextHash, selectedTypes (sorted), language, promptConfig, customisation, chunkTokens, rules, promptVersion, schemaVersion, models, profiles }` — budget limits are deliberately **not** part of it (a resume may raise them); `IncompatibleResumeError`; `DEFAULT_CHUNK_TOKENS = 6000`.
+- `extractConceptMap(doc, unit, runner, options)` gains `options.chunkCache?: { get(index): Promise<ChunkConcept[] | null>; put(index, concepts): Promise<void> }`; finished chunks are reused on rerun.
+- `budgetFromLedger(limits, events, startedAtMs): Budget` (known costs and tokens are spent; a start with no outcome is spent at its reservation; every start counts as a request); `attemptsByKey(events): Map<string, number>`; `reconcile(store, importId, clock)`; `runOperation<T>(ctx, { purpose; activityId; key; load; work; persist }): Promise<{ result: T; operation: OperationRecord; reused: boolean }>` — order: `load()` first (a persisted result is reused even if the operation record says running or failed, and that record is corrected to succeeded with a note, keeping `billingUncertain`); otherwise a new operation id (`key`, then `key#2`, …), `work`, **`persist`, then** the succeeded record; `runLanes(lanes, concurrency, worker)`.
+- `runImport(input: RunImportInput, deps: RunImportDeps): Promise<ImportRecord>` with `RunImportInput = { importId; name; source: SourceDocument; unitText: string | null; selectedTypes; budget: { usdMicro: number } & Partial<BudgetLimits>; promptConfig; language; customisation: string | null; orgId?: string }` and `RunImportDeps = { store; provider; registry; engineFingerprint; concurrency?: 3; chunkTokens?; rules?; clock?; sleep?; onProgress?: (event: ProgressEvent) => void }`; `ProgressEvent = { kind: "status"; status } | { kind: "activity"; activityId; status; error?: string } | { kind: "attempt"; purpose; status; costUsdMicro: number | null }`; `SKIPPED_PREFIX = "skipped: "`; `isPending(activity)`.
 - `engineFingerprint` = `\`engine@${engineVersion}+lock:${sha256(libraries.lock.json).slice(0, 12)}\`` computed by the caller (CLI); tests pass a constant.
-- Failure categories: `ContentFailure` → activity `failed`, `error: "content: …"`; `BudgetRefused` → activity `failed`, `error: "budget: …"` and no further activities are dispatched; `InfrastructureFailure` (or any `EngineError` from compile) → the import is marked `failed` with the message and the error is rethrown after persisting.
-- Terminal rules: zero promoted → `failed` (`error: "no activity was promoted"` unless already set); some failed → `ready_with_failures`; all promoted → `ready`. Idempotency: rerunning `runImport` with the same `importId` and the same store makes no model call for finished steps and returns the same terminal record.
+- Failure categories: `ContentFailure` → activity `failed`, `error: "content: …"` (terminal for the activity; regeneration is a human action); `BudgetRefused` → activity `failed`, `error: "budget: …"`, the stop flag is set, every activity not yet dispatched becomes `failed` with `error: "skipped: budget: …"`; `InfrastructureFailure` (or any other error) → the activity `failed` with `error: "system: …"`, the stop flag is set, lanes settle, the import is marked `failed` and the error is rethrown. On resume, activities whose error starts with `skipped:`, `budget:` or `system:` are re-dispatched; `content:` failures are not.
+- Terminal rules: zero promoted → `failed` (`error` = the stop reason, or `"no activity was promoted"`); some failed → `ready_with_failures`; all promoted → `ready`. Rerunning `runImport` with the same `importId`, the same inputs and the same store makes no model call for finished steps and returns the same terminal record; a `ready_with_failures` import with re-dispatchable activities resumes them.
 
 - [ ] **Step 1: Shared test helpers**
 
@@ -3315,12 +3926,12 @@ import type { SourceDocument } from "../../src/ingest/index.js";
 import { ingestMarkdown } from "../../src/ingest/index.js";
 import { chunkSentences } from "../../src/concepts/chunk.js";
 import { fakeResponse } from "../../src/llm/fake-provider.js";
-import type { AttemptEvent, AttemptRecorder } from "../../src/llm/types.js";
+import type { AttemptEvent, AttemptOutcome, AttemptRecorder, AttemptStart } from "../../src/llm/types.js";
 
 export const fixtures = resolve(import.meta.dirname, "../fixtures/synthetic");
 export const CHUNK_TOKENS = 330;
 
-export class MemoryRecorder implements AttemptRecorder { events: AttemptEvent[] = []; async recordStart(e: AttemptEvent) { this.events.push(e); } async recordOutcome(e: AttemptEvent) { this.events.push(e); } }
+export class MemoryRecorder implements AttemptRecorder { events: AttemptEvent[] = []; async recordStart(e: AttemptStart) { this.events.push(e); } async recordOutcome(e: AttemptOutcome) { this.events.push(e); } }
 
 export async function syntheticDoc(): Promise<SourceDocument> {
   return ingestMarkdown(await readFile(resolve(fixtures, "source-electrical-safety.md"), "utf8"), { sourceId: "src-synthetic" });
@@ -3358,7 +3969,7 @@ export function conceptResponses(doc: SourceDocument): { perChunk: Array<Array<{
   const inChunk = (i: number, ids: string[]) => ids.filter((id) => chunks[i]!.sentences.some((s) => s.sentenceId === id));
   const perChunk = chunks.map((_, i) => {
     const concepts: Array<{ name: string; summary: string; sentenceIds: string[] }> = [];
-    const loto = inChunk(i, [lotoEarly, lotoLate]); if (loto.length) concepts.push({ name: "Lockout and tagout", summary: "Locks and tags keep isolated equipment isolated.", sentenceIds: loto });
+    const loto = inChunk(i, [lotoEarly, lotoTag, lotoRemove, lotoLate]); if (loto.length) concepts.push({ name: "Lockout and tagout", summary: "Locks and tags keep isolated equipment isolated.", sentenceIds: loto });
     const tfd = inChunk(i, [tfdA, tfdB]); if (tfd.length) concepts.push({ name: "Testing for dead", summary: "Prove the tester, test every pair, record the result.", sentenceIds: tfd });
     const hz = inChunk(i, [hazards]); if (hz.length) concepts.push({ name: "Hazard identification", summary: "Inspect for damaged insulation, moisture, stored energy, multiple supplies.", sentenceIds: hz });
     if (concepts.length === 0) concepts.push({ name: "Personal protective equipment", summary: "PPE reduces severity but does not replace isolation.", sentenceIds: [chunks[i]!.sentences[0]!.sentenceId] });
@@ -3379,9 +3990,62 @@ export function conceptResponses(doc: SourceDocument): { perChunk: Array<Array<{
   return { perChunk, mergeOut, alignOut, script };
 }
 
-export const planOutFor = (types: Array<"multiChoice" | "blanks" | "flashcards">) => ({ activities: types.map((type, i) => ({ slot: i + 1, type, conceptIds: type === "flashcards" ? ["c1", "c2"] : [i % 2 === 0 ? "c1" : "c2"], criteriaIds: type === "flashcards" ? ["PC2.1", "PC2.2"] : [i % 2 === 0 ? "PC2.1" : "PC2.2"], focus: `${type} focus` })) });
+/** One plan entry per requested slot; multiChoice/blanks alternate between c1 and c2, flashcards take both. Focus strings are distinct so routed providers can tell activities apart. */
+export const planOutFor = (types: Array<"multiChoice" | "blanks" | "flashcards">) => ({ activities: types.map((type, i) => ({ slot: i + 1, type, conceptIds: type === "flashcards" ? ["c1", "c2"] : [i % 2 === 0 ? "c1" : "c2"], criteriaIds: type === "flashcards" ? ["PC2.1", "PC2.2"] : [i % 2 === 0 ? "PC2.1" : "PC2.2"], focus: `${type} focus ${i + 1}` })) });
 ```
 The `alignOut` ids assume the merge order above (`c1` lockout, `c2` testing for dead, `c3` hazards); `mergeConcepts` assigns ids in the model's returned order, which this helper fixes.
+
+`packages/generator/test/helpers/crashing-store.ts`:
+```ts
+import type { ImportStore } from "../../src/store/types.js";
+
+export class CrashError extends Error { constructor(method: string, nth: number) { super(`simulated crash before ${method} call ${nth}`); this.name = "CrashError"; } }
+
+type Method = { [K in keyof ImportStore]: ImportStore[K] extends (...args: never[]) => unknown ? K : never }[keyof ImportStore];
+
+/**
+ * Wraps a store so that the nth matching call of `method` never runs and the process is "dead" from then on:
+ * that call and every later store call throw CrashError. Resume tests then reopen the inner store.
+ */
+export function crashBefore<K extends Method>(inner: ImportStore, method: K, nth: number, matches: (args: Parameters<ImportStore[K]>) => boolean = () => true): ImportStore {
+  let seen = 0; let dead = false;
+  return new Proxy(inner, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver) as unknown;
+      if (typeof value !== "function") return value;
+      const fn = value as (...args: unknown[]) => unknown;
+      return (...args: unknown[]) => {
+        if (dead) throw new CrashError(String(prop), nth);
+        if (prop === method && matches(args as Parameters<ImportStore[K]>)) { seen += 1; if (seen === nth) { dead = true; throw new CrashError(String(prop), nth); } }
+        return fn.apply(target, args);
+      };
+    }
+  });
+}
+```
+
+`packages/generator/test/helpers/routed-provider.ts`:
+```ts
+import type { ModelProvider } from "../../src/llm/provider.js";
+import type { ModelRequest, ModelResponse } from "../../src/llm/types.js";
+
+export interface Route { match: (request: ModelRequest) => boolean; script: Array<ModelResponse | Error>; }
+
+/** A fake provider whose responses are chosen by request content, so concurrent lanes cannot swap each other's responses. */
+export class RoutedProvider implements ModelProvider {
+  readonly name = "fake" as const;
+  readonly requests: ModelRequest[] = [];
+  constructor(private readonly routes: Route[]) {}
+  async complete(request: ModelRequest): Promise<ModelResponse> {
+    this.requests.push(request);
+    const route = this.routes.find((r) => r.match(request));
+    const next = route?.script.shift();
+    if (next === undefined) throw new Error(`RoutedProvider has no response for purpose ${request.purpose} (user starts "${request.user.slice(0, 60)}")`);
+    if (next instanceof Error) throw next;
+    return { ...next, model: request.model };
+  }
+}
+```
 
 - [ ] **Step 2: Failing pipeline test**
 
@@ -3391,45 +4055,59 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { resolve } from "node:path";
 import { createRegistry, type LibraryRegistry } from "@leaplearn/engine";
 import { MemoryStore } from "../src/store/memory-store.js";
-import { runImport } from "../src/pipeline/run-import.js";
+import { StoreLockedError } from "../src/store/types.js";
+import { runImport, SKIPPED_PREFIX, type RunImportDeps, type RunImportInput } from "../src/pipeline/run-import.js";
+import { IncompatibleResumeError, runFingerprint } from "../src/pipeline/fingerprint.js";
 import { FakeProvider, fakeResponse } from "../src/llm/fake-provider.js";
+import { DEFAULT_BUDGET_LIMITS } from "../src/llm/budget.js";
+import { chunkSentences } from "../src/concepts/chunk.js";
 import { DEFAULT_PROMPT_CONFIG } from "../src/prompts/system.js";
-import { conceptResponses, syntheticDoc, syntheticUnitText, unitOut, planOutFor, CHUNK_TOKENS, sid } from "./helpers/synthetic.js";
+import type { AttemptStart } from "../src/llm/types.js";
 import type { PlanRules } from "../src/plan/planner.js";
+import { conceptResponses, syntheticDoc, syntheticUnitText, unitOut, planOutFor, CHUNK_TOKENS, sid } from "./helpers/synthetic.js";
+import { crashBefore, CrashError } from "./helpers/crashing-store.js";
+import { RoutedProvider } from "./helpers/routed-provider.js";
 
 const root = resolve(import.meta.dirname, "../../..");
 let registry: LibraryRegistry;
 beforeAll(async () => { registry = await createRegistry({ lockPath: resolve(root, "libraries/libraries.lock.json"), cacheDir: resolve(root, "libraries/cache") }); });
 const rules: PlanRules = { multiChoice: { perImport: 1 }, blanks: { perImport: 1 }, flashcards: { specs: 1, cardsMin: 4, cardsMax: 12 } };
+type Doc = Awaited<ReturnType<typeof syntheticDoc>>;
 
 /** Produce fixtures cite only evidence that belongs to the concept each plan slot targets (planOutFor: multiChoice → c1, blanks → c2, flashcards → c1 + c2). */
-function produceResponses(doc: Awaited<ReturnType<typeof syntheticDoc>>) {
+function produceResponses(doc: Doc) {
   const remove = `ev-${sid(doc, "Only the worker who applied a lock may remove it")}`;   // concept c1 (lockout and tagout)
   const tag = `ev-${sid(doc, "A tag is a warning label")}`;                               // concept c1
   const tfdA = `ev-${sid(doc, "After the isolator is opened and locked")}`;              // concept c2 (testing for dead)
   const tfdB = `ev-${sid(doc, "Testing for dead confirms")}`;                            // concept c2
   const mc = { title: "Removing a lock", question: "Who may remove a lockout device from an isolator?", answers: [{ text: "The worker who applied it", correct: true, feedback: "Only the worker who applied a lock may remove it." }, { text: "Any supervisor", correct: false, feedback: "" }, { text: "The site electrician", correct: false, feedback: "" }], evidenceIds: [remove] };
-  const bl = { title: "Testing for dead", taskDescription: "Complete the sentences about testing for dead.", passage: "After the isolator is opened and locked, the worker must test for {{b1}} at the point of work using a voltage tester rated for the circuit. Testing for dead confirms that the conductors to be worked on carry no {{b2}}.", blanks: [{ answers: ["dead"], tip: null, evidenceIds: [tfdA] }, { answers: ["voltage"], tip: null, evidenceIds: [tfdB] }], evidenceIds: [tfdA, tfdB] };
-  const fc = { title: "Key terms", description: "Isolation vocabulary.", cards: [{ front: "Who may remove a lock", back: "Only the worker who applied it", tip: null, evidenceIds: [remove] }, { front: "Tag", back: "A warning label attached to the lockout device naming the worker, the date and the reason", tip: null, evidenceIds: [tag] }, { front: "When to test for dead", back: "After the isolator is opened and locked, at the point of work, with a tester rated for the circuit", tip: null, evidenceIds: [tfdA] }, { front: "What testing for dead confirms", back: "That the conductors to be worked on carry no voltage", tip: null, evidenceIds: [tfdB] }], evidenceIds: [remove, tag, tfdA, tfdB] };
-  return { mc, bl, fc };
+  const mc2 = { title: "Testing for dead", question: "What does testing for dead confirm before work starts?", answers: [{ text: "That the conductors carry no voltage", correct: true, feedback: "Testing for dead confirms that the conductors to be worked on carry no voltage." }, { text: "That the permit is closed", correct: false, feedback: "" }, { text: "That the tag has been removed", correct: false, feedback: "" }], evidenceIds: [tfdB] };
+  const bl = { title: "Testing for dead", taskDescription: "Complete the sentences about testing for dead.", passage: "After the isolator is opened and locked, the worker must test for {{b1}} at the point of work using a voltage tester rated for the circuit. Testing for dead confirms that the conductors to be worked on carry no {{b2}}.", blanks: [{ answers: ["dead"], tip: null, evidenceIds: [tfdA] }, { answers: ["voltage"], tip: null, evidenceIds: [tfdB] }] };
+  const fc = { title: "Key terms", description: "Isolation vocabulary.", cards: [{ front: "Who may remove a lock", back: "Only the worker who applied it", tip: null, evidenceIds: [remove] }, { front: "Tag", back: "A warning label attached to the lockout device naming the worker, the date and the reason", tip: null, evidenceIds: [tag] }, { front: "When to test for dead", back: "After the isolator is opened and locked, at the point of work, with a tester rated for the circuit", tip: null, evidenceIds: [tfdA] }, { front: "What testing for dead confirms", back: "That the conductors to be worked on carry no voltage", tip: null, evidenceIds: [tfdB] }] };
+  return { mc, mc2, bl, fc };
 }
 
-async function fullScript(doc: Awaited<ReturnType<typeof syntheticDoc>>) {
+const r = (value: unknown) => fakeResponse({ outputText: JSON.stringify(value) });
+async function fullScript(doc: Doc) {
   const { script } = conceptResponses(doc);
   const { mc, bl, fc } = produceResponses(doc);
-  return [fakeResponse({ outputText: JSON.stringify(unitOut) }), ...script, fakeResponse({ outputText: JSON.stringify(planOutFor(["multiChoice", "blanks", "flashcards"])) }), fakeResponse({ outputText: JSON.stringify(mc) }), fakeResponse({ outputText: JSON.stringify(bl) }), fakeResponse({ outputText: JSON.stringify(fc) })];
+  return [r(unitOut), ...script, r(planOutFor(["multiChoice", "blanks", "flashcards"])), r(mc), r(bl), r(fc)];
 }
+const callsThroughPlan = (doc: Doc) => 1 + chunkSentences(doc.sentences, CHUNK_TOKENS).length + 2 + 1; // parseUnit, extract per chunk, merge, align, plan
 
-const input = async (importId: string) => ({ importId, name: "Synthetic import", source: await syntheticDoc(), unitText: await syntheticUnitText(), selectedTypes: ["multiChoice", "blanks", "flashcards"] as const, budgetUsdMicro: 5_000_000, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null });
-const deps = (store: MemoryStore, provider: FakeProvider) => ({ store, provider, registry, engineFingerprint: "engine@0.1.0+lock:test", concurrency: 1, chunkTokens: CHUNK_TOKENS, rules, sleep: async () => undefined });
+const input = async (importId: string, overrides: Partial<RunImportInput> = {}): Promise<RunImportInput> => ({ importId, name: "Synthetic import", source: await syntheticDoc(), unitText: await syntheticUnitText(), selectedTypes: ["multiChoice", "blanks", "flashcards"] as const, budget: { usdMicro: 5_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null, ...overrides });
+const deps = (store: RunImportDeps["store"], provider: RunImportDeps["provider"], overrides: Partial<RunImportDeps> = {}): RunImportDeps => ({ store, provider, registry, engineFingerprint: "engine@0.1.0+lock:test", concurrency: 1, chunkTokens: CHUNK_TOKENS, rules, sleep: async () => undefined, ...overrides });
+const purposes = (p: { requests: Array<{ purpose: string }> }) => p.requests.map((x) => x.purpose);
 
 describe("runImport", () => {
-  it("runs source → unit → concepts → plan → three activities → built packages, recording every attempt and cost", async () => {
+  it("runs source → unit → concepts → plan → three activities → built packages, recording every attempt, its call key and cost", async () => {
     const store = new MemoryStore();
     const doc = await syntheticDoc();
     const provider = new FakeProvider(await fullScript(doc));
     const record = await runImport(await input("imp-1"), deps(store, provider));
     expect(record.status).toBe("ready");
+    expect(record.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(record.budget).toEqual({ usdMicro: 5_000_000, ...DEFAULT_BUDGET_LIMITS });
     const activities = await store.listActivities("imp-1");
     expect(activities.map((a) => [a.type, a.status])).toEqual([["multiChoice", "promoted"], ["blanks", "promoted"], ["flashcards", "promoted"]]);
     for (const a of activities) {
@@ -3437,21 +4115,26 @@ describe("runImport", () => {
       expect(rev?.state).toBe("promoted");
       expect(rev?.promptVersion).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
       expect(rev?.engineFingerprint).toBe("engine@0.1.0+lock:test");
+      expect(rev?.modelConfig.profiles["claude-sonnet-5"]).toEqual({ temperature: null, thinking: { type: "disabled" } });
       const build = await store.getBuild(rev!.buildKey!);
       expect(build?.subarray(0, 2).toString("latin1")).toBe("PK");
     }
     const attempts = await store.listAttempts("imp-1");
-    const starts = attempts.filter((e) => e.event === "start"); const outcomes = attempts.filter((e) => e.event === "outcome");
+    const starts = attempts.filter((e): e is AttemptStart => e.event === "start"); const outcomes = attempts.filter((e) => e.event === "outcome");
     expect(starts).toHaveLength(provider.requests.length);
     expect(outcomes).toHaveLength(starts.length);
+    expect(starts.every((s) => s.retryIndex === 0 && s.retryReason === null)).toBe(true);
+    expect(new Set(starts.map((s) => s.callKey)).size).toBe(starts.length); // every call key distinct: no retries happened
+    expect(starts.map((s) => s.callKey)).toEqual(expect.arrayContaining(["parseUnit", "extract:chunk-0", "merge", "align", "plan", "produce:act-1", "produce:act-2", "produce:act-3"]));
+    expect(record.budgetUsed).toMatchObject({ reservedUsdMicro: 0, requests: provider.requests.length });
     expect(record.budgetUsed.spentUsdMicro).toBeGreaterThan(0);
-    expect(record.budgetUsed.reservedUsdMicro).toBe(0);
+    expect(record.budgetUsed.spentTokens).toBeGreaterThan(0);
     const ops = await store.listOperations("imp-1");
     expect(ops.filter((o) => o.purpose === "produce" && o.status === "succeeded")).toHaveLength(3);
-    const map = await store.getArtifact("imp-1", "conceptMap");
-    expect(map).not.toBeNull();
+    expect(await store.getArtifact("imp-1", "conceptMap")).not.toBeNull();
   });
-  it("is idempotent: a second run over the same store makes no model calls", async () => {
+
+  it("is idempotent: a second run over the same store makes no model calls, and a finished import returns at once", async () => {
     const store = new MemoryStore();
     const doc = await syntheticDoc();
     await runImport(await input("imp-2"), deps(store, new FakeProvider(await fullScript(doc))));
@@ -3462,40 +4145,223 @@ describe("runImport", () => {
     expect(empty.requests).toHaveLength(0);
     expect(again.status).toBe("ready");
     expect((await store.listOperations("imp-2")).filter((o) => o.purpose === "produce")).toHaveLength(3); // no new operations were created
+    const third = await runImport(await input("imp-2"), deps(store, empty));
+    expect(third.status).toBe("ready");
   });
-  it("marks an activity failed after three content failures and finishes ready_with_failures", async () => {
+
+  it("refuses to resume with different inputs or configuration, before any write", async () => {
+    const store = new MemoryStore();
+    const doc = await syntheticDoc();
+    await runImport(await input("imp-fp"), deps(store, new FakeProvider(await fullScript(doc))));
+    const before = await store.getImport("imp-fp");
+    const empty = new FakeProvider([]);
+    await expect(runImport(await input("imp-fp", { language: "vi" }), deps(store, empty))).rejects.toBeInstanceOf(IncompatibleResumeError);
+    await expect(runImport(await input("imp-fp", { unitText: null }), deps(store, empty))).rejects.toBeInstanceOf(IncompatibleResumeError);
+    await expect(runImport(await input("imp-fp"), deps(store, empty, { chunkTokens: CHUNK_TOKENS + 10 }))).rejects.toBeInstanceOf(IncompatibleResumeError);
+    expect(await store.getImport("imp-fp")).toEqual(before);
+    expect(empty.requests).toHaveLength(0);
+    const raised = await runImport(await input("imp-fp", { budget: { usdMicro: 9_000_000 } }), deps(store, empty)); // budget limits are not part of the identity
+    expect(raised.budget.usdMicro).toBe(9_000_000);
+  });
+
+  it("refuses a second writer while the import is locked", async () => {
+    const store = new MemoryStore();
+    const doc = await syntheticDoc();
+    const held = await store.lock("imp-lock");
+    await expect(runImport(await input("imp-lock"), deps(store, new FakeProvider(await fullScript(doc))))).rejects.toBeInstanceOf(StoreLockedError);
+    await held.release();
+    expect((await runImport(await input("imp-lock"), deps(store, new FakeProvider(await fullScript(doc))))).status).toBe("ready");
+  });
+
+  it("recovers when the process dies after extraction finished but before the concept map was stored: chunks are reused, only merge and align run again", async () => {
+    const store = new MemoryStore();
+    const doc = await syntheticDoc();
+    const crashing = crashBefore(store, "putArtifact", 1, (args) => args[1] === "conceptMap");
+    await expect(runImport(await input("imp-c1"), deps(crashing, new FakeProvider(await fullScript(doc))))).rejects.toBeInstanceOf(CrashError);
+    const { script } = conceptResponses(doc);
+    const { mc, bl, fc } = produceResponses(doc);
+    const resume = new FakeProvider([...script.slice(-2), r(planOutFor(["multiChoice", "blanks", "flashcards"])), r(mc), r(bl), r(fc)]);
+    const record = await runImport(await input("imp-c1"), deps(store, resume));
+    expect(record.status).toBe("ready");
+    expect(purposes(resume)).toEqual(["merge", "align", "plan", "produce", "produce", "produce"]);
+    const conceptOps = (await store.listOperations("imp-c1")).filter((o) => o.idempotencyKey === "imp-c1:concepts");
+    expect(conceptOps.map((o) => [o.operationId, o.status, o.billingUncertain])).toEqual([["imp-c1:concepts", "failed", true], ["imp-c1:concepts#2", "succeeded", false]]);
+    const resumedMerge = (await store.listAttempts("imp-c1")).filter((e): e is AttemptStart => e.event === "start" && e.callKey === "merge");
+    expect(resumedMerge.map((s) => [s.retryIndex, s.retryReason])).toEqual([[0, null], [1, "resume"]]);
+  });
+
+  it("recovers when the process dies after the plan was stored but before its operation record: no planning call is repeated and activities come from the stored plan", async () => {
+    const store = new MemoryStore();
+    const doc = await syntheticDoc();
+    const crashing = crashBefore(store, "putOperation", 1, (args) => args[0].idempotencyKey === "imp-c2:plan" && args[0].status === "succeeded");
+    await expect(runImport(await input("imp-c2"), deps(crashing, new FakeProvider(await fullScript(doc))))).rejects.toBeInstanceOf(CrashError);
+    expect(await store.getArtifact("imp-c2", "plan")).not.toBeNull();
+    expect(await store.listActivities("imp-c2")).toHaveLength(0);
+    const { mc, bl, fc } = produceResponses(doc);
+    const resume = new FakeProvider([r(mc), r(bl), r(fc)]);
+    const record = await runImport(await input("imp-c2"), deps(store, resume));
+    expect(record.status).toBe("ready");
+    expect(purposes(resume)).toEqual(["produce", "produce", "produce"]);
+    expect((await store.listOperations("imp-c2")).find((o) => o.idempotencyKey === "imp-c2:plan")).toMatchObject({ status: "succeeded", outcome: expect.stringMatching(/reused on resume/) });
+  });
+
+  it("recovers when the process dies half-way through writing the activity records", async () => {
+    const store = new MemoryStore();
+    const doc = await syntheticDoc();
+    const crashing = crashBefore(store, "putActivity", 2);
+    await expect(runImport(await input("imp-c3"), deps(crashing, new FakeProvider(await fullScript(doc))))).rejects.toBeInstanceOf(CrashError);
+    expect(await store.listActivities("imp-c3")).toHaveLength(1);
+    const { mc, bl, fc } = produceResponses(doc);
+    const resume = new FakeProvider([r(mc), r(bl), r(fc)]);
+    const record = await runImport(await input("imp-c3"), deps(store, resume));
+    expect(record.status).toBe("ready");
+    expect(purposes(resume)).toEqual(["produce", "produce", "produce"]);
+    expect((await store.listActivities("imp-c3")).map((a) => a.activityId)).toEqual(["act-1", "act-2", "act-3"]);
+  });
+
+  it("resumes a saved candidate at compilation instead of regenerating it", async () => {
+    const store = new MemoryStore();
+    const doc = await syntheticDoc();
+    const crashing = crashBefore(store, "putBuild", 1);
+    await expect(runImport(await input("imp-c4"), deps(crashing, new FakeProvider(await fullScript(doc))))).rejects.toBeInstanceOf(CrashError);
+    const candidate = await store.getRevision("act-1", 1);
+    expect(candidate?.state).toBe("candidate");
+    const { bl, fc } = produceResponses(doc);
+    const resume = new FakeProvider([r(bl), r(fc)]);
+    const record = await runImport(await input("imp-c4"), deps(store, resume));
+    expect(record.status).toBe("ready");
+    expect(purposes(resume)).toEqual(["produce", "produce"]);
+    const promoted = await store.getRevision("act-1", 1);
+    expect(promoted).toMatchObject({ state: "promoted", attemptIds: candidate!.attemptIds });
+    expect((await store.listOperations("imp-c4")).filter((o) => o.idempotencyKey === "imp-c4:produce:act-1:r1")).toEqual([expect.objectContaining({ status: "succeeded", billingUncertain: false, outcome: "ok" })]);
+  });
+
+  it("reuses a candidate that was persisted before its operation record was completed, correcting the record and keeping billing-uncertain", async () => {
+    const store = new MemoryStore();
+    const doc = await syntheticDoc();
+    const crashing = crashBefore(store, "putOperation", 1, (args) => args[0].idempotencyKey === "imp-c6:produce:act-1:r1" && args[0].status === "succeeded");
+    await expect(runImport(await input("imp-c6"), deps(crashing, new FakeProvider(await fullScript(doc))))).rejects.toBeInstanceOf(CrashError);
+    expect((await store.getRevision("act-1", 1))?.state).toBe("candidate");
+    const { bl, fc } = produceResponses(doc);
+    const resume = new FakeProvider([r(bl), r(fc)]);
+    const record = await runImport(await input("imp-c6"), deps(store, resume));
+    expect(record.status).toBe("ready");
+    expect(purposes(resume)).toEqual(["produce", "produce"]);
+    expect((await store.listOperations("imp-c6")).filter((o) => o.idempotencyKey === "imp-c6:produce:act-1:r1")).toEqual([expect.objectContaining({ status: "succeeded", billingUncertain: true, outcome: expect.stringMatching(/reused on resume/) })]);
+    expect((await store.getRevision("act-1", 1))?.state).toBe("promoted");
+  });
+
+  it("repairs an activity whose revision was promoted before the activity record was updated", async () => {
+    const store = new MemoryStore();
+    const doc = await syntheticDoc();
+    const crashing = crashBefore(store, "putActivity", 1, (args) => args[0].status === "promoted");
+    await expect(runImport(await input("imp-c5"), deps(crashing, new FakeProvider(await fullScript(doc))))).rejects.toBeInstanceOf(CrashError);
+    expect((await store.getRevision("act-1", 1))?.state).toBe("promoted");
+    expect((await store.listActivities("imp-c5")).find((a) => a.activityId === "act-1")?.status).not.toBe("promoted");
+    const { bl, fc } = produceResponses(doc);
+    const resume = new FakeProvider([r(bl), r(fc)]);
+    const record = await runImport(await input("imp-c5"), deps(store, resume));
+    expect(record.status).toBe("ready");
+    expect(purposes(resume)).toEqual(["produce", "produce"]);
+    expect((await store.listActivities("imp-c5")).find((a) => a.activityId === "act-1")).toMatchObject({ status: "promoted", currentRevision: 1, error: null });
+  });
+
+  it("stops dispatch on a budget refusal, settles in-flight work, gives every undispatched activity an explicit outcome, and re-dispatches them when the budget is raised", async () => {
+    const store = new MemoryStore();
+    const doc = await syntheticDoc();
+    const limit = callsThroughPlan(doc) + 1; // enough for the multiChoice produce, not for the blanks produce
+    const provider = new FakeProvider(await fullScript(doc));
+    const record = await runImport(await input("imp-b", { budget: { usdMicro: 5_000_000, requests: limit } }), deps(store, provider));
+    expect(record.status).toBe("ready_with_failures");
+    expect(provider.requests).toHaveLength(limit);
+    const byId = new Map((await store.listActivities("imp-b")).map((a) => [a.activityId, a]));
+    expect(byId.get("act-1")).toMatchObject({ status: "promoted" });
+    expect(byId.get("act-2")).toMatchObject({ status: "failed", error: expect.stringMatching(/^budget: .*requests/) });
+    expect(byId.get("act-3")).toMatchObject({ status: "failed", error: expect.stringMatching(new RegExp(`^${SKIPPED_PREFIX}budget:`)) });
+    const attempts = await store.listAttempts("imp-b");
+    expect(attempts.filter((e) => e.event === "start")).toHaveLength(limit);
+    expect(attempts.filter((e) => e.event === "outcome")).toHaveLength(limit);
+    expect(record.budgetUsed.reservedUsdMicro).toBe(0);
+    const { bl, fc } = produceResponses(doc);
+    const resumed = await runImport(await input("imp-b", { budget: { usdMicro: 5_000_000, requests: limit + 2 } }), deps(store, new FakeProvider([r(bl), r(fc)])));
+    expect(resumed.status).toBe("ready");
+    expect((await store.listActivities("imp-b")).map((a) => a.status)).toEqual(["promoted", "promoted", "promoted"]);
+  });
+
+  it("marks the import failed and rethrows on an infrastructure failure after in-flight lanes settle; the failed activity is re-dispatched on resume", async () => {
     const store = new MemoryStore();
     const doc = await syntheticDoc();
     const script = await fullScript(doc);
-    const bad = fakeResponse({ outputText: JSON.stringify({ title: "x", question: "y", answers: [], evidenceIds: [] }) });
+    const { mc, bl, fc } = produceResponses(doc);
+    const { ProviderError } = await import("../src/llm/provider.js");
+    script.splice(script.length - 3, 3, r(mc), new ProviderError("bad key", "permanent", 401), r(fc));
+    await expect(runImport(await input("imp-i"), deps(store, new FakeProvider(script)))).rejects.toMatchObject({ name: "InfrastructureFailure" });
+    const record = (await store.getImport("imp-i"))!;
+    expect(record).toMatchObject({ status: "failed", error: expect.stringMatching(/^system: /) });
+    const byId = new Map((await store.listActivities("imp-i")).map((a) => [a.activityId, a]));
+    expect(byId.get("act-1")?.status).toBe("promoted");
+    expect(byId.get("act-2")).toMatchObject({ status: "failed", error: expect.stringMatching(/^system: /) });
+    expect(byId.get("act-3")).toMatchObject({ status: "failed", error: expect.stringMatching(new RegExp(`^${SKIPPED_PREFIX}system:`)) });
+    const resumed = await runImport(await input("imp-i"), deps(store, new FakeProvider([r(bl), r(fc)])));
+    expect(resumed.status).toBe("ready");
+  });
+
+  it("marks an activity failed after three content failures and finishes ready_with_failures; content failures are not re-dispatched", async () => {
+    const store = new MemoryStore();
+    const doc = await syntheticDoc();
+    const script = await fullScript(doc);
+    const bad = r({ title: "x", question: "y", answers: [], evidenceIds: [] });
     script.splice(script.length - 3, 1, bad, bad, bad); // replace the multiChoice response with three rejected attempts
     const record = await runImport(await input("imp-3"), deps(store, new FakeProvider(script)));
     expect(record.status).toBe("ready_with_failures");
     const mc = (await store.listActivities("imp-3")).find((a) => a.type === "multiChoice")!;
-    expect(mc.status).toBe("failed");
-    expect(mc.error).toMatch(/^content:/);
+    expect(mc).toMatchObject({ status: "failed", error: expect.stringMatching(/^content:/) });
     const op = (await store.listOperations("imp-3")).find((o) => o.activityId === mc.activityId)!;
     expect(op).toMatchObject({ status: "failed", contentAttempts: 3 });
+    const starts = (await store.listAttempts("imp-3")).filter((e): e is AttemptStart => e.event === "start" && e.callKey === "produce:act-1");
+    expect(starts.map((s) => [s.retryIndex, s.retryReason])).toEqual([[0, null], [1, "content"], [2, "content"]]);
+    const empty = new FakeProvider([]);
+    expect((await runImport(await input("imp-3"), deps(store, empty))).status).toBe("ready_with_failures");
+    expect(empty.requests).toHaveLength(0);
   });
-  it("stops with a budget failure before dispatching when the reservation would exceed the limit", async () => {
+
+  it("serialises same-type activities so the near-duplicate check sees the earlier promotion while other types run concurrently", async () => {
     const store = new MemoryStore();
     const doc = await syntheticDoc();
-    const record = await runImport({ ...(await input("imp-4")), budgetUsdMicro: 1 }, deps(store, new FakeProvider(await fullScript(doc))));
-    expect(record.status).toBe("failed");
-    expect(record.error).toMatch(/budget/);
-    expect(await store.listAttempts("imp-4")).toEqual([]);
+    const { script } = conceptResponses(doc);
+    const { mc, mc2, bl, fc } = produceResponses(doc);
+    const twoMc: PlanRules = { ...rules, multiChoice: { perImport: 2 } };
+    const provider = new RoutedProvider([
+      { match: (q) => q.purpose === "parseUnit", script: [r(unitOut)] },
+      { match: (q) => q.purpose === "extract" || q.purpose === "merge" || q.purpose === "align", script: [...script] },
+      { match: (q) => q.purpose === "plan", script: [r(planOutFor(["multiChoice", "multiChoice", "blanks", "flashcards"]))] },
+      { match: (q) => q.purpose === "produce" && q.user.includes("FOCUS: multiChoice focus 1"), script: [r(mc)] },
+      { match: (q) => q.purpose === "produce" && q.user.includes("FOCUS: multiChoice focus 2"), script: [r({ ...mc2, question: mc.question, evidenceIds: mc2.evidenceIds }), r(mc2)] },
+      { match: (q) => q.purpose === "produce" && q.user.includes("FOCUS: blanks"), script: [r(bl)] },
+      { match: (q) => q.purpose === "produce" && q.user.includes("FOCUS: flashcards"), script: [r(fc)] }
+    ]);
+    const record = await runImport(await input("imp-d"), deps(store, provider, { concurrency: 3, rules: twoMc }));
+    expect(record.status).toBe("ready");
+    const secondMc = provider.requests.filter((q) => q.purpose === "produce" && q.user.includes("FOCUS: multiChoice focus 2"));
+    expect(secondMc).toHaveLength(2);
+    expect(secondMc[1]?.user).toContain("near-duplicate of an existing question");
+    expect((await store.listActivities("imp-d")).map((a) => a.status)).toEqual(["promoted", "promoted", "promoted", "promoted"]);
   });
+
   it("reconciles a start without an outcome as billing-uncertain on restart", async () => {
     const store = new MemoryStore();
-    await store.putImport({ importId: "imp-5", orgId: "local", name: "n", sourceType: "markdown", status: "generating", customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice"], budget: { limitUsdMicro: 5_000_000 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0 }, error: null, idempotencyKey: "imp-5", createdAt: "2026-09-19T00:00:00Z", updatedAt: "2026-09-19T00:00:00Z" });
+    const base = await input("imp-5", { unitText: null, selectedTypes: ["multiChoice"] });
+    const fingerprint = runFingerprint({ sourceTextHash: base.source.textHash, unitText: null, selectedTypes: base.selectedTypes, language: base.language, promptConfig: base.promptConfig, customisation: null, chunkTokens: CHUNK_TOKENS, rules });
+    await store.putImport({ importId: "imp-5", orgId: "local", name: "n", sourceType: "markdown", status: "generating", customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice"], fingerprint, budget: { usdMicro: 5_000_000, ...DEFAULT_BUDGET_LIMITS }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0 }, error: null, idempotencyKey: "imp-5", createdAt: "2026-09-19T00:00:00Z", updatedAt: "2026-09-19T00:00:00Z" });
     await store.putOperation({ operationId: "imp-5:produce:act-1:r1", importId: "imp-5", activityId: "act-1", purpose: "produce", status: "running", idempotencyKey: "imp-5:produce:act-1:r1", contentAttempts: 1, outcome: null, billingUncertain: false, startedAt: "2026-09-19T00:00:00Z", completedAt: null });
-    await store.recorderFor("imp-5").recordStart({ event: "start", attemptId: "att-1", operationId: "imp-5:produce:act-1:r1", attempt: 1, purpose: "produce", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 10, reservedOutputTokens: 10, reservedUsdMicro: 777, startedAt: "2026-09-19T00:00:00Z" });
-    const doc = await syntheticDoc();
-    await runImport({ ...(await input("imp-5")), unitText: null, selectedTypes: ["multiChoice"] }, deps(store, new FakeProvider([]))).catch(() => undefined);
+    await store.recorderFor("imp-5").recordStart({ event: "start", attemptId: "att-1", operationId: "imp-5:produce:act-1:r1", callKey: "produce:act-1", retryIndex: 0, retryReason: null, attempt: 1, purpose: "produce", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 10, reservedOutputTokens: 10, reservedUsdMicro: 777, startedAt: "2026-09-19T00:00:00Z" });
+    await runImport(base, deps(store, new FakeProvider([]))).catch(() => undefined);
     const op = (await store.listOperations("imp-5")).find((o) => o.operationId === "imp-5:produce:act-1:r1")!;
     expect(op.billingUncertain).toBe(true);
     expect(op.status).toBe("failed");
-    expect((await store.getImport("imp-5"))!.budgetUsed.spentUsdMicro).toBeGreaterThanOrEqual(777); // the interrupted reservation counts as spent; the rerun's own refused attempt adds nothing
+    const after = (await store.getImport("imp-5"))!;
+    expect(after.budgetUsed.spentUsdMicro).toBeGreaterThanOrEqual(777); // the interrupted reservation counts as spent
+    expect(after.budgetUsed.requests).toBeGreaterThanOrEqual(1);
   });
 });
 ```
@@ -3504,15 +4370,20 @@ describe("runImport", () => {
 
 `packages/generator/src/store/types.ts`:
 ```ts
-import type { ActivitySpec, ActivityStatus, ImportStatus, RevisionState } from "@leaplearn/shared";
+import type { AcceptanceDecision, ActivitySpec, ActivityStatus, AlignmentDecision, ImportStatus, RevisionState } from "@leaplearn/shared";
 import type { SourceKind } from "../ingest/source-document.js";
+import type { BudgetLimits } from "../llm/budget.js";
+import type { RequestProfile } from "../llm/models.js";
 import type { AttemptEvent, AttemptRecorder, Purpose } from "../llm/types.js";
 import type { PlannedType } from "../plan/planner.js";
 
 export interface ImportRecord {
   importId: string; orgId: string; name: string; sourceType: SourceKind; status: ImportStatus;
   customisation: string | null; language: string; unitTextHash: string | null; selectedTypes: PlannedType[];
-  budget: { limitUsdMicro: number }; budgetUsed: { spentUsdMicro: number; reservedUsdMicro: number };
+  /** Identity of the inputs and configuration the import was created with (fingerprint.ts); a rerun must match it. Budget limits are not part of it. */
+  fingerprint: string;
+  budget: BudgetLimits;
+  budgetUsed: { spentUsdMicro: number; reservedUsdMicro: number; spentTokens: number; requests: number };
   error: string | null; idempotencyKey: string; createdAt: string; updatedAt: string;
 }
 export interface ActivityRecord {
@@ -3521,15 +4392,25 @@ export interface ActivityRecord {
 }
 export interface RevisionRecord {
   activityId: string; revision: number; state: RevisionState; spec: ActivitySpec; schemaVersion: number; promptVersion: string;
-  modelConfig: { provider: string; models: Record<string, string> }; engineFingerprint: string; note: string | null; buildKey: string | null; attemptIds: string[]; createdAt: string;
+  modelConfig: { provider: string; models: Record<string, string>; profiles: Record<string, RequestProfile> }; engineFingerprint: string; note: string | null; buildKey: string | null; attemptIds: string[]; createdAt: string;
 }
 export interface OperationRecord {
   operationId: string; importId: string; activityId: string | null; purpose: Purpose | "build"; status: "running" | "succeeded" | "failed";
   idempotencyKey: string; contentAttempts: number; outcome: string | null; billingUncertain: boolean; startedAt: string; completedAt: string | null;
 }
+/** Spec §4 acceptance_decisions: a human judged the promoted revision good or not. Distinct from promotion. */
+export interface AcceptanceRecord { importId: string; activityId: string; revision: number; decision: AcceptanceDecision; reviewer: string; notes: string | null; decidedAt: string; }
+/** Spec §4 alignment_reviews, bound to the exact revision (and item). A new revision starts with no reviews. */
+export interface AlignmentReviewRecord { importId: string; activityId: string; revision: number; itemId: string | null; unitTextHash: string | null; criterionId: string; decision: AlignmentDecision; reviewer: string; decidedAt: string; }
 export type ArtifactName = "source" | "unit" | "conceptMap" | "plan" | `chunk-${number}`;
 
+export interface StoreLock { release(): Promise<void>; }
+export class StoreLockedError extends Error {
+  constructor(importId: string, holder: string) { super(`import ${importId} is locked by ${holder}; another leap process is using this output directory`); this.name = "StoreLockedError"; }
+}
+
 export interface ImportStore {
+  lock(importId: string): Promise<StoreLock>;
   getImport(importId: string): Promise<ImportRecord | null>;
   putImport(record: ImportRecord): Promise<void>;
   getArtifact<T>(importId: string, name: ArtifactName): Promise<T | null>;
@@ -3545,15 +4426,20 @@ export interface ImportStore {
   listAttempts(importId: string): Promise<AttemptEvent[]>;
   putBuild(importId: string, activityId: string, revision: number, bytes: Buffer): Promise<string>;
   getBuild(buildKey: string): Promise<Buffer | null>;
+  listAcceptances(importId: string): Promise<AcceptanceRecord[]>;
+  putAcceptance(record: AcceptanceRecord): Promise<void>;
+  listAlignmentReviews(importId: string): Promise<AlignmentReviewRecord[]>;
+  putAlignmentReview(record: AlignmentReviewRecord): Promise<void>;
 }
 ```
 
 `packages/generator/src/store/memory-store.ts`:
 ```ts
 import type { AttemptEvent, AttemptRecorder } from "../llm/types.js";
-import type { ActivityRecord, ArtifactName, ImportRecord, ImportStore, OperationRecord, RevisionRecord } from "./types.js";
+import { StoreLockedError, type AcceptanceRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type ImportRecord, type ImportStore, type OperationRecord, type RevisionRecord, type StoreLock } from "./types.js";
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+const reviewKey = (r: AlignmentReviewRecord): string => `${r.activityId}/${r.revision}/${r.itemId ?? ""}/${r.criterionId}`;
 
 export class MemoryStore implements ImportStore {
   private imports = new Map<string, ImportRecord>();
@@ -3563,7 +4449,15 @@ export class MemoryStore implements ImportStore {
   private operations = new Map<string, OperationRecord>();
   private attempts = new Map<string, AttemptEvent[]>();
   private builds = new Map<string, Buffer>();
+  private acceptances = new Map<string, AcceptanceRecord>();
+  private alignmentReviews = new Map<string, AlignmentReviewRecord>();
+  private locks = new Set<string>();
 
+  async lock(importId: string): Promise<StoreLock> {
+    if (this.locks.has(importId)) throw new StoreLockedError(importId, "this process");
+    this.locks.add(importId);
+    return { release: async () => { this.locks.delete(importId); } };
+  }
   async getImport(importId: string) { const r = this.imports.get(importId); return r ? clone(r) : null; }
   async putImport(record: ImportRecord) { this.imports.set(record.importId, clone(record)); }
   async getArtifact<T>(importId: string, name: ArtifactName) { const v = this.artifacts.get(`${importId}/${name}`); return v === undefined ? null : clone(v as T); }
@@ -3582,6 +4476,10 @@ export class MemoryStore implements ImportStore {
   async listAttempts(importId: string) { return clone(this.attempts.get(importId) ?? []); }
   async putBuild(importId: string, activityId: string, revision: number, bytes: Buffer) { const key = `${importId}/${activityId}/r${revision}.h5p`; this.builds.set(key, Buffer.from(bytes)); return key; }
   async getBuild(buildKey: string) { const b = this.builds.get(buildKey); return b ? Buffer.from(b) : null; }
+  async listAcceptances(importId: string) { return [...this.acceptances.values()].filter((a) => a.importId === importId).map(clone); }
+  async putAcceptance(record: AcceptanceRecord) { this.acceptances.set(`${record.activityId}/${record.revision}`, clone(record)); }
+  async listAlignmentReviews(importId: string) { return [...this.alignmentReviews.values()].filter((a) => a.importId === importId).map(clone); }
+  async putAlignmentReview(record: AlignmentReviewRecord) { this.alignmentReviews.set(reviewKey(record), clone(record)); }
 }
 ```
 
@@ -3599,26 +4497,85 @@ export interface ConceptMapOptions { chunkTokens?: number; promptConfig?: Prompt
   }
 ```
 
+`packages/generator/src/pipeline/fingerprint.ts`:
+```ts
+import { createHash } from "node:crypto";
+import { SCHEMA_VERSION } from "@leaplearn/shared";
+import { textHash } from "../ingest/source-document.js";
+import { MODEL_ROLES, REQUEST_PROFILES } from "../llm/models.js";
+import type { PlanRules } from "../plan/planner.js";
+import { PROMPT_VERSION, type PromptConfig } from "../prompts/system.js";
+
+export const DEFAULT_CHUNK_TOKENS = 6000;
+
+export interface FingerprintInput {
+  sourceTextHash: string; unitText: string | null; selectedTypes: readonly string[]; language: string;
+  promptConfig: PromptConfig; customisation: string | null; chunkTokens: number; rules: PlanRules;
+}
+
+/** Everything that changes what the pipeline would produce for the same import id. Budget limits are excluded on purpose: a resume may raise them. */
+export function runFingerprint(input: FingerprintInput): string {
+  const material = {
+    v: 1,
+    sourceTextHash: input.sourceTextHash,
+    unitTextHash: input.unitText === null ? null : textHash(input.unitText.trim()),
+    selectedTypes: [...input.selectedTypes].sort(),
+    language: input.language,
+    promptConfig: { readingLevel: input.promptConfig.readingLevel, tone: input.promptConfig.tone, language: input.promptConfig.language, instructionalLanguage: input.promptConfig.instructionalLanguage ?? null, customisation: input.promptConfig.customisation ?? null },
+    customisation: input.customisation,
+    chunkTokens: input.chunkTokens,
+    rules: input.rules,
+    promptVersion: PROMPT_VERSION,
+    schemaVersion: SCHEMA_VERSION,
+    models: MODEL_ROLES,
+    profiles: REQUEST_PROFILES
+  };
+  return createHash("sha256").update(JSON.stringify(material)).digest("hex");
+}
+
+export class IncompatibleResumeError extends Error {
+  constructor(importId: string, stored: string, current: string) {
+    super(`import ${importId} was created with different inputs or configuration (fingerprint ${stored.slice(0, 12)}, now ${current.slice(0, 12)}); use a new output directory, or rerun with the original source, unit, types, language, prompt settings, chunking and plan rules`);
+    this.name = "IncompatibleResumeError";
+  }
+}
+```
+
 `packages/generator/src/pipeline/operations.ts`:
 ```ts
-import { createBudget, type Budget } from "../llm/budget.js";
+import { createBudget, type Budget, type BudgetLimits } from "../llm/budget.js";
 import type { ModelProvider } from "../llm/provider.js";
-import { createRunner, type StageRunner } from "../llm/runner.js";
+import { createRunner, type RunnerOptions, type StageRunner } from "../llm/runner.js";
 import type { AttemptEvent, AttemptOutcome, AttemptStart, Purpose } from "../llm/types.js";
 import type { ImportStore, OperationRecord } from "../store/types.js";
 
-export interface OperationContext { store: ImportStore; provider: ModelProvider; budget: Budget; importId: string; clock: () => Date; sleep?: (ms: number) => Promise<void>; }
+export interface OperationContext {
+  store: ImportStore; provider: ModelProvider; budget: Budget; importId: string; clock: () => Date; sleep?: (ms: number) => Promise<void>;
+  /** Attempts recorded per call key so far (ledger plus this run), for retryIndex numbering across resumptions. */
+  attemptsByKey: Map<string, number>;
+  onAttempt?: (event: { purpose: Purpose; status: AttemptOutcome["status"]; costUsdMicro: number | null }) => void;
+}
 
-/** Rebuilds the import's budget from the attempt ledger: known costs are spent; a start with no outcome is treated as spent at its reservation (it may have been billed). */
-export function budgetFromLedger(limitUsdMicro: number, events: AttemptEvent[]): Budget {
-  const budget = createBudget(limitUsdMicro);
+/** Rebuilds the import's budget from the attempt ledger: known costs and tokens are spent; a start with no outcome is spent at its reservation (it may have been billed); every start is a request. */
+export function budgetFromLedger(limits: BudgetLimits, events: AttemptEvent[], startedAtMs: number): Budget {
+  const budget = createBudget(limits, startedAtMs);
   const outcomes = new Map(events.filter((e): e is AttemptOutcome => e.event === "outcome").map((o) => [o.attemptId, o]));
   for (const e of events) {
     if (e.event !== "start") continue;
     const o = outcomes.get(e.attemptId);
-    budget.spentUsdMicro += o ? (o.costUsdMicro ?? e.reservedUsdMicro) : e.reservedUsdMicro;
+    const reservedTokens = e.reservedInputTokens + e.reservedOutputTokens;
+    const actualTokens = o && o.inputTokens !== null ? o.inputTokens + (o.cacheReadTokens ?? 0) + (o.cacheWriteTokens ?? 0) + (o.outputTokens ?? 0) : null;
+    budget.requests += 1;
+    budget.spentUsdMicro += o?.costUsdMicro ?? e.reservedUsdMicro;
+    budget.spentTokens += actualTokens ?? reservedTokens;
   }
   return budget;
+}
+
+export function attemptsByKey(events: AttemptEvent[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const e of events) if (e.event === "start") counts.set(e.callKey, (counts.get(e.callKey) ?? 0) + 1);
+  return counts;
 }
 
 /** Marks every operation still "running" as failed and billing-uncertain (spec §5). */
@@ -3629,41 +4586,67 @@ export async function reconcile(store: ImportStore, importId: string, clock: () 
   }
 }
 
-export interface RunOperation<T> { purpose: Purpose; activityId: string | null; key: string; work: (runner: StageRunner, op: OperationRecord) => Promise<T>; }
+export interface RunOperation<T> {
+  purpose: Purpose;
+  activityId: string | null;
+  key: string;
+  /** A result persisted by an earlier run, or null. Checked first: a persisted result is the source of truth even when the operation record was interrupted. */
+  load: () => Promise<T | null>;
+  work: (runner: StageRunner, op: OperationRecord) => Promise<T>;
+  /** Persists the result. Runs before the operation is marked succeeded, so a crash between the two leaves a reusable result rather than a succeeded operation with nothing stored. */
+  persist: (result: T) => Promise<void>;
+}
+export interface OperationOutcome<T> { result: T; operation: OperationRecord; reused: boolean; }
 
-/** One logical operation: idempotent by key; a succeeded operation is not re-run; a running/failed one is re-created as a new operation id with a suffix. */
-export async function runOperation<T>(ctx: OperationContext, spec: RunOperation<T>): Promise<{ result: T; operation: OperationRecord } | { skipped: true; operation: OperationRecord }> {
-  const existing = (await ctx.store.listOperations(ctx.importId)).filter((o) => o.idempotencyKey === spec.key);
-  const done = existing.find((o) => o.status === "succeeded");
-  if (done) return { skipped: true, operation: done };
+export async function runOperation<T>(ctx: OperationContext, spec: RunOperation<T>): Promise<OperationOutcome<T>> {
+  const existing = (await ctx.store.listOperations(ctx.importId)).filter((o) => o.idempotencyKey === spec.key).sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.operationId.localeCompare(b.operationId));
+  const latest = existing.at(-1);
+  const stored = await spec.load();
+  if (stored !== null) {
+    if (latest && latest.status === "succeeded") return { result: stored, operation: latest, reused: true };
+    const corrected: OperationRecord = latest
+      ? { ...latest, status: "succeeded", outcome: `${latest.outcome ?? "interrupted"}; the result had been persisted and was reused on resume`, completedAt: ctx.clock().toISOString() }
+      : { operationId: spec.key, importId: ctx.importId, activityId: spec.activityId, purpose: spec.purpose, status: "succeeded", idempotencyKey: spec.key, contentAttempts: 0, outcome: "result found in the store without an operation record; reused on resume", billingUncertain: false, startedAt: ctx.clock().toISOString(), completedAt: ctx.clock().toISOString() };
+    await ctx.store.putOperation(corrected);
+    return { result: stored, operation: corrected, reused: true };
+  }
   const operationId = existing.length === 0 ? spec.key : `${spec.key}#${existing.length + 1}`;
-  const op: OperationRecord = { operationId, importId: ctx.importId, activityId: spec.activityId, purpose: spec.purpose, status: "running", idempotencyKey: spec.key, contentAttempts: 0, outcome: null, billingUncertain: false, startedAt: ctx.clock().toISOString(), completedAt: null };
+  const note = latest?.status === "succeeded" ? "re-run: the earlier operation succeeded but its result is missing from the store" : null;
+  const op: OperationRecord = { operationId, importId: ctx.importId, activityId: spec.activityId, purpose: spec.purpose, status: "running", idempotencyKey: spec.key, contentAttempts: 0, outcome: note, billingUncertain: false, startedAt: ctx.clock().toISOString(), completedAt: null };
   await ctx.store.putOperation(op);
   const recorder = ctx.store.recorderFor(ctx.importId);
-  const counting = { recordStart: async (s: AttemptStart) => { op.contentAttempts = Math.max(op.contentAttempts, s.attempt); await recorder.recordStart(s); }, recordOutcome: (o: AttemptOutcome) => recorder.recordOutcome(o) };
-  const runnerOptions: Parameters<typeof createRunner>[0] = { provider: ctx.provider, recorder: counting, budget: ctx.budget, operationId, clock: ctx.clock };
+  const counting = {
+    recordStart: async (s: AttemptStart) => { op.contentAttempts = Math.max(op.contentAttempts, s.attempt); ctx.attemptsByKey.set(s.callKey, (ctx.attemptsByKey.get(s.callKey) ?? 0) + 1); await recorder.recordStart(s); },
+    recordOutcome: async (o: AttemptOutcome) => { await recorder.recordOutcome(o); ctx.onAttempt?.({ purpose: spec.purpose, status: o.status, costUsdMicro: o.costUsdMicro }); }
+  };
+  const runnerOptions: RunnerOptions = { provider: ctx.provider, recorder: counting, budget: ctx.budget, operationId, clock: ctx.clock, priorAttempts: (key) => ctx.attemptsByKey.get(key) ?? 0 };
   if (ctx.sleep) runnerOptions.sleep = ctx.sleep;
   const runner = createRunner(runnerOptions);
   try {
     const result = await spec.work(runner, op);
+    await spec.persist(result);
     await ctx.store.putOperation({ ...op, status: "succeeded", outcome: "ok", completedAt: ctx.clock().toISOString() });
-    return { result, operation: op };
+    return { result, operation: op, reused: false };
   } catch (err) {
     await ctx.store.putOperation({ ...op, status: "failed", outcome: err instanceof Error ? `${err.name}: ${err.message}` : String(err), completedAt: ctx.clock().toISOString() });
     throw err;
   }
 }
 
-export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
+/** Runs each lane's items strictly in order; up to `concurrency` lanes run at once. Workers must not throw (the caller records outcomes and stop flags). */
+export async function runLanes<T>(lanes: T[][], concurrency: number, worker: (item: T, laneIndex: number) => Promise<void>): Promise<void> {
   let next = 0;
-  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
-    for (;;) { const i = next++; if (i >= items.length) return; results[i] = await fn(items[i]!, i); }
-  });
-  await Promise.all(workers);
-  return results;
+  const runLane = async (): Promise<void> => {
+    for (;;) {
+      const i = next++;
+      if (i >= lanes.length) return;
+      for (const item of lanes[i]!) await worker(item, i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, lanes.length)) }, runLane));
 }
 ```
+`RunnerOptions` is exported from `runner.ts` (Task 7 declares it with `export interface`).
 
 `packages/generator/src/pipeline/run-import.ts`:
 ```ts
@@ -3672,18 +4655,20 @@ import { assertGeneratedProvenance, SCHEMA_VERSION, type ConceptMap, type Import
 import { parseUnit } from "../competency/parse-unit.js";
 import { extractConceptMap, type ChunkConcept } from "../concepts/index.js";
 import type { SourceDocument } from "../ingest/source-document.js";
-import { MODEL_ROLES } from "../llm/models.js";
+import { budgetSnapshot, DEFAULT_BUDGET_LIMITS, type BudgetLimits } from "../llm/budget.js";
+import { MODEL_ROLES, REQUEST_PROFILES } from "../llm/models.js";
 import type { ModelProvider } from "../llm/provider.js";
-import { BudgetRefused, ContentFailure, InfrastructureFailure } from "../llm/runner.js";
+import { BudgetRefused, ContentFailure } from "../llm/runner.js";
 import { planActivities, DEFAULT_PLAN_RULES, type ActivityPlan, type PlannedType, type PlanRules } from "../plan/planner.js";
 import { createProducers } from "../produce/index.js";
 import { PROMPT_VERSION, type PromptConfig } from "../prompts/system.js";
 import type { ActivityRecord, ImportRecord, ImportStore, RevisionRecord } from "../store/types.js";
-import { budgetFromLedger, mapLimit, reconcile, runOperation, type OperationContext } from "./operations.js";
+import { DEFAULT_CHUNK_TOKENS, IncompatibleResumeError, runFingerprint } from "./fingerprint.js";
+import { attemptsByKey, budgetFromLedger, reconcile, runLanes, runOperation, type OperationContext } from "./operations.js";
 
 export interface RunImportInput {
   importId: string; name: string; source: SourceDocument; unitText: string | null; selectedTypes: readonly PlannedType[];
-  budgetUsdMicro: number; promptConfig: PromptConfig; language: string; customisation: string | null; orgId?: string;
+  budget: { usdMicro: number } & Partial<BudgetLimits>; promptConfig: PromptConfig; language: string; customisation: string | null; orgId?: string;
 }
 export type ProgressEvent = { kind: "status"; status: ImportStatus } | { kind: "activity"; activityId: string; status: ActivityRecord["status"]; error?: string } | { kind: "attempt"; purpose: string; status: string; costUsdMicro: number | null };
 export interface RunImportDeps {
@@ -3691,9 +4676,19 @@ export interface RunImportDeps {
   concurrency?: number; chunkTokens?: number; rules?: PlanRules; clock?: () => Date; sleep?: (ms: number) => Promise<void>; onProgress?: (event: ProgressEvent) => void;
 }
 
-function existingTexts(specs: RevisionRecord[]): { questions: string[]; passages: string[]; fronts: string[] } {
+export const SKIPPED_PREFIX = "skipped: ";
+const RETRIABLE_PREFIXES = [SKIPPED_PREFIX, "budget: ", "system: "];
+
+/** Activities never attempted (skipped by a stop) or stopped by budget or infrastructure are re-dispatched on resume; content failures stay failed until a person asks for regeneration (spec §5). */
+export function isPending(activity: ActivityRecord): boolean {
+  if (activity.status === "promoted") return false;
+  if (activity.status === "failed") return RETRIABLE_PREFIXES.some((p) => activity.error?.startsWith(p));
+  return true;
+}
+
+function existingTexts(revisions: RevisionRecord[]): { questions: string[]; passages: string[]; fronts: string[] } {
   const out = { questions: [] as string[], passages: [] as string[], fronts: [] as string[] };
-  for (const r of specs) {
+  for (const r of revisions) {
     const s = r.spec;
     if (s.type === "multiChoice") out.questions.push(s.question.replace(/<[^>]+>/g, ""));
     if (s.type === "blanks") out.passages.push(s.passage);
@@ -3703,87 +4698,141 @@ function existingTexts(specs: RevisionRecord[]): { questions: string[]; passages
 }
 
 export async function runImport(input: RunImportInput, deps: RunImportDeps): Promise<ImportRecord> {
+  const chunkTokens = deps.chunkTokens ?? DEFAULT_CHUNK_TOKENS;
+  const rules = deps.rules ?? DEFAULT_PLAN_RULES;
+  const fingerprint = runFingerprint({ sourceTextHash: input.source.textHash, unitText: input.unitText, selectedTypes: input.selectedTypes, language: input.language, promptConfig: input.promptConfig, customisation: input.customisation, chunkTokens, rules });
+  const existing = await deps.store.getImport(input.importId);
+  if (existing && existing.fingerprint !== fingerprint) throw new IncompatibleResumeError(input.importId, existing.fingerprint, fingerprint);
+  const lock = await deps.store.lock(input.importId);
+  try {
+    return await runLocked(input, deps, existing, fingerprint, chunkTokens, rules);
+  } finally {
+    await lock.release();
+  }
+}
+
+async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: ImportRecord | null, fingerprint: string, chunkTokens: number, rules: PlanRules): Promise<ImportRecord> {
   const clock = deps.clock ?? (() => new Date());
   const store = deps.store;
   const now = () => clock().toISOString();
   const emit = deps.onProgress ?? (() => undefined);
+  const limits: BudgetLimits = { ...DEFAULT_BUDGET_LIMITS, ...input.budget };
 
-  const existing = await store.getImport(input.importId);
-  let record: ImportRecord = existing ?? { importId: input.importId, orgId: input.orgId ?? "local", name: input.name, sourceType: input.source.kind, status: "queued", customisation: input.customisation, language: input.language, unitTextHash: null, selectedTypes: [...input.selectedTypes], budget: { limitUsdMicro: input.budgetUsdMicro }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0 }, error: null, idempotencyKey: input.importId, createdAt: now(), updatedAt: now() };
-  if (!existing) await store.putImport(record);
-  if (record.status === "ready" || record.status === "ready_with_failures") return record;
+  let record: ImportRecord = existing
+    ? { ...existing, budget: limits, updatedAt: now() }
+    : { importId: input.importId, orgId: input.orgId ?? "local", name: input.name, sourceType: input.source.kind, status: "queued", customisation: input.customisation, language: input.language, unitTextHash: null, selectedTypes: [...input.selectedTypes], fingerprint, budget: limits, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0 }, error: null, idempotencyKey: input.importId, createdAt: now(), updatedAt: now() };
+  await store.putImport(record);
+  if (record.status === "ready") return record;
+  if (record.status === "ready_with_failures" && !(await store.listActivities(input.importId)).some(isPending)) return record;
   const setStatus = async (status: ImportStatus, error: string | null = record.error): Promise<void> => { record = { ...record, status, error, updatedAt: now() }; await store.putImport(record); emit({ kind: "status", status }); };
 
   await reconcile(store, input.importId, clock);
-  const budget = budgetFromLedger(input.budgetUsdMicro, await store.listAttempts(input.importId));
-  const ctx: OperationContext = { store, provider: deps.provider, budget, importId: input.importId, clock };
+  const events = await store.listAttempts(input.importId);
+  const budget = budgetFromLedger(limits, events, clock().getTime());
+  const ctx: OperationContext = { store, provider: deps.provider, budget, importId: input.importId, clock, attemptsByKey: attemptsByKey(events), onAttempt: (a) => emit({ kind: "attempt", ...a }) };
   if (deps.sleep) ctx.sleep = deps.sleep;
-  const persistBudget = async (): Promise<void> => { record = { ...record, budgetUsed: { spentUsdMicro: budget.spentUsdMicro, reservedUsdMicro: budget.reservedUsdMicro }, updatedAt: now() }; await store.putImport(record); };
+  const persistBudget = async (): Promise<void> => { record = { ...record, budgetUsed: budgetSnapshot(budget), updatedAt: now() }; await store.putImport(record); };
 
   try {
     await setStatus("ingesting");
     if (!(await store.getArtifact(input.importId, "source"))) await store.putArtifact(input.importId, "source", input.source);
 
-    let unit: UnitOfCompetency | null = await store.getArtifact<UnitOfCompetency>(input.importId, "unit");
-    if (!unit && input.unitText) {
-      const r = await runOperation(ctx, { purpose: "parseUnit", activityId: null, key: `${input.importId}:parseUnit`, work: (runner) => parseUnit(input.unitText!, runner) });
-      if (!("skipped" in r)) { unit = r.result; await store.putArtifact(input.importId, "unit", unit); record = { ...record, unitTextHash: unit.textHash }; await store.putImport(record); }
+    let unit: UnitOfCompetency | null = null;
+    if (input.unitText !== null) {
+      const unitText = input.unitText;
+      const r = await runOperation<UnitOfCompetency>(ctx, {
+        purpose: "parseUnit", activityId: null, key: `${input.importId}:parseUnit`,
+        load: () => store.getArtifact<UnitOfCompetency>(input.importId, "unit"),
+        work: (runner) => parseUnit(unitText, runner),
+        persist: (u) => store.putArtifact(input.importId, "unit", u)
+      });
+      unit = r.result;
+      if (record.unitTextHash !== unit.textHash) { record = { ...record, unitTextHash: unit.textHash, updatedAt: now() }; await store.putImport(record); }
     }
 
     await setStatus("extracting");
-    let map = await store.getArtifact<ConceptMap>(input.importId, "conceptMap");
-    if (!map) {
-      const chunkCache = { get: (i: number) => store.getArtifact<ChunkConcept[]>(input.importId, `chunk-${i}`), put: (i: number, c: ChunkConcept[]) => store.putArtifact(input.importId, `chunk-${i}`, c) };
-      const r = await runOperation(ctx, { purpose: "extract", activityId: null, key: `${input.importId}:concepts`, work: (runner) => extractConceptMap(input.source, unit, runner, { chunkTokens: deps.chunkTokens ?? 6000, promptConfig: input.promptConfig, chunkCache }) });
-      if ("skipped" in r) throw new InfrastructureFailure("concept operation recorded as succeeded but no concept map is stored");
-      map = r.result; await store.putArtifact(input.importId, "conceptMap", map);
-    }
+    const chunkCache = { get: (i: number) => store.getArtifact<ChunkConcept[]>(input.importId, `chunk-${i}`), put: (i: number, c: ChunkConcept[]) => store.putArtifact(input.importId, `chunk-${i}`, c) };
+    const concepts = await runOperation<ConceptMap>(ctx, {
+      purpose: "extract", activityId: null, key: `${input.importId}:concepts`,
+      load: () => store.getArtifact<ConceptMap>(input.importId, "conceptMap"),
+      work: (runner) => extractConceptMap(input.source, unit, runner, { chunkTokens, promptConfig: input.promptConfig, chunkCache }),
+      persist: (m) => store.putArtifact(input.importId, "conceptMap", m)
+    });
+    const map = concepts.result;
 
     await setStatus("planning");
-    let plan = await store.getArtifact<ActivityPlan[]>(input.importId, "plan");
-    if (!plan) {
-      const r = await runOperation(ctx, { purpose: "plan", activityId: null, key: `${input.importId}:plan`, work: (runner) => planActivities(map!, [...input.selectedTypes], runner, deps.rules ?? DEFAULT_PLAN_RULES) });
-      if ("skipped" in r) throw new InfrastructureFailure("plan operation recorded as succeeded but no plan is stored");
-      plan = r.result; await store.putArtifact(input.importId, "plan", plan);
-      for (const [i, p] of plan.entries()) await store.putActivity({ activityId: p.activityId, importId: input.importId, type: p.type, order: i, status: "planned", currentRevision: null, conceptIds: p.conceptIds, criteriaIds: p.criteriaIds, error: null, dropped: false });
+    const planned = await runOperation<ActivityPlan[]>(ctx, {
+      purpose: "plan", activityId: null, key: `${input.importId}:plan`,
+      load: () => store.getArtifact<ActivityPlan[]>(input.importId, "plan"),
+      work: (runner) => planActivities(map, [...input.selectedTypes], runner, rules),
+      persist: (p) => store.putArtifact(input.importId, "plan", p)
+    });
+    const plan = planned.result;
+    const known = new Set((await store.listActivities(input.importId)).map((a) => a.activityId));
+    for (const [i, p] of plan.entries()) {
+      if (known.has(p.activityId)) continue;
+      await store.putActivity({ activityId: p.activityId, importId: input.importId, type: p.type, order: i, status: "planned", currentRevision: null, conceptIds: p.conceptIds, criteriaIds: p.criteriaIds, error: null, dropped: false });
     }
 
     await setStatus("generating");
     const producers = createProducers();
-    const activities = await store.listActivities(input.importId);
-    const pending = activities.filter((a) => a.status !== "promoted" && a.status !== "failed");
-    let budgetStopped = false;
-    await mapLimit(pending, deps.concurrency ?? 4, async (activity) => {
-      if (budgetStopped) return;
-      const entry = plan!.find((p) => p.activityId === activity.activityId)!;
-      const revision = (await store.listRevisions(activity.activityId)).length + 1;
-      const promoted = (await Promise.all(activities.map((a) => store.listRevisions(a.activityId)))).flat().filter((r) => r.state === "promoted");
-      const setActivity = async (patch: Partial<ActivityRecord>): Promise<void> => { const next = { ...activity, ...patch }; await store.putActivity(next); emit({ kind: "activity", activityId: activity.activityId, status: next.status, ...(next.error ? { error: next.error } : {}) }); };
-      await setActivity({ status: "generating" });
+    const pending = (await store.listActivities(input.importId)).filter(isPending);
+    const lanes = input.selectedTypes.map((type) => pending.filter((a) => a.type === type)).filter((lane) => lane.length > 0);
+    const halt: { stop: { kind: "budget" | "system"; reason: string } | null; error: unknown } = { stop: null, error: undefined };
+
+    const promotedOfType = async (type: PlannedType): Promise<RevisionRecord[]> => {
+      const same = (await store.listActivities(input.importId)).filter((a) => a.type === type && a.currentRevision !== null);
+      const revisions = await Promise.all(same.map((a) => store.getRevision(a.activityId, a.currentRevision!)));
+      return revisions.filter((r): r is RevisionRecord => r !== null && r.state === "promoted");
+    };
+
+    const generateActivity = async (initial: ActivityRecord): Promise<void> => {
+      let activity = initial;
+      const setActivity = async (patch: Partial<ActivityRecord>): Promise<void> => { activity = { ...activity, ...patch }; await store.putActivity(activity); emit({ kind: "activity", activityId: activity.activityId, status: activity.status, ...(activity.error ? { error: activity.error } : {}) }); };
+      const entry = plan.find((p) => p.activityId === activity.activityId);
+      if (!entry) throw new Error(`activity ${activity.activityId} is not in the stored plan`);
+      const revisions = await store.listRevisions(activity.activityId);
+      const promotedRevision = revisions.find((r) => r.state === "promoted");
+      if (promotedRevision) {
+        await setActivity({ status: "promoted", currentRevision: promotedRevision.revision, error: null }); // promotion finished before the activity record was written
+        return;
+      }
+      const saved = revisions.find((r) => r.state === "candidate");
+      const revision = saved ? saved.revision : revisions.length + 1;
+      if (!saved) await setActivity({ status: "generating", error: null });
+      const produced = await runOperation<RevisionRecord>(ctx, {
+        purpose: "produce", activityId: activity.activityId, key: `${input.importId}:produce:${activity.activityId}:r${revision}`,
+        load: () => store.getRevision(activity.activityId, revision),
+        work: async (runner) => {
+          const producer = producers.get(entry.type);
+          if (!producer) throw new Error(`no producer for ${entry.type}`);
+          const priorTexts = existingTexts(await promotedOfType(activity.type));
+          const result = await producer.produce({ plan: entry, map, unit, promptConfig: input.promptConfig, language: input.language, existing: priorTexts, rules }, runner, { registry: deps.registry });
+          assertGeneratedProvenance(result.spec);
+          return { activityId: activity.activityId, revision, state: "candidate", spec: result.spec, schemaVersion: SCHEMA_VERSION, promptVersion: PROMPT_VERSION, modelConfig: { provider: deps.provider.name, models: { ...MODEL_ROLES }, profiles: { ...REQUEST_PROFILES } }, engineFingerprint: deps.engineFingerprint, note: null, buildKey: null, attemptIds: result.attemptIds, createdAt: now() };
+        },
+        persist: (rev) => store.putRevision(rev)
+      });
+      const candidate = produced.result;
+      if (!produced.reused) await setActivity({ status: "generated" });
+      const bytes = await compileToBuffer(candidate.spec, new Map(), { registry: deps.registry, revision: candidate.revision });
+      const buildKey = await store.putBuild(input.importId, activity.activityId, candidate.revision, bytes);
+      await setActivity({ status: "built" });
+      for (const prev of await store.listRevisions(activity.activityId)) if (prev.state === "promoted" && prev.revision !== candidate.revision) await store.putRevision({ ...prev, state: "superseded" });
+      await store.putRevision({ ...candidate, state: "promoted", buildKey });
+      await setActivity({ status: "promoted", currentRevision: candidate.revision, error: null });
+    };
+
+    await runLanes(lanes, deps.concurrency ?? 3, async (activity) => {
+      const mark = async (error: string): Promise<void> => { await store.putActivity({ ...activity, status: "failed", error }); emit({ kind: "activity", activityId: activity.activityId, status: "failed", error }); };
+      if (halt.stop) { await mark(`${SKIPPED_PREFIX}${halt.stop.reason}`); return; }
       try {
-        const r = await runOperation(ctx, {
-          purpose: "produce", activityId: activity.activityId, key: `${input.importId}:produce:${activity.activityId}:r${revision}`,
-          work: async (runner) => {
-            const producer = producers.get(entry.type);
-            if (!producer) throw new InfrastructureFailure(`no producer for ${entry.type}`);
-            const produced = await producer.produce({ plan: entry, map: map!, unit, promptConfig: input.promptConfig, language: input.language, existing: existingTexts(promoted), rules: deps.rules ?? DEFAULT_PLAN_RULES }, runner, { registry: deps.registry });
-            assertGeneratedProvenance(produced.spec);
-            return produced;
-          }
-        });
-        if ("skipped" in r) return;
-        const rev: RevisionRecord = { activityId: activity.activityId, revision, state: "candidate", spec: r.result.spec, schemaVersion: SCHEMA_VERSION, promptVersion: PROMPT_VERSION, modelConfig: { provider: deps.provider.name, models: { ...MODEL_ROLES } }, engineFingerprint: deps.engineFingerprint, note: null, buildKey: null, attemptIds: r.result.attemptIds, createdAt: now() };
-        await store.putRevision(rev);
-        await setActivity({ status: "generated" });
-        const bytes = await compileToBuffer(rev.spec, new Map(), { registry: deps.registry, revision });
-        const buildKey = await store.putBuild(input.importId, activity.activityId, revision, bytes);
-        for (const prev of await store.listRevisions(activity.activityId)) if (prev.state === "promoted") await store.putRevision({ ...prev, state: "superseded" });
-        await store.putRevision({ ...rev, state: "promoted", buildKey });
-        await setActivity({ status: "promoted", currentRevision: revision, error: null });
+        await generateActivity(activity);
       } catch (err) {
-        if (err instanceof ContentFailure) { await setActivity({ status: "failed", error: `content: ${err.message}` }); return; }
-        if (err instanceof BudgetRefused) { budgetStopped = true; await setActivity({ status: "failed", error: `budget: ${err.message}` }); return; }
-        throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        if (err instanceof ContentFailure) await mark(`content: ${message}`);
+        else if (err instanceof BudgetRefused) { halt.stop = { kind: "budget", reason: message }; await mark(message); }
+        else { halt.stop = { kind: "system", reason: `system: ${message}` }; halt.error = err; await mark(`system: ${message}`); }
       } finally {
         await persistBudget();
       }
@@ -3793,23 +4842,31 @@ export async function runImport(input: RunImportInput, deps: RunImportDeps): Pro
     const promotedCount = finalActivities.filter((a) => a.status === "promoted").length;
     const failedCount = finalActivities.filter((a) => a.status === "failed").length;
     await persistBudget();
-    if (promotedCount === 0) await setStatus("failed", budgetStopped ? "budget exhausted before any activity was promoted" : "no activity was promoted");
-    else if (failedCount > 0) await setStatus("ready_with_failures");
-    else await setStatus("ready");
+    if (halt.stop?.kind === "system") { await setStatus("failed", halt.stop.reason); throw halt.error; }
+    if (promotedCount === 0) await setStatus("failed", halt.stop ? halt.stop.reason : "no activity was promoted");
+    else if (failedCount > 0) await setStatus("ready_with_failures", null);
+    else await setStatus("ready", null);
     return record;
   } catch (err) {
+    if (record.status === "failed" && stopMarked(record)) throw err;
     const message = err instanceof Error ? err.message : String(err);
-    if (err instanceof BudgetRefused) { await persistBudget(); await setStatus("failed", `budget: ${message}`); return record; }
-    if (err instanceof ContentFailure) { await persistBudget(); await setStatus("failed", `content: ${message}`); return record; }
     await persistBudget();
+    if (err instanceof BudgetRefused) { await setStatus("failed", message); return record; }
+    if (err instanceof ContentFailure) { await setStatus("failed", `content: ${message}`); return record; }
     await setStatus("failed", `system: ${message}`);
     throw err;
   }
 }
-```
-`packages/generator/src/pipeline/index.ts`: `export * from "./operations.js"; export * from "./run-import.js";` and add `export * from "./store/types.js"; export * from "./store/memory-store.js"; export * from "./pipeline/index.js";` to `src/index.ts`.
 
-Note on the budget-refusal test: the first model call (`parseUnit`) is refused at reservation time, `BudgetRefused` propagates out of `runOperation`, and the outer catch marks the import `failed` with a `budget:` error and no attempt recorded — that is the expected path for test 4. The reconciliation test drives the restart path: the interrupted operation becomes failed/billing-uncertain, its reservation counts as spent, and the run then fails on the empty provider script (which the test swallows) — its assertions are about the reconciliation, not the rerun.
+function stopMarked(record: ImportRecord): boolean {
+  return record.error !== null && record.error.startsWith("system: ");
+}
+```
+`BudgetRefused.message` already begins with `budget: ` (Task 4's reasons), so budget failures read `budget: …` on both the activity and the import. A `ContentFailure` from `parseUnit`, `extractConceptMap` or `planActivities` ends the import (`failed`, `content: …`) because nothing downstream can run; a `ContentFailure` inside a producer fails only that activity.
+
+`packages/generator/src/pipeline/index.ts`: `export * from "./fingerprint.js"; export * from "./operations.js"; export * from "./run-import.js";` and add `export * from "./store/types.js"; export * from "./store/memory-store.js"; export * from "./pipeline/index.js";` to `src/index.ts`.
+
+Notes on the tests: in the budget-stop test the request limit lands exactly on the `blanks` reservation, which the runner turns into `BudgetRefused` with a `requests` reason; the flashcards lane never dispatches and is marked `skipped: budget: …`; the second run raises the limit and the two lanes re-dispatch. In the infrastructure test the permanent 401 makes `blanks` fail with `system:` and the import `failed`; on resume both `system:` and `skipped:` activities are re-dispatched. The reconciliation test drives the restart path: the interrupted operation becomes failed/billing-uncertain, its reservation counts as spent, and the run then fails on the empty provider script (which the test swallows) — its assertions are about the reconciliation, not the rerun.
 
 - [ ] **Step 4: Verify and commit**
 
@@ -3817,7 +4874,7 @@ Run: `pnpm --filter @leaplearn/generator test && pnpm --filter @leaplearn/genera
 
 ```bash
 git add packages/generator
-git commit -m "feat(generator): resumable import pipeline with idempotent operations, failure categories and budget reconciliation
+git commit -m "feat(generator): crash-safe resumable import pipeline with persisted operation results, run fingerprints, store locks, per-type lanes and explicit stop outcomes
 
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 ```
@@ -3826,47 +4883,87 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ### Task 15: `FileStore`, `leap generate`, the mapping table and the cost report
 
+Answers review findings 5 (exclusive lock; defined handling of a crash-truncated JSONL tail), 3 (the four budget limits reach the command line) and 9 (retry share counts attempts with `retryIndex > 0`, never a stage's first call). The mapping table and cost report are review-aware from the start so Task 16's `leap review` only adds records.
+
 **Files:**
 - Create: `apps/cli/src/file-store.ts`, `apps/cli/src/report.ts`, `apps/cli/src/generate.ts`; modify `apps/cli/src/index.ts`, `apps/cli/package.json`
 - Test: `apps/cli/test/file-store.test.ts`, `apps/cli/test/report.test.ts`
 
 **Interfaces:**
-- `FileStore(dir) implements ImportStore`: layout under `dir/` — `import.json`, `artifacts/<name>.json`, `activities/<activityId>.json`, `revisions/<activityId>/r<N>.json`, `operations.jsonl` (append-only; the latest line per `operationId` wins), `attempts.jsonl` (append-only), `builds/<activityId>-r<N>.h5p`; every JSON write goes to `<file>.tmp-<random>` then `rename`; JSONL appends use `appendFile` with one JSON object per line.
-- `writeMappingCsv(store, importId, path)` — columns `activityId,type,title,revision,itemId,criterionId,status,conceptIds,evidenceIds,firstQuote`; one row per (activity or item) × criterion (`itemId` empty for the activity row; `criterionId` empty when the activity has none); `status` is always `suggested` in phase 2 (reviewed alignment arrives with phase 5's review screen); RFC 4180 quoting.
-- `costReport(store, importId): Promise<CostReport>` with `CostReport = { pricingVersion; totals: { attempts; costUsdMicro; costStatusCounts: Record<CostStatus, number> }; shared: number; direct: number; byPurpose: Record<string, { attempts; costUsdMicro }>; byType: Record<string, { activities; promoted; costUsdMicro }>; perActivity: Array<{ activityId; type; status; attempts; costUsdMicro }>; retryShare: number }` — `shared` = purposes other than `produce`; `direct` = `produce`; `retryShare` = attempts beyond the first per operation ÷ total attempts; `formatCostReport(report): string` (a Markdown table for the terminal).
-- `leap generate --source <file> --out <dir> [--unit <file>] [--types multiChoice,blanks,flashcards] [--budget-usd 2] [--language en] [--reading-level high-school] [--tone educational] [--customisation "…"] [--name …] [--libraries <dir>] [--provider anthropic|replay|record] [--fixtures <dir>] [--concurrency 4]`; `--source` accepts `.pdf`, `.md`, `.txt`; `--provider record` wraps the Anthropic provider in `RecordingProvider(fixtures)`; `replay` uses `ReplayProvider(fixtures)` and needs no key; exit 0 when the import ends `ready`, 2 when `ready_with_failures`, 1 on `failed` (with the error on stderr); prints the activity table, the mapping path, and the cost report; `importId` defaults to a slug of the output directory name so reruns resume.
+- `FileStore(dir) implements ImportStore`: layout under `dir/` — `lock.json`, `import.json`, `artifacts/<name>.json`, `activities/<activityId>.json`, `revisions/<activityId>/r<N>.json`, `operations.jsonl`, `attempts.jsonl`, `acceptances.jsonl`, `alignment-reviews.jsonl` (all JSONL append-only; for `operations`, `acceptances` and `alignment-reviews` the latest line per key wins), `builds/<activityId>-r<N>.h5p`; every JSON write goes to `<file>.tmp-<random>` then `rename`; JSONL appends are one JSON object per line. `readJsonl` ignores a final line that has no trailing newline and does not parse (a crash-truncated tail, reported as `truncatedTail: true`) and throws `StoreCorruptError(path, line)` for any other malformed line. `lock()` creates `lock.json` with `{ importId, pid, hostname, startedAt }` using the `wx` flag; an existing lock whose pid is dead on this host is reclaimed, any other holder raises `StoreLockedError`; `release()` unlinks it.
+- `writeMappingCsv(store, importId, path)` — columns `activityId,type,title,revision,itemId,criterionId,status,conceptIds,evidenceIds,firstQuote`; one row per (activity or item) × criterion in the promoted revision's provenance (`itemId` empty for the activity row; `criterionId` empty when there are none); `status` is `suggested` unless an alignment review for that exact revision, item and criterion says `confirmed` or `rejected`; a review with decision `added` produces an extra row with status `added`; RFC 4180 quoting.
+- `costReport(store, importId): Promise<CostReport>` with `CostReport = { pricingVersion; totals: { attempts; costUsdMicro; costStatusCounts: Record<CostStatus, number>; reservationExceeded: number }; shared; direct; byPurpose; byType; perActivity; retryShare; accepted; costPerAcceptedActivityUsdMicro: number | null }` — `shared` = purposes other than `produce`; `direct` = `produce`; `retryShare` = starts with `retryIndex > 0` ÷ all starts; `accepted` = activities whose current revision has an `accepted` acceptance record; `costPerAcceptedActivityUsdMicro` = `totals.costUsdMicro / accepted` rounded, or `null` when nothing is accepted; `formatCostReport(report): string`.
+- `leap generate --source <file> --out <dir> [--unit <file>] [--types multiChoice,blanks,flashcards] [--budget-usd 2] [--max-requests 200] [--max-tokens 2000000] [--max-seconds 1800] [--language en] [--reading-level high-school] [--tone educational] [--customisation "…"] [--name …] [--libraries <dir>] [--provider anthropic|replay|record] [--fixtures <dir>] [--concurrency 3]`; `--source` accepts `.pdf`, `.md`, `.txt`; `--provider record` wraps the Anthropic provider in `RecordingProvider(fixtures)`; `replay` uses `ReplayProvider(fixtures)` and needs no key; exit 0 when the import ends `ready`, 2 when `ready_with_failures`, 1 on `failed`, on `IncompatibleResumeError` and on `StoreLockedError` (each with a `leap: …` line on stderr); prints the activity table, the mapping path, and the cost report; `importId` defaults to a slug of the output directory name so reruns resume.
 
 - [ ] **Step 1: Failing tests**
 
 `apps/cli/test/file-store.test.ts`:
 ```ts
 import { describe, it, expect } from "vitest";
-import { mkdtemp, readdir, readFile } from "node:fs/promises";
+import { appendFile, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FileStore } from "../src/file-store.js";
+import { StoreLockedError } from "@leaplearn/generator";
+import { FileStore, readJsonl, StoreCorruptError } from "../src/file-store.js";
+
+const importRecord = { importId: "imp", orgId: "local", name: "n", sourceType: "markdown" as const, status: "queued" as const, customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice" as const], fingerprint: "f".repeat(64), budget: { usdMicro: 10, requests: 1, tokens: 1, elapsedMs: 1 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0 }, error: null, idempotencyKey: "imp", createdAt: "t", updatedAt: "t" };
+const start = { event: "start" as const, attemptId: "a1", operationId: "imp:plan", callKey: "plan", retryIndex: 0, retryReason: null, attempt: 1, purpose: "plan" as const, provider: "fake" as const, model: "m", credentialOwner: "server" as const, reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" };
 
 describe("FileStore", () => {
-  it("round-trips records, appends ledgers, and leaves no temp files", async () => {
+  it("round-trips records, appends ledgers, keeps the latest review per key, and leaves no temp files", async () => {
     const dir = await mkdtemp(join(tmpdir(), "leap-store-"));
     const store = new FileStore(dir);
-    const record = { importId: "imp", orgId: "local", name: "n", sourceType: "markdown" as const, status: "queued" as const, customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice" as const], budget: { limitUsdMicro: 10 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0 }, error: null, idempotencyKey: "imp", createdAt: "t", updatedAt: "t" };
-    await store.putImport(record);
-    expect(await store.getImport("imp")).toEqual(record);
+    await store.putImport(importRecord);
+    expect(await store.getImport("imp")).toEqual(importRecord);
     await store.putArtifact("imp", "chunk-3", [{ tempId: "k3-0" }]);
     expect(await store.getArtifact("imp", "chunk-3")).toEqual([{ tempId: "k3-0" }]);
     const op = { operationId: "imp:plan", importId: "imp", activityId: null, purpose: "plan" as const, status: "running" as const, idempotencyKey: "imp:plan", contentAttempts: 0, outcome: null, billingUncertain: false, startedAt: "t", completedAt: null };
     await store.putOperation(op);
     await store.putOperation({ ...op, status: "succeeded", outcome: "ok" });
     expect((await store.listOperations("imp")).map((o) => o.status)).toEqual(["succeeded"]);
-    const rec = store.recorderFor("imp");
-    await rec.recordStart({ event: "start", attemptId: "a1", operationId: "imp:plan", attempt: 1, purpose: "plan", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" });
+    await store.recorderFor("imp").recordStart(start);
     expect((await store.listAttempts("imp")).map((e) => e.event)).toEqual(["start"]);
+    await store.putAcceptance({ importId: "imp", activityId: "act-1", revision: 1, decision: "rejected", reviewer: "r", notes: null, decidedAt: "t1" });
+    await store.putAcceptance({ importId: "imp", activityId: "act-1", revision: 1, decision: "accepted", reviewer: "r", notes: "fine", decidedAt: "t2" });
+    expect((await store.listAcceptances("imp")).map((a) => a.decision)).toEqual(["accepted"]);
+    await store.putAlignmentReview({ importId: "imp", activityId: "act-1", revision: 1, itemId: null, unitTextHash: null, criterionId: "PC1.1", decision: "confirmed", reviewer: "r", decidedAt: "t" });
+    await store.putAlignmentReview({ importId: "imp", activityId: "act-1", revision: 1, itemId: "b1", unitTextHash: null, criterionId: "PC1.1", decision: "rejected", reviewer: "r", decidedAt: "t" });
+    expect((await store.listAlignmentReviews("imp")).map((r) => [r.itemId, r.decision])).toEqual([[null, "confirmed"], ["b1", "rejected"]]);
     const key = await store.putBuild("imp", "act-1", 1, Buffer.from("PK.."));
     expect((await store.getBuild(key))?.toString()).toBe("PK..");
     const files = await readdir(dir, { recursive: true });
     expect(files.some((f) => /\.tmp-/.test(f))).toBe(false);
     expect((await readFile(join(dir, "operations.jsonl"), "utf8")).trim().split("\n")).toHaveLength(2);
+  });
+  it("tolerates a crash-truncated final line and rejects any other malformed line", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "leap-jsonl-"));
+    const path = join(dir, "attempts.jsonl");
+    await writeFile(path, `${JSON.stringify(start)}\n${JSON.stringify({ ...start, attemptId: "a2" })}\n{"event":"outcome","attemptId":"a2","opera`);
+    const read = await readJsonl<{ attemptId: string }>(path);
+    expect(read.records.map((r) => r.attemptId)).toEqual(["a1", "a2"]);
+    expect(read.truncatedTail).toBe(true);
+    expect((await new FileStore(dir).listAttempts("imp")).map((e) => e.attemptId)).toEqual(["a1", "a2"]);
+    await writeFile(path, `${JSON.stringify(start)}\nnot json\n${JSON.stringify({ ...start, attemptId: "a3" })}\n`);
+    await expect(readJsonl(path)).rejects.toMatchObject({ name: "StoreCorruptError", line: 2 });
+    await expect(new FileStore(dir).listAttempts("imp")).rejects.toBeInstanceOf(StoreCorruptError);
+    const clean = join(dir, "clean.jsonl");
+    await appendFile(clean, `${JSON.stringify(start)}\n`);
+    expect((await readJsonl(clean)).truncatedTail).toBe(false);
+  });
+  it("grants one exclusive lock, refuses a second holder, reclaims a dead local holder, and releases", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "leap-lock-"));
+    const store = new FileStore(dir);
+    const lock = await store.lock("imp");
+    await expect(new FileStore(dir).lock("imp")).rejects.toBeInstanceOf(StoreLockedError);
+    await lock.release();
+    const again = await store.lock("imp");
+    await again.release();
+    await writeFile(join(dir, "lock.json"), JSON.stringify({ importId: "imp", pid: 2 ** 22 - 1, hostname: hostname(), startedAt: "t" }));
+    const reclaimed = await store.lock("imp"); // that pid cannot be alive on this host
+    await reclaimed.release();
+    await writeFile(join(dir, "lock.json"), JSON.stringify({ importId: "imp", pid: process.pid, hostname: "another-host", startedAt: "t" }));
+    await expect(store.lock("imp")).rejects.toMatchObject({ name: "StoreLockedError", message: expect.stringMatching(/another-host/) });
   });
 });
 ```
@@ -3874,31 +4971,53 @@ describe("FileStore", () => {
 `apps/cli/test/report.test.ts`:
 ```ts
 import { describe, it, expect } from "vitest";
-import { MemoryStore } from "@leaplearn/generator";
+import { MemoryStore, type AttemptStart } from "@leaplearn/generator";
 import { costReport, formatCostReport, mappingRows } from "../src/report.js";
 
 describe("reports", () => {
-  it("splits shared and direct cost, counts retries, and lists mapping rows per criterion", async () => {
+  it("splits shared and direct cost, counts retries by retryIndex, computes cost per accepted activity, and lists mapping rows with review-aware status", async () => {
     const store = new MemoryStore();
     const rec = store.recorderFor("imp");
-    const start = (id: string, op: string, purpose: "extract" | "produce", attempt: number) => rec.recordStart({ event: "start", attemptId: id, operationId: op, attempt, purpose, provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" });
-    const outcome = (id: string, op: string, cost: number | null) => rec.recordOutcome({ event: "outcome", attemptId: id, operationId: op, providerRequestId: null, rawUsage: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, latencyMs: 1, pricingVersion: "v", costUsdMicro: cost, costStatus: cost === null ? "unavailable" : "known", stopReason: "end_turn", status: "ok", error: null, completedAt: "t" });
-    const op = (operationId: string, activityId: string | null, purpose: "extract" | "produce") => store.putOperation({ operationId, importId: "imp", activityId, purpose, status: "succeeded", idempotencyKey: operationId, contentAttempts: 1, outcome: "ok", billingUncertain: false, startedAt: "t", completedAt: "t" });
+    const start = (id: string, op: string, purpose: AttemptStart["purpose"], callKey: string, retryIndex: number) => rec.recordStart({ event: "start", attemptId: id, operationId: op, callKey, retryIndex, retryReason: retryIndex > 0 ? "content" : null, attempt: retryIndex + 1, purpose, provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" });
+    const outcome = (id: string, op: string, cost: number | null, exceeded = false) => rec.recordOutcome({ event: "outcome", attemptId: id, operationId: op, providerRequestId: null, rawUsage: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, latencyMs: 1, pricingVersion: "v", costUsdMicro: cost, costStatus: cost === null ? "unavailable" : "known", stopReason: "end_turn", status: "ok", error: null, reservationExceeded: exceeded, completedAt: "t" });
+    const op = (operationId: string, activityId: string | null, purpose: AttemptStart["purpose"]) => store.putOperation({ operationId, importId: "imp", activityId, purpose, status: "succeeded", idempotencyKey: operationId, contentAttempts: 1, outcome: "ok", billingUncertain: false, startedAt: "t", completedAt: "t" });
     await op("imp:concepts", null, "extract"); await op("imp:produce:act-1:r1", "act-1", "produce");
-    await start("a1", "imp:concepts", "extract", 1); await outcome("a1", "imp:concepts", 300);
-    await start("a2", "imp:produce:act-1:r1", "produce", 1); await outcome("a2", "imp:produce:act-1:r1", 500);
-    await start("a3", "imp:produce:act-1:r1", "produce", 2); await outcome("a3", "imp:produce:act-1:r1", null);
+    // two chunks, a merge and an alignment share one operation; all are first attempts of their own call keys, so none is a retry
+    await start("a1", "imp:concepts", "extract", "extract:chunk-0", 0); await outcome("a1", "imp:concepts", 100);
+    await start("a2", "imp:concepts", "extract", "extract:chunk-1", 0); await outcome("a2", "imp:concepts", 100);
+    await start("a3", "imp:concepts", "merge", "merge", 0); await outcome("a3", "imp:concepts", 50);
+    await start("a4", "imp:concepts", "align", "align", 0); await outcome("a4", "imp:concepts", 50);
+    await start("a5", "imp:produce:act-1:r1", "produce", "produce:act-1", 0); await outcome("a5", "imp:produce:act-1:r1", 500, true);
+    await start("a6", "imp:produce:act-1:r1", "produce", "produce:act-1", 1); await outcome("a6", "imp:produce:act-1:r1", null);
     await store.putActivity({ activityId: "act-1", importId: "imp", type: "multiChoice", order: 0, status: "promoted", currentRevision: 1, conceptIds: ["c1"], criteriaIds: ["PC1.1", "PC1.2"], error: null, dropped: false });
-    await store.putRevision({ activityId: "act-1", revision: 1, state: "promoted", spec: { id: "act-1", title: "T", type: "multiChoice", language: "en", schemaVersion: 1, question: "<p>q</p>", answers: [{ text: "a", correct: true }, { text: "b", correct: false }], randomAnswers: true, provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1"], criteriaIds: ["PC1.1", "PC1.2"] } }, schemaVersion: 1, promptVersion: "p", modelConfig: { provider: "fake", models: {} }, engineFingerprint: "f", note: null, buildKey: "k", attemptIds: ["a2", "a3"], createdAt: "t" });
+    await store.putRevision({ activityId: "act-1", revision: 1, state: "promoted", spec: { id: "act-1", title: "T", type: "multiChoice", language: "en", schemaVersion: 1, question: "<p>q</p>", answers: [{ text: "a", correct: true }, { text: "b", correct: false }], randomAnswers: true, provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1"], criteriaIds: ["PC1.1", "PC1.2"] } }, schemaVersion: 1, promptVersion: "p", modelConfig: { provider: "fake", models: {}, profiles: {} }, engineFingerprint: "f", note: null, buildKey: "k", attemptIds: ["a5", "a6"], createdAt: "t" });
     await store.putArtifact("imp", "conceptMap", { sourceId: "s", textHash: "0".repeat(64), concepts: [{ conceptId: "c1", name: "n", summary: "s", evidence: [{ evidenceId: "ev-s1", sentenceId: "s1", charStart: 0, charEnd: 3, quote: "Hi." }] }] });
-    const report = await costReport(store, "imp");
-    expect(report.totals).toEqual({ attempts: 3, costUsdMicro: 800, costStatusCounts: { known: 2, estimated: 0, unavailable: 1 } });
-    expect(report.shared).toBe(300); expect(report.direct).toBe(500);
-    expect(report.retryShare).toBeCloseTo(1 / 3);
-    expect(report.perActivity).toEqual([{ activityId: "act-1", type: "multiChoice", status: "promoted", attempts: 2, costUsdMicro: 500 }]);
-    expect(formatCostReport(report)).toContain("| produce |");
-    const rows = await mappingRows(store, "imp");
-    expect(rows.map((r) => [r.activityId, r.criterionId, r.status, r.firstQuote])).toEqual([["act-1", "PC1.1", "suggested", "Hi."], ["act-1", "PC1.2", "suggested", "Hi."]]);
+
+    const before = await costReport(store, "imp");
+    expect(before.totals).toEqual({ attempts: 6, costUsdMicro: 800, costStatusCounts: { known: 5, estimated: 0, unavailable: 1 }, reservationExceeded: 1 });
+    expect(before.shared).toBe(300); expect(before.direct).toBe(500);
+    expect(before.retryShare).toBeCloseTo(1 / 6);
+    expect(before.perActivity).toEqual([{ activityId: "act-1", type: "multiChoice", status: "promoted", attempts: 2, costUsdMicro: 500 }]);
+    expect(before.accepted).toBe(0); expect(before.costPerAcceptedActivityUsdMicro).toBeNull();
+    expect(formatCostReport(before)).toContain("| produce |");
+    expect((await mappingRows(store, "imp")).map((r) => [r.activityId, r.criterionId, r.status, r.firstQuote])).toEqual([["act-1", "PC1.1", "suggested", "Hi."], ["act-1", "PC1.2", "suggested", "Hi."]]);
+
+    await store.putAcceptance({ importId: "imp", activityId: "act-1", revision: 1, decision: "accepted", reviewer: "owner", notes: null, decidedAt: "t" });
+    await store.putAlignmentReview({ importId: "imp", activityId: "act-1", revision: 1, itemId: null, unitTextHash: null, criterionId: "PC1.2", decision: "rejected", reviewer: "owner", decidedAt: "t" });
+    await store.putAlignmentReview({ importId: "imp", activityId: "act-1", revision: 1, itemId: null, unitTextHash: null, criterionId: "PC2.1", decision: "added", reviewer: "owner", decidedAt: "t" });
+    const after = await costReport(store, "imp");
+    expect(after.accepted).toBe(1); expect(after.costPerAcceptedActivityUsdMicro).toBe(800);
+    expect((await mappingRows(store, "imp")).map((r) => [r.criterionId, r.status])).toEqual([["PC1.1", "suggested"], ["PC1.2", "rejected"], ["PC2.1", "added"]]);
+    await store.putAcceptance({ importId: "imp", activityId: "act-1", revision: 2, decision: "accepted", reviewer: "owner", notes: null, decidedAt: "t" }); // a decision on another revision does not count
+    expect((await costReport(store, "imp")).accepted).toBe(1);
+  });
+  it("reports a zero retry share when every call is a first attempt", async () => {
+    const store = new MemoryStore();
+    const rec = store.recorderFor("imp");
+    for (const [id, key] of [["a1", "extract:chunk-0"], ["a2", "extract:chunk-1"], ["a3", "merge"], ["a4", "align"]] as const) {
+      await rec.recordStart({ event: "start", attemptId: id, operationId: "imp:concepts", callKey: key, retryIndex: 0, retryReason: null, attempt: 1, purpose: "extract", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" });
+    }
+    expect((await costReport(store, "imp")).retryShare).toBe(0);
   });
 });
 ```
@@ -3908,9 +5027,16 @@ describe("reports", () => {
 `apps/cli/src/file-store.ts`:
 ```ts
 import { randomBytes } from "node:crypto";
-import { appendFile, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, open, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import type { ActivityRecord, ArtifactName, AttemptEvent, AttemptRecorder, ImportRecord, ImportStore, OperationRecord, RevisionRecord } from "@leaplearn/generator";
+import { StoreLockedError, type AcceptanceRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
+
+export class StoreCorruptError extends Error {
+  constructor(public readonly path: string, public readonly line: number, cause: string) { super(`${path}:${line} is not a JSON record (${cause}); the store is corrupt`); this.name = "StoreCorruptError"; }
+}
+
+const isEnoent = (err: unknown): boolean => (err as { code?: string }).code === "ENOENT";
 
 async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
@@ -3919,18 +5045,57 @@ async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   await rename(tmp, path);
 }
 async function readJson<T>(path: string): Promise<T | null> {
-  try { return JSON.parse(await readFile(path, "utf8")) as T; } catch (err) { if ((err as { code?: string }).code === "ENOENT") return null; throw err; }
-}
-async function readJsonl<T>(path: string): Promise<T[]> {
-  const text = await readFile(path, "utf8").catch((err: { code?: string }) => { if (err.code === "ENOENT") return ""; throw err; });
-  return text.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l) as T);
+  try { return JSON.parse(await readFile(path, "utf8")) as T; } catch (err) { if (isEnoent(err)) return null; throw err; }
 }
 
-/** Directory-backed ImportStore: JSON files written atomically, JSONL ledgers appended. */
+/** Reads a JSONL ledger. A final line without a trailing newline that does not parse is a crash-truncated tail and is ignored; any other malformed line means corruption. */
+export async function readJsonl<T>(path: string): Promise<{ records: T[]; truncatedTail: boolean }> {
+  let text: string;
+  try { text = await readFile(path, "utf8"); } catch (err) { if (isEnoent(err)) return { records: [], truncatedTail: false }; throw err; }
+  const lines = text.split("\n");
+  const endedCleanly = text.endsWith("\n") || text.length === 0;
+  const records: T[] = [];
+  let truncatedTail = false;
+  lines.forEach((line, index) => {
+    if (line.trim() === "") return;
+    try { records.push(JSON.parse(line) as T); } catch (err) {
+      if (index === lines.length - 1 && !endedCleanly) { truncatedTail = true; return; }
+      throw new StoreCorruptError(path, index + 1, err instanceof Error ? err.message : String(err));
+    }
+  });
+  return { records, truncatedTail };
+}
+
+interface LockFile { importId: string; pid: number; hostname: string; startedAt: string; }
+
+function pidAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch (err) { return (err as { code?: string }).code === "EPERM"; }
+}
+
+/** Directory-backed ImportStore: JSON files written atomically, JSONL ledgers appended, one lock file per directory. */
 export class FileStore implements ImportStore {
   constructor(private readonly dir: string) {}
   private p(...parts: string[]): string { return join(this.dir, ...parts); }
 
+  async lock(importId: string): Promise<StoreLock> {
+    await mkdir(this.dir, { recursive: true });
+    const path = this.p("lock.json");
+    const mine: LockFile = { importId, pid: process.pid, hostname: hostname(), startedAt: new Date().toISOString() };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const handle = await open(path, "wx");
+        try { await handle.writeFile(JSON.stringify(mine, null, 2) + "\n"); } finally { await handle.close(); }
+        return { release: async () => { try { await unlink(path); } catch (err) { if (!isEnoent(err)) throw err; } } };
+      } catch (err) {
+        if ((err as { code?: string }).code !== "EEXIST") throw err;
+        const holder = await readJson<LockFile>(path);
+        const stale = holder !== null && holder.hostname === mine.hostname && !pidAlive(holder.pid);
+        if (!stale || attempt === 1) throw new StoreLockedError(importId, holder ? `pid ${holder.pid} on ${holder.hostname} since ${holder.startedAt}` : "an unreadable lock file");
+        try { await unlink(path); } catch (unlinkErr) { if (!isEnoent(unlinkErr)) throw unlinkErr; }
+      }
+    }
+    throw new StoreLockedError(importId, "an unreadable lock file");
+  }
   getImport(importId: string) { return readJson<ImportRecord>(this.p("import.json")).then((r) => (r && r.importId === importId ? r : null)); }
   putImport(record: ImportRecord) { return writeJsonAtomic(this.p("import.json"), record); }
   getArtifact<T>(_importId: string, name: ArtifactName) { return readJson<T>(this.p("artifacts", `${name}.json`)); }
@@ -3950,17 +5115,18 @@ export class FileStore implements ImportStore {
     return all.filter((r): r is RevisionRecord => r !== null).sort((a, b) => a.revision - b.revision);
   }
   putRevision(record: RevisionRecord) { return writeJsonAtomic(this.p("revisions", record.activityId, `r${record.revision}.json`), record); }
+  private async append(file: string, value: unknown): Promise<void> { await mkdir(this.dir, { recursive: true }); await appendFile(this.p(file), JSON.stringify(value) + "\n"); }
   async listOperations(importId: string) {
     const latest = new Map<string, OperationRecord>();
-    for (const o of await readJsonl<OperationRecord>(this.p("operations.jsonl"))) if (o.importId === importId) latest.set(o.operationId, o);
+    for (const o of (await readJsonl<OperationRecord>(this.p("operations.jsonl"))).records) if (o.importId === importId) latest.set(o.operationId, o);
     return [...latest.values()];
   }
-  async putOperation(record: OperationRecord) { await mkdir(this.dir, { recursive: true }); await appendFile(this.p("operations.jsonl"), JSON.stringify(record) + "\n"); }
+  putOperation(record: OperationRecord) { return this.append("operations.jsonl", record); }
   recorderFor(_importId: string): AttemptRecorder {
-    const append = async (e: AttemptEvent): Promise<void> => { await mkdir(this.dir, { recursive: true }); await appendFile(this.p("attempts.jsonl"), JSON.stringify(e) + "\n"); };
+    const append = (e: AttemptEvent): Promise<void> => this.append("attempts.jsonl", e);
     return { recordStart: append, recordOutcome: append };
   }
-  listAttempts(_importId: string) { return readJsonl<AttemptEvent>(this.p("attempts.jsonl")); }
+  async listAttempts(_importId: string) { return (await readJsonl<AttemptEvent>(this.p("attempts.jsonl"))).records; }
   async putBuild(_importId: string, activityId: string, revision: number, bytes: Buffer) {
     const key = `builds/${activityId}-r${revision}.h5p`;
     await mkdir(this.p("builds"), { recursive: true });
@@ -3969,24 +5135,48 @@ export class FileStore implements ImportStore {
     return key;
   }
   async getBuild(buildKey: string) { try { return await readFile(this.p(buildKey)); } catch { return null; } }
+  async listAcceptances(importId: string) {
+    const latest = new Map<string, AcceptanceRecord>();
+    for (const a of (await readJsonl<AcceptanceRecord>(this.p("acceptances.jsonl"))).records) if (a.importId === importId) latest.set(`${a.activityId}/${a.revision}`, a);
+    return [...latest.values()];
+  }
+  putAcceptance(record: AcceptanceRecord) { return this.append("acceptances.jsonl", record); }
+  async listAlignmentReviews(importId: string) {
+    const latest = new Map<string, AlignmentReviewRecord>();
+    for (const r of (await readJsonl<AlignmentReviewRecord>(this.p("alignment-reviews.jsonl"))).records) if (r.importId === importId) latest.set(`${r.activityId}/${r.revision}/${r.itemId ?? ""}/${r.criterionId}`, r);
+    return [...latest.values()];
+  }
+  putAlignmentReview(record: AlignmentReviewRecord) { return this.append("alignment-reviews.jsonl", record); }
 }
 ```
+Atomic renames make each file consistent on its own; the pipeline's recovery rules (Task 14) are what make the whole import resumable, and the lock is what keeps a second writer out.
 
 `apps/cli/src/report.ts`:
 ```ts
-import type { CostStatus } from "@leaplearn/shared";
-import { PRICING, type AttemptOutcome, type AttemptStart, type ImportStore, type PlannedType } from "@leaplearn/generator";
-import type { ConceptMap } from "@leaplearn/shared";
 import { writeFile } from "node:fs/promises";
+import type { ConceptMap, CostStatus, MappingStatus } from "@leaplearn/shared";
+import { PRICING, type AttemptOutcome, type AttemptStart, type ImportStore, type PlannedType } from "@leaplearn/generator";
 
 export interface CostReport {
   pricingVersion: string;
-  totals: { attempts: number; costUsdMicro: number; costStatusCounts: Record<CostStatus, number> };
+  totals: { attempts: number; costUsdMicro: number; costStatusCounts: Record<CostStatus, number>; reservationExceeded: number };
   shared: number; direct: number;
   byPurpose: Record<string, { attempts: number; costUsdMicro: number }>;
   byType: Record<string, { activities: number; promoted: number; costUsdMicro: number }>;
   perActivity: Array<{ activityId: string; type: PlannedType; status: string; attempts: number; costUsdMicro: number }>;
   retryShare: number;
+  accepted: number;
+  costPerAcceptedActivityUsdMicro: number | null;
+}
+
+export async function acceptedActivityIds(store: ImportStore, importId: string): Promise<Set<string>> {
+  const activities = await store.listActivities(importId);
+  const accepted = new Set<string>();
+  for (const a of await store.listAcceptances(importId)) {
+    const activity = activities.find((x) => x.activityId === a.activityId);
+    if (activity && activity.currentRevision === a.revision && a.decision === "accepted") accepted.add(a.activityId);
+  }
+  return accepted;
 }
 
 export async function costReport(store: ImportStore, importId: string): Promise<CostReport> {
@@ -3997,16 +5187,16 @@ export async function costReport(store: ImportStore, importId: string): Promise<
   const opActivity = new Map((await store.listOperations(importId)).map((o) => [o.operationId, o.activityId]));
   const costStatusCounts: Record<CostStatus, number> = { known: 0, estimated: 0, unavailable: 0 };
   const byPurpose: CostReport["byPurpose"] = {}; const perActivityMap = new Map<string, { attempts: number; costUsdMicro: number }>();
-  let total = 0; let shared = 0; let direct = 0; let retries = 0;
-  const attemptsPerOp = new Map<string, number>();
+  let total = 0; let shared = 0; let direct = 0; let retries = 0; let reservationExceeded = 0;
   for (const s of starts) {
     const o = outcomes.get(s.attemptId);
     const cost = o?.costUsdMicro ?? 0; // rows without a cost are counted in costStatusCounts.unavailable and excluded from every sum; they never appear as zero-cost successes
     costStatusCounts[o?.costStatus ?? "unavailable"] += 1;
+    if (o?.reservationExceeded) reservationExceeded += 1;
     total += cost;
     if (s.purpose === "produce") direct += cost; else shared += cost;
     const bp = (byPurpose[s.purpose] ??= { attempts: 0, costUsdMicro: 0 }); bp.attempts += 1; bp.costUsdMicro += cost;
-    const n = (attemptsPerOp.get(s.operationId) ?? 0) + 1; attemptsPerOp.set(s.operationId, n); if (n > 1) retries += 1;
+    if (s.retryIndex > 0) retries += 1;
     const activityId = opActivity.get(s.operationId);
     if (activityId) { const pa = perActivityMap.get(activityId) ?? { attempts: 0, costUsdMicro: 0 }; pa.attempts += 1; pa.costUsdMicro += cost; perActivityMap.set(activityId, pa); }
   }
@@ -4016,33 +5206,50 @@ export async function costReport(store: ImportStore, importId: string): Promise<
     const bt = (byType[a.type] ??= { activities: 0, promoted: 0, costUsdMicro: 0 }); bt.activities += 1; if (a.status === "promoted") bt.promoted += 1; bt.costUsdMicro += pa.costUsdMicro;
     return { activityId: a.activityId, type: a.type, status: a.status, attempts: pa.attempts, costUsdMicro: pa.costUsdMicro };
   });
-  return { pricingVersion: PRICING.version, totals: { attempts: starts.length, costUsdMicro: total, costStatusCounts }, shared, direct, byPurpose, byType, perActivity, retryShare: starts.length === 0 ? 0 : retries / starts.length };
+  const accepted = (await acceptedActivityIds(store, importId)).size;
+  return {
+    pricingVersion: PRICING.version, totals: { attempts: starts.length, costUsdMicro: total, costStatusCounts, reservationExceeded }, shared, direct, byPurpose, byType, perActivity,
+    retryShare: starts.length === 0 ? 0 : retries / starts.length,
+    accepted, costPerAcceptedActivityUsdMicro: accepted === 0 ? null : Math.round(total / accepted)
+  };
 }
 
 const usd = (micro: number): string => `$${(micro / 1_000_000).toFixed(4)}`;
 
 export function formatCostReport(r: CostReport): string {
-  const lines = [`Cost (pricing ${r.pricingVersion}): ${usd(r.totals.costUsdMicro)} over ${r.totals.attempts} attempts (known ${r.totals.costStatusCounts.known}, estimated ${r.totals.costStatusCounts.estimated}, unavailable ${r.totals.costStatusCounts.unavailable} — excluded from the sums; the ledger's budget spend counts them at their reservation); shared ${usd(r.shared)}, direct ${usd(r.direct)}; retry share ${(r.retryShare * 100).toFixed(0)}%`, "", "| purpose | attempts | cost |", "|---|---|---|"];
+  const lines = [
+    `Cost (pricing ${r.pricingVersion}): ${usd(r.totals.costUsdMicro)} over ${r.totals.attempts} attempts (known ${r.totals.costStatusCounts.known}, estimated ${r.totals.costStatusCounts.estimated}, unavailable ${r.totals.costStatusCounts.unavailable} — excluded from the sums; the ledger's budget spend counts them at their reservation); shared ${usd(r.shared)}, direct ${usd(r.direct)}; retry share ${(r.retryShare * 100).toFixed(0)}%; reservation exceeded on ${r.totals.reservationExceeded} attempt(s)`,
+    `Accepted activities: ${r.accepted}; cost per accepted activity: ${r.costPerAcceptedActivityUsdMicro === null ? "n/a (none accepted yet; record decisions with leap review)" : usd(r.costPerAcceptedActivityUsdMicro)}`,
+    "", "| purpose | attempts | cost |", "|---|---|---|"
+  ];
   for (const [p, v] of Object.entries(r.byPurpose)) lines.push(`| ${p} | ${v.attempts} | ${usd(v.costUsdMicro)} |`);
   lines.push("", "| activity | type | status | attempts | cost |", "|---|---|---|---|---|");
   for (const a of r.perActivity) lines.push(`| ${a.activityId} | ${a.type} | ${a.status} | ${a.attempts} | ${usd(a.costUsdMicro)} |`);
   return lines.join("\n");
 }
 
-export interface MappingRow { activityId: string; type: string; title: string; revision: number; itemId: string; criterionId: string; status: "suggested"; conceptIds: string; evidenceIds: string; firstQuote: string; }
+export interface MappingRow { activityId: string; type: string; title: string; revision: number; itemId: string; criterionId: string; status: MappingStatus; conceptIds: string; evidenceIds: string; firstQuote: string; }
 
 export async function mappingRows(store: ImportStore, importId: string): Promise<MappingRow[]> {
   const map = await store.getArtifact<ConceptMap>(importId, "conceptMap");
   const quoteOf = new Map(map?.concepts.flatMap((c) => c.evidence.map((e) => [e.evidenceId, e.quote] as const)) ?? []);
+  const reviews = await store.listAlignmentReviews(importId);
   const rows: MappingRow[] = [];
   for (const a of await store.listActivities(importId)) {
     if (a.currentRevision === null) continue;
     const rev = await store.getRevision(a.activityId, a.currentRevision);
     if (!rev) continue;
     const spec = rev.spec;
+    const reviewFor = (itemId: string | null, criterionId: string) => reviews.find((r) => r.activityId === a.activityId && r.revision === rev.revision && (r.itemId ?? null) === itemId && r.criterionId === criterionId);
     const push = (itemId: string, prov: { conceptIds: string[]; evidenceIds: string[]; criteriaIds: string[] } | undefined): void => {
+      const base = { activityId: a.activityId, type: a.type, title: spec.title, revision: rev.revision, itemId, conceptIds: (prov?.conceptIds ?? []).join(" "), evidenceIds: (prov?.evidenceIds ?? []).join(" "), firstQuote: quoteOf.get(prov?.evidenceIds[0] ?? "") ?? "" };
       const criteria = prov?.criteriaIds.length ? prov.criteriaIds : [""];
-      for (const criterionId of criteria) rows.push({ activityId: a.activityId, type: a.type, title: spec.title, revision: rev.revision, itemId, criterionId, status: "suggested", conceptIds: (prov?.conceptIds ?? []).join(" "), evidenceIds: (prov?.evidenceIds ?? []).join(" "), firstQuote: quoteOf.get(prov?.evidenceIds[0] ?? "") ?? "" });
+      for (const criterionId of criteria) {
+        const review = criterionId ? reviewFor(itemId || null, criterionId) : undefined;
+        const status: MappingStatus = review && review.decision !== "added" ? review.decision : "suggested";
+        rows.push({ ...base, criterionId, status });
+      }
+      for (const added of reviews.filter((r) => r.activityId === a.activityId && r.revision === rev.revision && (r.itemId ?? null) === (itemId || null) && r.decision === "added" && !(prov?.criteriaIds.includes(r.criterionId) ?? false))) rows.push({ ...base, criterionId: added.criterionId, status: "added" });
     };
     push("", spec.provenance);
     if (spec.type === "blanks") for (const b of spec.blanks) push(b.id, b.provenance);
@@ -4059,6 +5266,15 @@ export async function writeMappingCsv(store: ImportStore, importId: string, path
   await writeFile(path, lines.join("\n") + "\n");
   return rows.length;
 }
+
+/** Rewrites mapping.csv and cost.json for an import; used after generation and after every review. */
+export async function writeReports(store: ImportStore, importId: string, outDir: string): Promise<{ rows: number; report: CostReport }> {
+  const { resolve } = await import("node:path");
+  const rows = await writeMappingCsv(store, importId, resolve(outDir, "mapping.csv"));
+  const report = await costReport(store, importId);
+  await writeFile(resolve(outDir, "cost.json"), JSON.stringify(report, null, 2) + "\n");
+  return { rows, report };
+}
 ```
 (The test's `mappingRows` for a multiChoice activity produces one row per criterion because the activity row is pushed once per criterion and multiChoice has no items.)
 
@@ -4068,13 +5284,18 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
 import { createRegistry } from "@leaplearn/engine";
-import { createAnthropicProvider, ingestMarkdown, ingestPdf, ingestText, ReplayProvider, RecordingProvider, runImport, READING_LEVEL_IDS, TONE_IDS, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
+import { createAnthropicProvider, IncompatibleResumeError, ingestMarkdown, ingestPdf, ingestText, ReplayProvider, RecordingProvider, runImport, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
 import { FileStore } from "./file-store.js";
-import { costReport, formatCostReport, writeMappingCsv } from "./report.js";
+import { formatCostReport, writeReports } from "./report.js";
 
 export interface GenerateArgs {
-  source: string; out: string; unit?: string; types: string; budgetUsd: number; language: string; readingLevel: string; tone: string;
-  customisation?: string; name?: string; libraries: string; provider: "anthropic" | "replay" | "record"; fixtures?: string; concurrency: number;
+  source: string; out: string; unit?: string; types: string; budgetUsd: number; maxRequests: number; maxTokens: number; maxSeconds: number;
+  language: string; readingLevel: string; tone: string; customisation?: string; name?: string; libraries: string;
+  provider: "anthropic" | "replay" | "record"; fixtures?: string; concurrency: number;
+}
+
+export function importIdFor(outDir: string): string {
+  return basename(resolve(outDir)).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "import";
 }
 
 export async function engineFingerprint(librariesDir: string): Promise<string> {
@@ -4103,20 +5324,26 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
     : await ingestText(await readFile(sourcePath, "utf8"), { sourceId, fileName: basename(sourcePath) });
   const unitText = args.unit ? await readFile(resolve(args.unit), "utf8") : null;
   const registry = await createRegistry({ lockPath: resolve(args.libraries, "libraries.lock.json"), cacheDir: resolve(args.libraries, "cache") });
-  const store = new FileStore(resolve(args.out));
-  const importId = basename(resolve(args.out)).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "import";
+  const outDir = resolve(args.out);
+  const store = new FileStore(outDir);
+  const importId = importIdFor(outDir);
   const promptConfig = { readingLevel: args.readingLevel as ReadingLevel, tone: args.tone as Tone, language: args.language, ...(args.customisation ? { customisation: args.customisation } : {}) };
-  const record = await runImport(
-    { importId, name: args.name ?? basename(sourcePath), source, unitText, selectedTypes: types, budgetUsdMicro: Math.round(args.budgetUsd * 1_000_000), promptConfig, language: args.language, customisation: args.customisation ?? null },
-    { store, provider: providerFor(args), registry, engineFingerprint: await engineFingerprint(args.libraries), concurrency: args.concurrency, onProgress: (e) => io.err(`${e.kind === "status" ? `status: ${e.status}` : e.kind === "activity" ? `${e.activityId}: ${e.status}${e.error ? ` (${e.error})` : ""}` : `${e.purpose}: ${e.status}`}\n`) }
-  );
+  const budget = { usdMicro: Math.round(args.budgetUsd * 1_000_000), requests: args.maxRequests, tokens: args.maxTokens, elapsedMs: Math.round(args.maxSeconds * 1000) };
+  let record;
+  try {
+    record = await runImport(
+      { importId, name: args.name ?? basename(sourcePath), source, unitText, selectedTypes: types, budget, promptConfig, language: args.language, customisation: args.customisation ?? null },
+      { store, provider: providerFor(args), registry, engineFingerprint: await engineFingerprint(args.libraries), concurrency: args.concurrency, onProgress: (e) => io.err(`${e.kind === "status" ? `status: ${e.status}` : e.kind === "activity" ? `${e.activityId}: ${e.status}${e.error ? ` (${e.error})` : ""}` : `${e.purpose}: ${e.status}${e.costUsdMicro === null ? "" : ` ($${(e.costUsdMicro / 1_000_000).toFixed(4)})`}`}\n`) }
+    );
+  } catch (err) {
+    if (err instanceof IncompatibleResumeError || err instanceof StoreLockedError) { io.err(`leap: ${err.message}\n`); return 1; }
+    throw err;
+  }
   const activities = await store.listActivities(importId);
   io.out(`import ${importId}: ${record.status}${record.error ? ` — ${record.error}` : ""}\n`);
   for (const a of activities) io.out(`  ${a.activityId}  ${a.type.padEnd(12)}  ${a.status}${a.currentRevision ? `  builds/${a.activityId}-r${a.currentRevision}.h5p` : ""}${a.error ? `  ${a.error}` : ""}\n`);
-  const rows = await writeMappingCsv(store, importId, resolve(args.out, "mapping.csv"));
-  io.out(`mapping: ${rows} rows → ${resolve(args.out, "mapping.csv")}\n`);
-  const report = await costReport(store, importId);
-  await (await import("node:fs/promises")).writeFile(resolve(args.out, "cost.json"), JSON.stringify(report, null, 2) + "\n");
+  const { rows, report } = await writeReports(store, importId, outDir);
+  io.out(`mapping: ${rows} rows → ${resolve(outDir, "mapping.csv")}\n`);
   io.out(formatCostReport(report) + "\n");
   return record.status === "ready" ? 0 : record.status === "ready_with_failures" ? 2 : 1;
 }
@@ -4129,7 +5356,10 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
       .option("out", { type: "string", demandOption: true, describe: "output directory (the import store; rerun to resume)" })
       .option("unit", { type: "string", describe: "unit of competency text file" })
       .option("types", { type: "string", default: "multiChoice,blanks,flashcards" })
-      .option("budget-usd", { type: "number", default: 2 })
+      .option("budget-usd", { type: "number", default: 2, describe: "spend ceiling in USD" })
+      .option("max-requests", { type: "number", default: 200, describe: "ceiling on model requests" })
+      .option("max-tokens", { type: "number", default: 2_000_000, describe: "ceiling on reserved input + output tokens" })
+      .option("max-seconds", { type: "number", default: 1800, describe: "ceiling on elapsed time for this run" })
       .option("language", { type: "string", default: "en" })
       .option("reading-level", { type: "string", default: "high-school" })
       .option("tone", { type: "string", default: "educational" })
@@ -4138,9 +5368,9 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
       .option("libraries", { type: "string", default: resolve(process.cwd(), "libraries") })
       .option("provider", { choices: ["anthropic", "replay", "record"] as const, default: "anthropic" as const })
       .option("fixtures", { type: "string", describe: "fixture directory for --provider replay|record" })
-      .option("concurrency", { type: "number", default: 4 }),
+      .option("concurrency", { type: "number", default: 3, describe: "activity types generated at once (each type is one serial lane)" }),
       async (argv) => {
-        const code = await generate({ source: argv.source, out: argv.out, ...(argv.unit ? { unit: argv.unit } : {}), types: argv.types, budgetUsd: argv["budget-usd"], language: argv.language, readingLevel: argv["reading-level"], tone: argv.tone, ...(argv.customisation ? { customisation: argv.customisation } : {}), ...(argv.name ? { name: argv.name } : {}), libraries: argv.libraries, provider: argv.provider, ...(argv.fixtures ? { fixtures: argv.fixtures } : {}), concurrency: argv.concurrency }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
+        const code = await generate({ source: argv.source, out: argv.out, ...(argv.unit ? { unit: argv.unit } : {}), types: argv.types, budgetUsd: argv["budget-usd"], maxRequests: argv["max-requests"], maxTokens: argv["max-tokens"], maxSeconds: argv["max-seconds"], language: argv.language, readingLevel: argv["reading-level"], tone: argv.tone, ...(argv.customisation ? { customisation: argv.customisation } : {}), ...(argv.name ? { name: argv.name } : {}), libraries: argv.libraries, provider: argv.provider, ...(argv.fixtures ? { fixtures: argv.fixtures } : {}), concurrency: argv.concurrency }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
         process.exitCode = code;
       })
 ```
@@ -4148,22 +5378,191 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
 
 - [ ] **Step 3: Verify, run the replay path against the synthetic fixtures with no key, and commit**
 
-Run: `pnpm --filter @leaplearn/generator build && pnpm --filter @leaplearn/cli test && pnpm --filter @leaplearn/cli build && pnpm -r typecheck && pnpm -r lint; echo "exit=$?"`. Expected `exit=0`. Smoke the command without an API key: `node apps/cli/dist/index.js generate --source packages/generator/test/fixtures/synthetic/source-electrical-safety.md --out /tmp/leap-imp --provider replay --fixtures /tmp/empty; echo "exit=$?"` → `exit=1` with `leap: no recorded response for purpose parseUnit …` on stderr (proves the CLI wiring, the store creation and the error path before Task 16 records real fixtures).
+Run: `pnpm --filter @leaplearn/generator build && pnpm --filter @leaplearn/cli test && pnpm --filter @leaplearn/cli build && pnpm -r typecheck && pnpm -r lint; echo "exit=$?"`. Expected `exit=0`. Smoke the command without an API key: `node apps/cli/dist/index.js generate --source packages/generator/test/fixtures/synthetic/source-electrical-safety.md --out /tmp/leap-imp --provider replay --fixtures /tmp/empty; echo "exit=$?"` → `exit=1` with `leap: no recorded response for purpose parseUnit …` on stderr, and `ls /tmp/leap-imp` shows no `lock.json` left behind (proves the CLI wiring, the store creation, the lock release and the error path before Task 17 records real fixtures). Then run the same command again with a second copy started in parallel (`… & …; wait`) and confirm exactly one of them printed `leap: import leap-imp is locked`.
 
 ```bash
 git add apps/cli
-git commit -m "feat(cli): leap generate with a file-backed import store, mapping.csv and a cost report
+git commit -m "feat(cli): leap generate with a locked file-backed import store, four budget limits, mapping.csv and a review-aware cost report
 
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 16: The phase-2 demo, recorded fixtures, the replay test, docs and verification
+### Task 16: `leap review` — revision-bound acceptance and alignment-review records
+
+The owner's ruling on the review/acceptance decision: keep a minimal revision-bound record available by phase 3 so the quality gate and the cost-per-accepted-activity measurement do not wait for the phase-5 UI. Spec §4's `acceptance_decisions` and `alignment_reviews` are the records (store methods from Task 14, `FileStore` from Task 15); this task adds the command that writes them and rewrites the reports. Nothing here judges quality: the command records a person's judgement.
+
+**Files:**
+- Create: `apps/cli/src/review.ts`; modify `apps/cli/src/index.ts`
+- Test: `apps/cli/test/review.test.ts`
+
+**Interfaces:**
+- `ReviewInput = { activityId: string; reviewer: string } & ({ kind: "acceptance"; decision: AcceptanceDecision; notes: string | null } | { kind: "alignment"; criterionId: string; decision: AlignmentDecision; itemId: string | null })`; `recordReview(store, importId, input, clock?): Promise<AcceptanceRecord | AlignmentReviewRecord>` — the activity must exist and be promoted (`currentRevision` set); the record binds to that revision; an alignment review's `unitTextHash` is the import's; `confirmed`/`rejected` require the criterion to be in the (item's or activity's) current provenance, `added` requires it not to be; an `itemId` must name an item of the promoted spec; every violation is a `ReviewError` with a message naming the id. `review(args, io): Promise<number>` opens the `FileStore` under `--out`, calls `recordReview`, rewrites `mapping.csv` and `cost.json` through `writeReports`, prints the cost report, and exits 0 (1 on `ReviewError`).
+- `leap review --out <dir> --activity <id> --reviewer <name> (--decision accepted|rejected [--notes "…"] | --criterion <id> --alignment confirmed|rejected|added [--item <itemId>])`.
+
+- [ ] **Step 1: Failing test**
+
+`apps/cli/test/review.test.ts`:
+```ts
+import { describe, it, expect } from "vitest";
+import { MemoryStore } from "@leaplearn/generator";
+import { recordReview, ReviewError } from "../src/review.js";
+import { costReport, mappingRows } from "../src/report.js";
+
+async function seeded(): Promise<MemoryStore> {
+  const store = new MemoryStore();
+  await store.putImport({ importId: "imp", orgId: "local", name: "n", sourceType: "markdown", status: "ready", customisation: null, language: "en", unitTextHash: "u".repeat(64), selectedTypes: ["blanks"], fingerprint: "f".repeat(64), budget: { usdMicro: 1, requests: 1, tokens: 1, elapsedMs: 1 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0 }, error: null, idempotencyKey: "imp", createdAt: "t", updatedAt: "t" });
+  await store.putActivity({ activityId: "act-4", importId: "imp", type: "blanks", order: 0, status: "promoted", currentRevision: 1, conceptIds: ["c1"], criteriaIds: ["PC2.1"], error: null, dropped: false });
+  await store.putActivity({ activityId: "act-5", importId: "imp", type: "blanks", order: 1, status: "failed", currentRevision: null, conceptIds: ["c1"], criteriaIds: [], error: "content: x", dropped: false });
+  await store.putRevision({ activityId: "act-4", revision: 1, state: "promoted", spec: { id: "act-4", title: "T", type: "blanks", language: "en", schemaVersion: 1, taskDescription: "d", passage: "Only the {{b1}} may remove it and it takes {{b2}} people.", blanks: [{ id: "b1", answers: ["worker"], provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1"], criteriaIds: ["PC2.1"] } }, { id: "b2", answers: ["two"], provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s2"], criteriaIds: [] } }], caseSensitive: false, provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1", "ev-s2"], criteriaIds: ["PC2.1"] } }, schemaVersion: 1, promptVersion: "p", modelConfig: { provider: "fake", models: {}, profiles: {} }, engineFingerprint: "f", note: null, buildKey: "k", attemptIds: [], createdAt: "t" });
+  const rec = store.recorderFor("imp");
+  await rec.recordStart({ event: "start", attemptId: "a1", operationId: "imp:produce:act-4:r1", callKey: "produce:act-4", retryIndex: 0, retryReason: null, attempt: 1, purpose: "produce", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" });
+  await rec.recordOutcome({ event: "outcome", attemptId: "a1", operationId: "imp:produce:act-4:r1", providerRequestId: null, rawUsage: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, latencyMs: 1, pricingVersion: "v", costUsdMicro: 900, costStatus: "known", stopReason: "end_turn", status: "ok", error: null, reservationExceeded: false, completedAt: "t" });
+  return store;
+}
+
+describe("leap review", () => {
+  it("records an acceptance bound to the promoted revision and changes cost per accepted activity", async () => {
+    const store = await seeded();
+    const record = await recordReview(store, "imp", { kind: "acceptance", activityId: "act-4", reviewer: "owner", decision: "accepted", notes: "plumbing check" }, () => new Date("2026-09-19T00:00:00Z"));
+    expect(record).toEqual({ importId: "imp", activityId: "act-4", revision: 1, decision: "accepted", reviewer: "owner", notes: "plumbing check", decidedAt: "2026-09-19T00:00:00.000Z" });
+    const report = await costReport(store, "imp");
+    expect(report.accepted).toBe(1);
+    expect(report.costPerAcceptedActivityUsdMicro).toBe(900);
+    await recordReview(store, "imp", { kind: "acceptance", activityId: "act-4", reviewer: "owner", decision: "rejected", notes: null });
+    expect((await costReport(store, "imp")).accepted).toBe(0);
+  });
+  it("records alignment decisions per item and criterion, and the mapping status follows them", async () => {
+    const store = await seeded();
+    await recordReview(store, "imp", { kind: "alignment", activityId: "act-4", reviewer: "owner", criterionId: "PC2.1", decision: "confirmed", itemId: "b1" });
+    await recordReview(store, "imp", { kind: "alignment", activityId: "act-4", reviewer: "owner", criterionId: "PC2.1", decision: "rejected", itemId: null });
+    await recordReview(store, "imp", { kind: "alignment", activityId: "act-4", reviewer: "owner", criterionId: "PC2.2", decision: "added", itemId: "b2" });
+    const rows = (await mappingRows(store, "imp")).map((r) => [r.itemId, r.criterionId, r.status]);
+    expect(rows).toEqual([["", "PC2.1", "rejected"], ["b1", "PC2.1", "confirmed"], ["b2", "", "suggested"], ["b2", "PC2.2", "added"]]);
+    expect((await store.listAlignmentReviews("imp"))[0]?.unitTextHash).toBe("u".repeat(64));
+  });
+  it("refuses decisions that do not bind to a real promoted revision, item or criterion", async () => {
+    const store = await seeded();
+    await expect(recordReview(store, "imp", { kind: "acceptance", activityId: "act-5", reviewer: "o", decision: "accepted", notes: null })).rejects.toMatchObject({ name: "ReviewError", message: expect.stringMatching(/act-5.*promoted/) });
+    await expect(recordReview(store, "imp", { kind: "acceptance", activityId: "act-9", reviewer: "o", decision: "accepted", notes: null })).rejects.toBeInstanceOf(ReviewError);
+    await expect(recordReview(store, "imp", { kind: "alignment", activityId: "act-4", reviewer: "o", criterionId: "PC2.1", decision: "confirmed", itemId: "b9" })).rejects.toMatchObject({ message: expect.stringMatching(/b9/) });
+    await expect(recordReview(store, "imp", { kind: "alignment", activityId: "act-4", reviewer: "o", criterionId: "PC2.2", decision: "confirmed", itemId: null })).rejects.toMatchObject({ message: expect.stringMatching(/PC2\.2.*not in/) });
+    await expect(recordReview(store, "imp", { kind: "alignment", activityId: "act-4", reviewer: "o", criterionId: "PC2.1", decision: "added", itemId: null })).rejects.toMatchObject({ message: expect.stringMatching(/PC2\.1.*already/) });
+  });
+});
+```
+
+- [ ] **Step 2: Run to see it fail**, then implement.
+
+`apps/cli/src/review.ts`:
+```ts
+import { resolve } from "node:path";
+import type { AcceptanceDecision, AlignmentDecision } from "@leaplearn/shared";
+import type { AcceptanceRecord, AlignmentReviewRecord, ImportStore } from "@leaplearn/generator";
+import { FileStore } from "./file-store.js";
+import { importIdFor } from "./generate.js";
+import { formatCostReport, writeReports } from "./report.js";
+
+export class ReviewError extends Error { constructor(message: string) { super(message); this.name = "ReviewError"; } }
+
+export type ReviewInput = { activityId: string; reviewer: string } & (
+  | { kind: "acceptance"; decision: AcceptanceDecision; notes: string | null }
+  | { kind: "alignment"; criterionId: string; decision: AlignmentDecision; itemId: string | null }
+);
+
+function itemProvenance(spec: { type: string; blanks?: Array<{ id: string; provenance: { criteriaIds: string[] } }>; cards?: Array<{ id: string; provenance: { criteriaIds: string[] } }>; provenance: { criteriaIds: string[] } }, itemId: string | null): { criteriaIds: string[] } {
+  if (itemId === null) return spec.provenance;
+  const item = [...(spec.blanks ?? []), ...(spec.cards ?? [])].find((i) => i.id === itemId);
+  if (!item) throw new ReviewError(`item ${itemId} is not in the promoted revision of this activity`);
+  return item.provenance;
+}
+
+/** Records a human decision against the activity's promoted revision. Every check names the id it failed on. */
+export async function recordReview(store: ImportStore, importId: string, input: ReviewInput, clock: () => Date = () => new Date()): Promise<AcceptanceRecord | AlignmentReviewRecord> {
+  const importRecord = await store.getImport(importId);
+  if (!importRecord) throw new ReviewError(`import ${importId} is not in this directory`);
+  const activity = (await store.listActivities(importId)).find((a) => a.activityId === input.activityId);
+  if (!activity) throw new ReviewError(`activity ${input.activityId} is not in import ${importId}`);
+  if (activity.currentRevision === null) throw new ReviewError(`activity ${input.activityId} has no promoted revision (status ${activity.status}); only promoted activities can be reviewed`);
+  const revision = await store.getRevision(activity.activityId, activity.currentRevision);
+  if (!revision) throw new ReviewError(`revision ${activity.currentRevision} of ${input.activityId} is missing from the store`);
+  const decidedAt = clock().toISOString();
+  if (input.kind === "acceptance") {
+    const record: AcceptanceRecord = { importId, activityId: activity.activityId, revision: revision.revision, decision: input.decision, reviewer: input.reviewer, notes: input.notes, decidedAt };
+    await store.putAcceptance(record);
+    return record;
+  }
+  const provenance = itemProvenance(revision.spec as Parameters<typeof itemProvenance>[0], input.itemId);
+  const present = provenance.criteriaIds.includes(input.criterionId);
+  if (input.decision === "added" && present) throw new ReviewError(`criterion ${input.criterionId} is already in the provenance of ${input.itemId ?? input.activityId}; use confirmed or rejected`);
+  if (input.decision !== "added" && !present) throw new ReviewError(`criterion ${input.criterionId} is not in the provenance of ${input.itemId ?? input.activityId}; use added to attach it`);
+  const record: AlignmentReviewRecord = { importId, activityId: activity.activityId, revision: revision.revision, itemId: input.itemId, unitTextHash: importRecord.unitTextHash, criterionId: input.criterionId, decision: input.decision, reviewer: input.reviewer, decidedAt };
+  await store.putAlignmentReview(record);
+  return record;
+}
+
+export interface ReviewArgs { out: string; activity: string; reviewer: string; decision?: AcceptanceDecision; notes?: string; criterion?: string; alignment?: AlignmentDecision; item?: string; }
+
+export async function review(args: ReviewArgs, io: { out: (s: string) => void; err: (s: string) => void }): Promise<number> {
+  const outDir = resolve(args.out);
+  const store = new FileStore(outDir);
+  const importId = importIdFor(outDir);
+  const base = { activityId: args.activity, reviewer: args.reviewer };
+  const input: ReviewInput = args.decision
+    ? { ...base, kind: "acceptance", decision: args.decision, notes: args.notes ?? null }
+    : args.criterion && args.alignment
+      ? { ...base, kind: "alignment", criterionId: args.criterion, decision: args.alignment, itemId: args.item ?? null }
+      : (() => { throw new ReviewError("give either --decision accepted|rejected, or --criterion <id> with --alignment confirmed|rejected|added"); })();
+  try {
+    const record = await recordReview(store, importId, input);
+    io.out(`recorded ${input.kind} for ${record.activityId} r${record.revision}: ${record.decision}\n`);
+  } catch (err) {
+    if (err instanceof ReviewError) { io.err(`leap: ${err.message}\n`); return 1; }
+    throw err;
+  }
+  const { rows, report } = await writeReports(store, importId, outDir);
+  io.out(`mapping: ${rows} rows → ${resolve(outDir, "mapping.csv")}\n`);
+  io.out(formatCostReport(report) + "\n");
+  return 0;
+}
+```
+
+`apps/cli/src/index.ts` — add after `generate`:
+```ts
+    .command("review", "Record a human acceptance or alignment decision against a promoted activity and refresh mapping.csv and cost.json", (y) => y
+      .option("out", { type: "string", demandOption: true, describe: "the import directory" })
+      .option("activity", { type: "string", demandOption: true })
+      .option("reviewer", { type: "string", demandOption: true })
+      .option("decision", { choices: ["accepted", "rejected"] as const })
+      .option("notes", { type: "string" })
+      .option("criterion", { type: "string" })
+      .option("alignment", { choices: ["confirmed", "rejected", "added"] as const })
+      .option("item", { type: "string" }),
+      async (argv) => {
+        const code = await review({ out: argv.out, activity: argv.activity, reviewer: argv.reviewer, ...(argv.decision ? { decision: argv.decision } : {}), ...(argv.notes ? { notes: argv.notes } : {}), ...(argv.criterion ? { criterion: argv.criterion } : {}), ...(argv.alignment ? { alignment: argv.alignment } : {}), ...(argv.item ? { item: argv.item } : {}) }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
+        process.exitCode = code;
+      })
+```
+
+- [ ] **Step 3: Verify and commit**
+
+Run: `pnpm --filter @leaplearn/cli test && pnpm --filter @leaplearn/cli build && pnpm -r typecheck && pnpm -r lint; echo "exit=$?"`. Expected `exit=0`. Smoke: on the `/tmp/leap-imp` directory from Task 15 (an import with no promoted activity), `node apps/cli/dist/index.js review --out /tmp/leap-imp --activity act-1 --reviewer me --decision accepted; echo "exit=$?"` → `exit=1` with `leap: activity act-1 is not in import leap-imp` on stderr.
+
+```bash
+git add apps/cli
+git commit -m "feat(cli): leap review records revision-bound acceptance and alignment decisions and refreshes the reports
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 17: The phase-2 demo, recorded fixtures, the replay test, docs and verification
 
 **Files:**
 - Create: `packages/generator/test/fixtures/replay/synthetic/*.json` (recorded), `packages/generator/test/replay.test.ts`, `docs/testing/phase-2-demo.md`
-- Modify: `docs/superpowers/specs/2026-09-18-generator-service-design.md` (§3), `README.md`
+- Modify: `docs/superpowers/specs/2026-09-18-generator-service-design.md` (§3, §4, §9), `README.md`
 
 - [ ] **Step 1: The demo run (owner's API key; the only real calls in this phase)**
 
@@ -4173,18 +5572,39 @@ rm -rf /tmp/leap-demo
 node apps/cli/dist/index.js generate \
   --source packages/generator/test/fixtures/synthetic/source-electrical-safety.pdf \
   --unit packages/generator/test/fixtures/synthetic/unit-synele001.txt \
-  --out /tmp/leap-demo --budget-usd 2 --concurrency 1 \
+  --out /tmp/leap-demo --budget-usd 2 \
   --provider record --fixtures packages/generator/test/fixtures/replay/synthetic; echo "exit=$?"
 ```
-Expected: `exit=0` (or `2` with a named failed activity, which is also a valid outcome to record — do not re-run until it is 0; record what happened). Then:
+Expected: `exit=0` (or `2` with a named failed activity, which is also a valid outcome to record — do not re-run until it is 0; record what happened). A `400` naming a schema keyword, a sampling parameter or `thinking` is a finding against Tasks 4, 5 or 7, not something to work around in the demo: record it, fix the contract test that should have caught it, and re-run. Then:
 ```bash
-ls /tmp/leap-demo/builds; cat /tmp/leap-demo/mapping.csv | head; cat /tmp/leap-demo/cost.json | head -40
+ls /tmp/leap-demo/builds; head /tmp/leap-demo/mapping.csv; head -60 /tmp/leap-demo/cost.json
 grep -c '"event":"start"' /tmp/leap-demo/attempts.jsonl; grep -c '"event":"outcome"' /tmp/leap-demo/attempts.jsonl
-python3 -c "import json;print(sorted({json.loads(l)['costStatus'] for l in open('/tmp/leap-demo/attempts.jsonl') if json.loads(l)['event']=='outcome'}))"
+python3 - <<'EOF'
+import json
+rows = [json.loads(l) for l in open('/tmp/leap-demo/attempts.jsonl')]
+starts = {r['attemptId']: r for r in rows if r['event'] == 'start'}
+outs = [r for r in rows if r['event'] == 'outcome']
+print('costStatus:', sorted({o['costStatus'] for o in outs}))
+print('reservationExceeded:', sum(1 for o in outs if o['reservationExceeded']))
+ratios = [(o['inputTokens'] + (o['cacheReadTokens'] or 0) + (o['cacheWriteTokens'] or 0)) / max(1, starts[o['attemptId']]['reservedInputTokens']) for o in outs if o['inputTokens'] is not None]
+print('max actual/reserved input ratio: %.3f' % max(ratios))
+print('retries:', sum(1 for s in starts.values() if s['retryIndex'] > 0), 'of', len(starts))
+print('cache reads on produce:', [o['cacheReadTokens'] for o in outs if starts[o['attemptId']]['purpose'] == 'produce'])
+EOF
+ls /tmp/leap-demo/lock.json 2>/dev/null && echo "LOCK LEFT BEHIND" || echo "lock released"
 ```
-Expected: one `.h5p` per promoted activity; `mapping.csv` rows with `PC…` ids and `suggested`; starts equal outcomes; `costStatus` all `known` (cache reads visible in `rawUsage.cache_read_input_tokens` on the later `produce` calls, since the system + evidence prefix exceeds 1,024 tokens for Sonnet 5; if it is 0 everywhere, record that as a finding — it means the cached prefix was below the model's minimum or not identical between calls). Open every built `.h5p` in the phase-1 smoke harness by copying them into a temporary site (`packages/engine/test/smoke/serve.ts` + `site/index.html`) or upload one by hand to h5p.com and record it in `docs/testing/platform-checklist.md` under a new "generated" row set — this is the owner's platform gate and stays separate from quality judgement.
+Expected: one `.h5p` per promoted activity; `mapping.csv` rows with `PC…` ids and `suggested`; starts equal outcomes; `costStatus` all `known`; `reservationExceeded` **0** (if it is not, the ceiling assumption in `cost.ts` failed on real traffic: record the max ratio in the demo doc, raise `RESERVATION_TOKENS_PER_CHAR` or the overhead so the demo's maximum fits with margin, and re-run — the ceiling is a contract, not a hope); cache reads visible on the later `produce` calls (the system + evidence prefix exceeds 1,024 tokens for Sonnet 5; if they are 0 everywhere, record that as a finding — the cached prefix was below the minimum or not identical between calls); no lock file left.
 
-Write `docs/testing/phase-2-demo.md`: the exact command, the run date, the model IDs and `PRICING.version`, the cost report table verbatim, the number of attempts and the retry share, the unsupported criteria list (`PC3.2` expected), and any activity that failed with its reason. This is the "measured cost" deliverable; no quality claim is made.
+Then record one acceptance so the cost-per-accepted-activity measurement is exercised end to end:
+```bash
+node apps/cli/dist/index.js review --out /tmp/leap-demo --activity act-1 --reviewer "$USER" --decision accepted --notes "phase-2 plumbing check, not a quality judgement"; echo "exit=$?"
+grep -c accepted /tmp/leap-demo/acceptances.jsonl; python3 -c "import json;print(json.load(open('/tmp/leap-demo/cost.json'))['costPerAcceptedActivityUsdMicro'])"
+```
+This acceptance is a plumbing check by the person running the demo. It is **not** the phase-3 quality gate and the demo document says so in those words.
+
+Open every built `.h5p` in the phase-1 smoke harness by copying them into a temporary site (`packages/engine/test/smoke/serve.ts` + `site/index.html`) or upload one by hand to h5p.com and record it in `docs/testing/platform-checklist.md` under a new "generated" row set — this is the owner's platform gate and stays separate from quality judgement.
+
+Write `docs/testing/phase-2-demo.md`: the exact commands, the run date, the model IDs, the request profiles and `PRICING.version`, the cost report table verbatim, the number of attempts and the retry share, `reservationExceeded` and the observed maximum actual/reserved input ratio, the cache-read observation, the unsupported criteria list (`PC3.2` expected), the acceptance record with its "plumbing check" note, and any activity that failed with its reason. This is the "measured cost" deliverable; no quality claim is made.
 
 - [ ] **Step 2: Replay test over the recorded fixtures**
 
@@ -4200,6 +5620,7 @@ import { ReplayProvider } from "../src/llm/replay-provider.js";
 import { MemoryStore } from "../src/store/memory-store.js";
 import { runImport } from "../src/pipeline/run-import.js";
 import { DEFAULT_PROMPT_CONFIG } from "../src/prompts/system.js";
+import type { AttemptOutcome } from "../src/llm/types.js";
 
 const root = resolve(import.meta.dirname, "../../..");
 const fixtures = resolve(import.meta.dirname, "fixtures");
@@ -4209,33 +5630,34 @@ beforeAll(async () => { registry = await createRegistry({ lockPath: resolve(root
 
 describe("end to end over recorded responses", () => {
   it("replays the demo import from the synthetic PDF and unit without network access", async () => {
-    expect(existsSync(replayDir), "record the fixtures with `leap generate --provider record` first (Task 16 step 1)").toBe(true);
+    expect(existsSync(replayDir), "record the fixtures with `leap generate --provider record` first (Task 17 step 1)").toBe(true);
     const source = await ingestPdf(await readFile(resolve(fixtures, "synthetic/source-electrical-safety.pdf")), { sourceId: "src-source-electrical-safety.pdf", fileName: "source-electrical-safety.pdf" });
     const unitText = await readFile(resolve(fixtures, "synthetic/unit-synele001.txt"), "utf8");
     const store = new MemoryStore();
     const record = await runImport(
-      { importId: "leap-demo", name: "source-electrical-safety.pdf", source, unitText, selectedTypes: ["multiChoice", "blanks", "flashcards"], budgetUsdMicro: 2_000_000, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null },
-      { store, provider: new ReplayProvider(replayDir), registry, engineFingerprint: "replay", concurrency: 1 }
+      { importId: "leap-demo", name: "source-electrical-safety.pdf", source, unitText, selectedTypes: ["multiChoice", "blanks", "flashcards"], budget: { usdMicro: 2_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null },
+      { store, provider: new ReplayProvider(replayDir), registry, engineFingerprint: "replay" }
     );
     expect(["ready", "ready_with_failures"]).toContain(record.status);
     const activities = await store.listActivities("leap-demo");
     expect(activities.filter((a) => a.status === "promoted").length).toBeGreaterThanOrEqual(3);
     const map = await store.getArtifact<{ alignment?: { unsupportedCriteriaIds: string[] } }>("leap-demo", "conceptMap");
     expect(map?.alignment?.unsupportedCriteriaIds).toContain("PC3.2");
-    const outcomes = (await store.listAttempts("leap-demo")).filter((e) => e.event === "outcome");
-    expect(outcomes.every((o) => (o as { costStatus: string }).costStatus === "known")).toBe(true);
+    const outcomes = (await store.listAttempts("leap-demo")).filter((e): e is AttemptOutcome => e.event === "outcome");
+    expect(outcomes.every((o) => o.costStatus === "known")).toBe(true);
+    expect(outcomes.filter((o) => o.reservationExceeded)).toHaveLength(0);
   });
 });
 ```
-The replay is byte-exact only if the prompts are identical to the recorded run: the same fixture bytes, the same `PROMPT_VERSION`, the same model ids, and the same `concurrency: 1` — concurrency changes which promoted activities the near-duplicate check sees, and therefore which feedback prompts exist. The `importId` must match the recorded run's (`leap-demo` = slug of `/tmp/leap-demo`) only for readability; prompts do not include it. Any later prompt change re-records the fixtures (the `ReplayMissError` names the purpose).
+The replay is byte-exact only if the prompts are identical to the recorded run: the same fixture bytes, the same `PROMPT_VERSION`, the same model ids and request profiles. Concurrency does **not** affect the prompts any more: each type is a serial lane and the near-duplicate context comes only from that lane's earlier promotions, so the default concurrency replays exactly. Any later prompt change re-records the fixtures (the `ReplayMissError` names the purpose).
 
 - [ ] **Step 3: Spec and docs**
 
-`docs/superpowers/specs/2026-09-18-generator-service-design.md` §3 `packages/generator` → `llm/`: append "Structured output is requested natively (`output_config.format`, JSON Schema derived from the model-output Zod schemas with every property required); refinements are re-checked in code. Phase 2 stores imports as a directory of JSON and JSONL files through an `ImportStore` interface; phase 5 implements the same interface over Postgres." Under §9 URL fetching: "Implemented as `safeFetch` in `packages/generator` (phase 2) and used by every application-side fetch." `README.md`: a "Generate activities" section with the demo command, the output directory layout, `--provider replay|record`, and the two exit codes.
+`docs/superpowers/specs/2026-09-18-generator-service-design.md`: §3 `packages/generator` → `llm/`: append "Structured output is requested natively (`output_config.format`, JSON Schema projected from the model-output Zod schemas to the subset the API accepts, every property required); the full Zod schema validates the parsed response. Request settings (sampling, thinking) come from per-model profiles. SDK retries are off; the stage runner owns retries and every retry is a recorded, reserved attempt. The budget is a ceiling over spend, requests, tokens and elapsed time. Phase 2 stores imports as a directory of JSON and JSONL files through an `ImportStore` interface with an exclusive lock and an input fingerprint; phase 5 implements the same interface over Postgres." §4: after the `acceptance_decisions` row add "Both review tables are implemented from phase 2 as revision-bound records in the `ImportStore`, written by `leap review`; the web UI arrives in phase 5." §9 URL fetching: "Implemented as `safeFetch` in `packages/generator` (phase 2): addresses are classified after IPv6 normalisation and the connection is pinned to the validated address; used by every application-side fetch." `README.md`: a "Generate activities" section with the demo command, the output directory layout (including `lock.json` and the four ledgers), the four budget flags, `--provider replay|record`, `leap review`, and the exit codes.
 
 - [ ] **Step 4: Root verification and commit**
 
-Run the clean-checkout path: `rm -rf node_modules packages/*/node_modules apps/*/node_modules tools/*/node_modules packages/*/dist apps/*/dist tools/*/dist && pnpm install --frozen-lockfile && pnpm verify; echo "exit=$?"`. Expected `exit=0`; the generator's suites (including `replay.test.ts`) run inside `pnpm -r test`; no test contacts the network (`ANTHROPIC_API_KEY` unset during verify: `env -u ANTHROPIC_API_KEY pnpm verify`).
+Run the clean-checkout path: `rm -rf node_modules packages/*/node_modules apps/*/node_modules tools/*/node_modules packages/*/dist apps/*/dist tools/*/dist && pnpm install --frozen-lockfile && env -u ANTHROPIC_API_KEY pnpm verify; echo "exit=$?"`. Expected `exit=0`; the generator's suites (including `replay.test.ts`) run inside `pnpm -r test`; no test contacts the network.
 
 ```bash
 git add packages/generator/test/fixtures/replay packages/generator/test/replay.test.ts docs README.md
@@ -4248,35 +5670,50 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ## Done when
 
-- **Opening task landed first:** `validate()` returns coded issues for spec-attributable failures (schema, missing/unsupported asset, not-implemented page kinds, missing handler) and `compile*` throw `ValidationError` for the same; engine/registry integrity failures remain exceptions; README and CONTRIBUTING describe the workspace correctly (Task 1).
-- **SSRF protection exists and is tested before any server-side fetching:** `safeFetch` blocks private, loopback, link-local, metadata and multicast targets, re-checks every redirect, caps size and time, and is the only fetch the CLI's image resolver uses (Task 6). Text and PDF ingestion never fetch.
-- **The demo runs from the CLI:** `leap generate --source <synthetic PDF> --unit <synthetic unit> --out <dir>` produces at least one promoted `multiChoice`, one `blanks` and one `flashcards` activity as `.h5p` files built by the phase-1 engine, `mapping.csv` with suggested criteria (and `PC3.2` reported unsupported), and a cost report whose attempts have `costStatus: known` (Task 16, recorded in `docs/testing/phase-2-demo.md`).
-- **Every model call is traceable:** one start and one outcome row per attempt in `attempts.jsonl`, with provider request id, raw usage, pricing version and cost; a restart reconciles interrupted attempts as billing-uncertain (Tasks 4, 14).
+- **Opening task landed first:** `validate()` returns coded issues for spec-attributable failures (schema, missing/unsupported asset, not-implemented page kinds, missing handler) and `compile*` throw `ValidationError` for the same; the earlier assertions that expected `ZodError` or thrown validation are replaced, not merely supplemented; engine/registry integrity failures remain exceptions; README and CONTRIBUTING describe the workspace correctly (Task 1).
+- **SSRF protection exists and is tested before any server-side fetching:** `safeFetch` classifies every address after IPv6 normalisation (mapped in both notations, compatible, NAT64, 6to4, multicast), pins the connection to the validated address, re-checks every redirect, applies one total deadline including DNS, caps size, and is the only fetch the CLI's image resolver uses (Task 6). Text and PDF ingestion never fetch.
+- **Requests are ones Sonnet 5 accepts:** no sampling parameter, thinking disabled, and the wire schema is the provider-compatible projection; contract tests pin both against the real model-output schemas (Tasks 4, 5, 7).
+- **Every retry is metered:** SDK retries are zero; a transient failure followed by success produces two starts, two outcomes and two reservations (Tasks 5, 7).
+- **The budget is a ceiling over four limits:** spend, requests, tokens and elapsed time are reserved before dispatch for the whole request at the cache-write rate; every outcome records `reservationExceeded`; the demo reports zero exceedances and the observed maximum ratio (Tasks 2, 4, 15, 17).
+- **Recovery is proven by crash tests:** a process death before the concept map, plan, activity records, build or the final activity write is followed by a resume that repeats no finished model call; a candidate revision resumes at compilation; a changed input is refused; a second writer is refused (Tasks 14, 15).
+- **Concurrency cannot violate the rules:** one serial lane per type, shared stop on budget refusal or infrastructure failure, in-flight work settled, every undispatched activity given an explicit outcome and re-dispatched on resume (Task 14).
+- **Mappings do not overstate alignment:** item and activity provenance are derived from the cited evidence and the alignment; each blank's answer is checked against that blank's evidence; the alignment prompt sees evidence quotes (Tasks 8, 10–13).
+- **Retry share means retries:** every attempt carries a call key and a retry index; the report counts `retryIndex > 0` (Tasks 4, 7, 15).
+- **Review records exist by phase 3:** `leap review` writes revision-bound acceptance and alignment decisions; `mapping.csv` reflects them; the cost report gives cost per accepted activity (Tasks 14–16).
+- **The demo runs from the CLI:** `leap generate --source <synthetic PDF> --unit <synthetic unit> --out <dir>` produces at least one promoted `multiChoice`, one `blanks` and one `flashcards` activity as `.h5p` files built by the phase-1 engine, `mapping.csv` with suggested criteria (and `PC3.2` reported unsupported), and a cost report whose attempts have `costStatus: known` (Task 17, recorded in `docs/testing/phase-2-demo.md`).
+- **Every model call is traceable:** one start and one outcome row per attempt in `attempts.jsonl`, with call key, retry index, provider request id (also on failures), raw usage, pricing version and cost; a restart reconciles interrupted attempts as billing-uncertain (Tasks 4, 14).
 - **Cost accounting rules hold:** pricing lives only in `pricing.ts` with version, source and effective date; a missing usage is `unavailable`, never zero; reservations are made before dispatch and replaced by actual usage (Tasks 2, 4).
 - **Provenance is verified:** every produced activity and item cites evidence ids that resolve to sentences whose quotes match the stored text at their offsets; `assertGeneratedProvenance` passes for every promoted spec (Tasks 8, 11–14).
-- **Blanks are passage-grounded:** every answer occurs in the cited evidence; delimiter characters are rejected before the engine sees them (Tasks 10, 12).
-- **Contract tests pin the SDK facts** (request shape, cache control, native structured output, usage mapping, request id, error classification) and `toStrictJsonSchema` refuses optionals and defaults (Tasks 4, 5).
 - **Offline verification:** `env -u ANTHROPIC_API_KEY pnpm verify` exits 0 from a clean checkout, including the recorded-replay end-to-end test; no test contacts the network.
-- **Separation of claims:** platform compatibility rows in `docs/testing/platform-checklist.md` are filled only by hand (the generated packages get their own rows); generation quality is judged only in phase 3; the synthetic fixtures are labelled and stay out of the phase-3 corpus.
+- **Separation of claims:** platform compatibility rows in `docs/testing/platform-checklist.md` are filled only by hand (the generated packages get their own rows); generation quality is judged only in phase 3; the demo's single acceptance record is labelled a plumbing check; the synthetic fixtures are labelled and stay out of the phase-3 corpus.
 
 ## Acceptance checks for the owner's review
 
 | Check | Where |
 |---|---|
-| Error classification is the first commit of the phase | `git log --reverse` shows Task 1's commit before any `packages/generator` commit |
-| SSRF guard tested and wired before any fetch | Task 6's commit precedes Task 15's CLI; `grep -rn "fetch(" apps/cli/src packages/generator/src` shows only `safe-fetch.ts` |
-| Demo deliverables | `/tmp/leap-demo/builds/*.h5p`, `mapping.csv`, `cost.json`, `docs/testing/phase-2-demo.md` |
-| Cost per import, shared vs direct, per type, per purpose, retry share | `cost.json` and the printed report (Task 15) |
+| Error classification is the first commit of the phase, and the old thrown-validation assertions are gone | `git log --reverse` shows Task 1's commit before any `packages/generator` commit; `grep -n "ZodError" packages/engine/test/determinism.test.ts` prints nothing |
+| SSRF guard tested and wired before any fetch | Task 6's commit precedes Task 15's CLI; `grep -rn "fetch(" apps/cli/src packages/generator/src` shows only `safe-fetch.ts`; the pinning test reaches `pinned.test` only through the injected lookup |
+| Review finding 1 (Sonnet 5 request shape, schema projection) | `test/anthropic-provider.test.ts` (no sampling key, `thinking: disabled`), `test/model-output.test.ts` (all eight real schemas) |
+| Review finding 2 (SDK retries) | `test/anthropic-provider.test.ts` asserts `maxRetries: 0`; `test/runner.test.ts` asserts two starts, two outcomes, two reservations |
+| Review finding 3 (budget ceiling, four limits) | `test/cost.test.ts` (no split of the same totals costs more than the reservation), `test/budget.test.ts` (each limit refused by name), demo `reservationExceeded: 0` |
+| Review findings 4 and 5 (recovery, identity, lock) | `test/pipeline.test.ts` crash cases `imp-c1` … `imp-c6`, `imp-fp`, `imp-lock`; `apps/cli/test/file-store.test.ts` lock and truncated-tail cases |
+| Review finding 6 (SSRF normalisation and pinning) | `test/safe-fetch.test.ts`: `::ffff:7f00:1`, `/mapped` redirect, `pinned.test`, DNS inside the deadline |
+| Review finding 7 (concurrent stop and duplicates) | `test/pipeline.test.ts` `imp-b` (budget stop, explicit skips, re-dispatch), `imp-i` (infrastructure stop), `imp-d` (per-type lanes with a routed provider) |
+| Review finding 8 (derived provenance, per-blank grounding, evidence in alignment) | `test/produce-*.test.ts` derived-criteria cases, `test/quality.test.ts` "present in ev-s2 but the blank cites ev-s1", `test/concepts.test.ts` alignment prompt quote |
+| Review finding 9 (retry share) | `apps/cli/test/report.test.ts`: four first-attempt shared calls report 0%; one retry in six reports 1/6 |
+| Review/acceptance ruling | `apps/cli/test/review.test.ts`; demo `costPerAcceptedActivityUsdMicro` after one labelled plumbing acceptance |
+| Demo deliverables | `/tmp/leap-demo/builds/*.h5p`, `mapping.csv`, `cost.json`, `acceptances.jsonl`, `docs/testing/phase-2-demo.md` |
+| Cost per import, shared vs direct, per type, per purpose, retry share, cost per accepted activity | `cost.json` and the printed report (Task 15) |
 | Pricing provenance | `packages/generator/src/llm/pricing.ts` (`version`, `effectiveDate`, `source`) and the test that pins them (Task 2) |
 | Platform gate separate from quality | New rows for generated packages in `docs/testing/platform-checklist.md` (owner-filled); no test asserts either |
 
 ## Deviations from the spec, recorded
 
-- **Storage:** phase 2 persists imports as files through `ImportStore` rather than the §4 Postgres tables; record shapes and statuses follow §4 so phase 5 maps them one to one. `import_cap` consumption (§5 step 7) is not implemented in the CLI (no org accounts yet).
-- **Sources:** text, markdown and PDF text layers only; web-page ingestion (§11 phase 2) moves to phase 5 with the server; the SSRF guard it needs is built now.
-- **Structured output:** native `output_config.format` instead of the tool-use projection described in §2.2; the JSON Schema is still derived from Zod, and refinements are enforced in code as §2.2 requires.
-- **Concurrency:** producers run with a concurrency limit (default 4), but the near-duplicate check compares against activities promoted before the batch started; the phase-5 worker can serialise per type if duplicates appear in practice.
-- **Budget input estimate:** `ceil(chars / 3.5)` rather than a `count_tokens` call; the reservation is conservative and replaced by actual usage.
-- **Review and acceptance:** the demo delivers *generated* activities with suggested alignment; `acceptance_decisions` and `alignment_reviews` (§4) and the "reviewed activity" of the §11 demo line arrive with the phase-5 review screen, so "cost per accepted activity" (§8) cannot be computed until then. `mapping.csv` therefore always says `suggested`.
+- **Storage:** phase 2 persists imports as files through `ImportStore` rather than the §4 Postgres tables; record shapes and statuses follow §4 so phase 5 maps them one to one. `import_cap` consumption (§5 step 7) is not implemented in the CLI (no org accounts yet). A directory lock and an input fingerprint stand in for the database's transaction and uniqueness guarantees.
+- **Sources:** text, markdown and PDF text layers only; web-page ingestion (§11 phase 2) moves to phase 5 with the server; the SSRF guard it needs is built and complete now (normalised classification and a pinned connection).
+- **Structured output:** native `output_config.format` instead of the tool-use projection described in §2.2; the JSON Schema is derived from Zod and projected to the API's subset, and the full Zod schema plus refinements are enforced in code as §2.2 requires.
+- **Model request settings:** phase 2 disables thinking on Sonnet 5 and sends no sampling parameter (the API rejects them); Haiku 4.5 runs at `temperature: 0`. Adaptive thinking with `effort` is a phase-3 experiment, recorded per revision in `modelConfig.profiles`.
+- **Undispatched activities:** an activity skipped by a stop is recorded as `failed` with `error: "skipped: …"` rather than a new status value, so the §4 status set is unchanged; `budget:`, `system:` and `skipped:` failures are re-dispatched on resume, `content:` failures are not.
+- **Budget ceiling assumption:** the reservation assumes at most 0.5 tokens per character plus a fixed structured-output overhead; it is validated on real traffic by `reservationExceeded` and the demo's observed maximum ratio, and the constants are raised if the demo disproves them. The elapsed-time limit counts the current run; a resume restarts it.
+- **Review and acceptance:** the records exist from phase 2 and are written from the CLI; the review screen arrives in phase 5. `mapping.csv` says `suggested` until a review exists for the row. The demo's single acceptance is a plumbing check, not the phase-3 gate.
 - **Credential owner:** every attempt records `credentialOwner: "server"`; per-org keys (§9) arrive with accounts in phase 5.
-- **DNS rebinding:** `safeFetch` re-checks each hop but cannot pin the connection to the checked address with Node's built-in `fetch`; the phase-5 server uses an undici `Agent` with a pinned lookup.
