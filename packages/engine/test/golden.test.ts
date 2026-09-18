@@ -8,7 +8,7 @@ import { createHandlerRegistry } from "../src/handlers/index.js";
 import { createIdFactory } from "../src/ids.js";
 import { validateParams } from "../src/validator/semantics.js";
 import { checkClosure } from "../src/validator/closure.js";
-import type { BuildContext } from "../src/handlers/handler.js";
+import { resolveLibraryKey, type BuildContext } from "../src/handlers/handler.js";
 
 const root = resolve(import.meta.dirname, "../../..");
 const fixtures = resolve(import.meta.dirname, "fixtures");
@@ -32,7 +32,7 @@ describe.each(cases)("golden: %s", (name) => {
     const main = reg.resolve(handler.mainLibrary);
     expect(content.library).toBe(`${main.machineName} ${main.majorVersion}.${main.minorVersion}`);
     expect(await validateParams(content, reg, ctx.mediaPaths)).toEqual([]);
-    const closure = (await reg.closure(handler.requiredLibraries(spec as never).map((n) => { const l = reg.resolve(n); return `${l.machineName}-${l.majorVersion}.${l.minorVersion}`; }))).map((l) => `${l.machineName}-${l.majorVersion}.${l.minorVersion}`);
+    const closure = (await reg.closure(handler.requiredLibraries(spec as never).map((n) => resolveLibraryKey(reg, n)))).map((l) => `${l.machineName}-${l.majorVersion}.${l.minorVersion}`);
     expect(await checkClosure(content, reg, closure)).toEqual([]);
     expect(content).toMatchSnapshot();
     const ids = JSON.stringify(content).match(/"subContentId":"([^"]+)"/g) ?? [];
