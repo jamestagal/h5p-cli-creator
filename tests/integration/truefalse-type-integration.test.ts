@@ -40,7 +40,8 @@ chapters:
       const bookDef = YamlInputParser.parseYamlFile(yamlPath);
 
       expect(bookDef).toBeDefined();
-      if (!("chapters" in bookDef)) throw new Error("Expected BookDefinition");      expect(bookDef.chapters[0].content[0].type).toBe("truefalse");
+      if (!("chapters" in bookDef)) throw new Error("Expected BookDefinition");
+      expect(bookDef.chapters[0].content[0].type).toBe("truefalse");
       const tfItem = bookDef.chapters[0].content[0] as any;
       expect(tfItem.question).toBe("Oslo is the capital of Norway");
       expect(tfItem.correct).toBe(true);

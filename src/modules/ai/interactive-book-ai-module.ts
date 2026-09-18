@@ -196,7 +196,9 @@ export class InteractiveBookAIModule implements yargs.CommandModule {
       console.log("✅ Success!");
       console.log(`📦 Generated: ${outputPath}`);
       console.log(`   - Title: ${definition.title}`);
-      console.log(`   - Chapters: ${definition.chapters.length}`);
+      if ("chapters" in definition) {
+        console.log(`   - Chapters: ${definition.chapters.length}`);
+      }
       console.log();
 
     } catch (error) {

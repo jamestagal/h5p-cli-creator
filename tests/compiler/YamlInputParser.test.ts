@@ -263,4 +263,51 @@ chapters:
       expect(aiBlanksItem.aiConfig.tone).toBe("educational");
     });
   });
+
+  describe("entry points", () => {
+    const yaml = `
+title: "Entry Points"
+language: "en"
+chapters:
+  - title: "One"
+    content:
+      - type: text
+        text: "hello"
+`;
+
+    it("parseYamlString and parseYamlFile agree", async () => {
+      const fs = require("fs");
+      const os = require("os");
+      const path = require("path");
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yip-"));
+      const file = path.join(dir, "book.yaml");
+      fs.writeFileSync(file, yaml);
+
+      const fromString = YamlInputParser.parseYamlString(yaml);
+      const fromStaticFile = await YamlInputParser.parseYamlFile(file);
+      const fromInstance = await new YamlInputParser().parseYamlFile(file);
+
+      expect(fromString).toEqual(fromStaticFile);
+      expect(fromString).toEqual(fromInstance);
+      expect(fromString.title).toBe("Entry Points");
+    });
+
+    it("parseYamlString rejects a book without chapters", () => {
+      expect(() => YamlInputParser.parseYamlString('title: "x"\n')).toThrow(/chapters/);
+    });
+  });
+
+  describe("questionset examples", () => {
+    it("parses the basic-quiz and chapter-quiz ai-questionset examples without throwing", () => {
+      const basicQuiz = YamlInputParser.parseYamlFile(
+        path.resolve(__dirname, "../../examples/questionset/basic-quiz.yaml")
+      );
+      const chapterQuiz = YamlInputParser.parseYamlFile(
+        path.resolve(__dirname, "../../examples/questionset/chapter-quiz.yaml")
+      );
+
+      expect("chapters" in basicQuiz && Array.isArray(basicQuiz.chapters)).toBe(true);
+      expect("chapters" in chapterQuiz && Array.isArray(chapterQuiz.chapters)).toBe(true);
+    });
+  });
 });

@@ -1,0 +1,51 @@
+title: "AI-Generated Biology Lesson"
+language: "en"
+description: "Interactive book about photosynthesis with AI-generated quiz"
+
+chapters:
+  - title: "Introduction to Photosynthesis"
+    content:
+      - type: ai-text
+        prompt: "Write a clear, educational summary of photosynthesis for high school students. Include information about the process, inputs (sunlight, water, carbon dioxide), outputs (oxygen, glucose), and where it occurs in plant cells (chloroplasts). Make it about 150-200 words. IMPORTANT: Use plain text only - no markdown formatting, no asterisks for bold, no special characters. Write naturally with proper paragraphs separated by blank lines."
+        title: "What is Photosynthesis?"
+
+  - title: "Cell Structure"
+    content:
+      - type: text
+        title: "Chloroplasts and Plant Cells"
+        text: "This diagram shows the cell structures involved in photosynthesis. The chloroplasts contain chlorophyll, which captures light energy and converts it into chemical energy."
+
+      - type: image
+        path: "../tests/images/test-image.jpg"
+        alt: "Microscopic view of plant cells showing chloroplasts"
+        title: "Plant Cell Diagram"
+
+  - title: "Audio Narration"
+    content:
+      - type: text
+        title: "Listen and Learn"
+        text: "Play the audio below to hear more about the photosynthesis process."
+
+      - type: audio
+        path: "../tests/audios/test-audio.mp3"
+        title: "Photosynthesis Audio Explanation"
+
+  - title: "Test Your Knowledge"
+    content:
+      - type: text
+        title: "Quiz Time!"
+        text: "Now that you've learned about photosynthesis, test your understanding with this quiz."
+
+      - type: ai-quiz
+        sourceText: |
+          Photosynthesis is the process by which plants use sunlight, water and carbon dioxide to create oxygen and energy in the form of sugar (glucose).
+
+          This process occurs in the chloroplasts of plant cells, which contain chlorophyll - the green pigment that absorbs light energy.
+
+          The overall equation for photosynthesis is: 6CO2 + 6H2O + light energy → C6H12O6 + 6O2
+
+          This means six molecules of carbon dioxide plus six molecules of water, using light energy, produces one molecule of glucose and six molecules of oxygen.
+
+          Photosynthesis has two main stages: the light-dependent reactions (which occur in the thylakoid membranes) and the light-independent reactions or Calvin cycle (which occur in the stroma).
+        questionCount: 5
+        title: "Photosynthesis Quiz"

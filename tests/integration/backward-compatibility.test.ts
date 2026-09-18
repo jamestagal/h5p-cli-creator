@@ -26,7 +26,7 @@ describe("Backward Compatibility", () => {
 
   describe("Existing YAML files compile unchanged", () => {
     it("should compile comprehensive-demo.yaml without aiConfig", async () => {
-      const yamlPath = path.join(__dirname, "..", "..", "examples", "yaml", "comprehensive-demo.yaml");
+      const yamlPath = path.join(__dirname, "..", "..", "examples", "yaml", "interactive-book", "comprehensive-demo.yaml");
 
       // Verify file exists
       const exists = await fsExtra.pathExists(yamlPath);
@@ -42,7 +42,7 @@ describe("Backward Compatibility", () => {
     });
 
     it("should compile biology-lesson.yaml without aiConfig", async () => {
-      const yamlPath = path.join(__dirname, "..", "..", "examples", "yaml", "biology-lesson.yaml");
+      const yamlPath = path.join(__dirname, "..", "..", "examples", "yaml", "interactive-book", "biology-lesson.yaml");
 
       // Verify file exists
       const exists = await fsExtra.pathExists(yamlPath);
@@ -131,6 +131,7 @@ chapters:
       // Should parse successfully
       const bookDef = await parser.parseYamlFile(yamlPath);
       expect(bookDef).toBeDefined();
+      if (!("chapters" in bookDef)) throw new Error("Expected BookDefinition");
 
       const aiTextItem = bookDef.chapters[0].content[0];
       expect(aiTextItem.type).toBe("ai-text");
