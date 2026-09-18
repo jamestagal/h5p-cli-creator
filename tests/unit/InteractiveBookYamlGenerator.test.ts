@@ -45,10 +45,9 @@ describe("InteractiveBookYamlGenerator", () => {
       expect(Array.isArray(introPage.content)).toBe(true);
 
       // Check YouTube embed
-      const videoContent = introPage.content.find((item: any) => item.type === "text");
+      const videoContent = introPage.content.find((item: any) => item.type === "video");
       expect(videoContent).toBeDefined();
-      expect(videoContent.text).toContain("iframe");
-      expect(videoContent.text).toContain("Y8M9RJ_4C7E");
+      expect(videoContent.url).toContain("Y8M9RJ_4C7E");
 
       // Check accordion with transcript
       const accordionContent = introPage.content.find((item: any) => item.type === "accordion");
@@ -79,7 +78,7 @@ describe("InteractiveBookYamlGenerator", () => {
       expect(storyPage).toHaveProperty("title", "Page 1");
       expect(storyPage).toHaveProperty("content");
       expect(Array.isArray(storyPage.content)).toBe(true);
-      expect(storyPage.content).toHaveLength(3); // image, audio, text
+      expect(storyPage.content).toHaveLength(4); // image, audio, text, accordion (English translation)
 
       // Check image content
       const imageContent = storyPage.content.find((item: any) => item.type === "image");
@@ -91,13 +90,17 @@ describe("InteractiveBookYamlGenerator", () => {
       expect(audioContent).toBeDefined();
       expect(audioContent.path).toBe("../audio-segments/page1.mp3");
 
-      // Check text content with collapsible translation
+      // Check Vietnamese text content
       const textContent = storyPage.content.find((item: any) => item.type === "text");
       expect(textContent).toBeDefined();
       expect(textContent.text).toContain("Con mèo đi chơi trong vườn.");
-      expect(textContent.text).toContain("The cat went to play in the garden.");
-      expect(textContent.text).toContain("<details>");
-      expect(textContent.text).toContain("<summary>");
+
+      // Check English translation accordion
+      const accordionContent = storyPage.content.find((item: any) => item.type === "accordion");
+      expect(accordionContent).toEqual({
+        type: "accordion",
+        panels: [{ title: "English Translation", content: "The cat went to play in the garden." }]
+      });
     });
   });
 
@@ -191,7 +194,7 @@ describe("InteractiveBookYamlGenerator", () => {
       expect(storyChapter.title).toBe("Page 1");
       expect(storyChapter.content).toBeDefined();
       expect(Array.isArray(storyChapter.content)).toBe(true);
-      expect(storyChapter.content.length).toBe(3); // image, audio, text
+      expect(storyChapter.content.length).toBe(4); // image, audio, text, accordion (English translation)
     });
   });
 });

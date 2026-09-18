@@ -181,7 +181,7 @@ describe("YouTubeExtractor", () => {
       const result = await extractor.extractTranscript(videoId, audioPath, language);
 
       // Verify Whisper service was called
-      expect(mockWhisperService.transcribe).toHaveBeenCalledWith(audioPath, language, videoId);
+      expect(mockWhisperService.transcribe).toHaveBeenCalledWith(audioPath, language, videoId, undefined);
       expect(result).toEqual(mockSegments);
     });
 

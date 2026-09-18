@@ -92,7 +92,7 @@ describe("StoryTranslator", () => {
       expect(result).toBe(mockTranslation);
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          model: "gpt-4",
+          model: "gpt-4o-mini",
           messages: expect.arrayContaining([
             expect.objectContaining({
               role: "system"
