@@ -1,0 +1,15 @@
+{
+  "name": "@leaplearn/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src test"
+  },
+  "dependencies": { "zod": "^4.1.0" },
+  "devDependencies": { "vitest": "^3.2.0", "typescript": "~5.9.0", "eslint": "^9", "typescript-eslint": "^8", "@eslint/js": "^9" }
+}
