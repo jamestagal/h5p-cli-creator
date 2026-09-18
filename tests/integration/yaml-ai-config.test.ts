@@ -8,14 +8,16 @@
 import { YamlInputParser } from "../../src/compiler/YamlInputParser";
 import * as fsExtra from "fs-extra";
 import * as path from "path";
+import * as fs from "fs";
+import * as os from "os";
 
 describe("YAML AI Configuration Integration", () => {
   const parser = new YamlInputParser();
-  const testYamlDir = path.join(__dirname, "..", "yaml-fixtures");
+  let testYamlDir: string;
 
   beforeAll(async () => {
     // Create test YAML fixtures directory
-    await fsExtra.ensureDir(testYamlDir);
+    testYamlDir = fs.mkdtempSync(path.join(os.tmpdir(), "yaml-ai-config-"));
   });
 
   afterAll(async () => {
