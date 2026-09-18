@@ -1,0 +1,20 @@
+<!doctype html><meta charset="utf-8"><title>app</title>
+<h1>Preview sandbox spike</h1>
+<p>A: allow-scripts only, no media</p>
+<iframe id="a" sandbox="allow-scripts" src="__URL__&pkg=multi-choice&variant=a" width="800" height="500"></iframe>
+<p>B: allow-scripts allow-same-origin, no media</p>
+<iframe id="b" sandbox="allow-scripts allow-same-origin" src="__URL__&pkg=multi-choice&variant=b" width="800" height="500"></iframe>
+<p>C: allow-scripts only, with an image</p>
+<iframe id="c" sandbox="allow-scripts" src="__URL__&pkg=flashcards&variant=c" width="800" height="500"></iframe>
+<p>D: allow-scripts allow-same-origin, with an image</p>
+<iframe id="d" sandbox="allow-scripts allow-same-origin" src="__URL__&pkg=flashcards&variant=d" width="800" height="500"></iframe>
+<script>
+  window.results = {};
+  addEventListener("message", (e) => {
+    const { variant, consoleError, ...rest } = e.data;
+    const prev = window.results[variant] ?? { consoleErrors: [] };
+    if (consoleError) prev.consoleErrors.push(consoleError);
+    Object.assign(prev, rest);
+    window.results[variant] = prev;
+  });
+</script>

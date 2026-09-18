@@ -1,0 +1,26 @@
+<!doctype html><meta charset="utf-8"><title>preview</title>
+<div id="h5p-container"></div>
+<script src="/h5p-standalone/main.bundle.js"></script>
+<script>
+  const q = new URLSearchParams(location.search);
+  const t = q.get("t");
+  const base = q.get("base");
+  const origFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    const u = new URL(typeof input === "string" ? input : input.url, location.href);
+    if (t && u.origin === location.origin && u.pathname.startsWith("/p/") && !u.searchParams.has("t")) u.searchParams.set("t", t);
+    return origFetch(u.toString(), init);
+  };
+  const report = (extra) => window.parent.postMessage({ variant: q.get("variant"), ...extra }, "*");
+
+  const origConsoleError = console.error.bind(console);
+  console.error = (...args) => {
+    report({ consoleError: args.map(String).join(" ") });
+    origConsoleError(...args);
+  };
+  addEventListener("error", (e) => report({ consoleError: `uncaught: ${e.message}` }));
+  addEventListener("unhandledrejection", (e) => report({ consoleError: `unhandledrejection: ${String(e.reason)}` }));
+
+  new H5PStandalone.H5P(document.getElementById("h5p-container"), { h5pJsonPath: `${base}/${q.get("pkg")}`, frameJs: "/h5p-standalone/frame.bundle.js", frameCss: "/h5p-standalone/styles/h5p.css" })
+    .then(() => report({ ready: true })).catch((e) => report({ ready: false, error: String(e) }));
+</script>

@@ -1,0 +1,19 @@
+{
+  "name": "@leaplearn/preview-spike",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx run.ts",
+    "test": "echo spike",
+    "build": "echo spike",
+    "typecheck": "echo spike",
+    "lint": "echo spike"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "tsx": "^4.19.0",
+    "@leaplearn/engine": "workspace:*",
+    "@leaplearn/shared": "workspace:*",
+    "jszip": "^3.10.1"
+  }
+}
