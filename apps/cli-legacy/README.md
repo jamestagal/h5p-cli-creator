@@ -10,3 +10,5 @@ the `ai-*` YAML content types and the bilingual mode until every type has a prod
 - Run from this directory (`pnpm --filter cli-legacy <script>`); the library cache is
   `./content-type-cache` and is resolved relative to the working directory.
 - Scheduled for deletion in phase 4.
+- The manual `flashcards` command has a replacement in `apps/cli` (`leap flashcards`). The legacy
+  command remains installed as `h5p-cli-creator` (this package's `bin`) until phase 4.

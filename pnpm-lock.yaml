@@ -8,9 +8,52 @@ importers:
 
   .:
     devDependencies:
+      cli-legacy:
+        specifier: workspace:*
+        version: link:apps/cli-legacy
       typescript:
         specifier: ~5.9.0
         version: 5.9.3
+
+  apps/cli:
+    dependencies:
+      '@leaplearn/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
+      '@leaplearn/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      papaparse:
+        specifier: ^5.5.0
+        version: 5.7.0
+      yargs:
+        specifier: ^17.7.0
+        version: 17.7.3
+    devDependencies:
+      '@eslint/js':
+        specifier: ^9
+        version: 9.39.5
+      '@types/node':
+        specifier: ^20
+        version: 20.19.43
+      '@types/papaparse':
+        specifier: ^5.3.0
+        version: 5.5.2
+      '@types/yargs':
+        specifier: ^17.0.0
+        version: 17.0.35
+      eslint:
+        specifier: ^9
+        version: 9.39.5
+      typescript:
+        specifier: ~5.9.0
+        version: 5.9.3
+      typescript-eslint:
+        specifier: ^8
+        version: 8.70.0(eslint@9.39.5)(typescript@5.9.3)
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@20.19.43)(tsx@4.23.13)
 
   apps/cli-legacy:
     dependencies:

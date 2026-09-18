@@ -11,6 +11,7 @@
     "fetch-libraries": "node tools/fetch-libraries/dist/index.js"
   },
   "devDependencies": {
+    "cli-legacy": "workspace:*",
     "typescript": "~5.9.0"
   }
 }
