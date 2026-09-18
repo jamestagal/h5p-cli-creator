@@ -3,7 +3,15 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const src = resolve(import.meta.dirname, "../src");
-const forbidden = [/from\s+["'](axios|node-fetch|undici|https?|node:https?|child_process|node:child_process)["']/, /\bprocess\.(env|cwd|exit)\b/, /\bconsole\./, /\bfetch\s*\(/];
+const forbidden = [
+  /from\s+["'](axios|node-fetch|undici|https?|node:https?|child_process|node:child_process|net|node:net|dns|node:dns|tls|node:tls|dgram|node:dgram)["']/,
+  /\bprocess\.(env|cwd|exit)\b/,
+  /\bconsole\./,
+  /\bfetch\s*\(/,
+  /\bimport\s*\(/,
+  /\bprocess\s*\[/,
+  /\bcreateRequire\b/
+];
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => { const p = join(dir, n); return statSync(p).isDirectory() ? files(p) : p.endsWith(".ts") ? [p] : []; });
