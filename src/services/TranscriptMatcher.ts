@@ -32,28 +32,22 @@ export interface PageDefinition {
  *
  * Features:
  * - Inclusive start, exclusive end boundary logic
- * - Overlap handling (segments included in multiple pages if boundaries overlap)
+ * - Overlap handling: assignSegmentsToPages gives every segment exactly one owning page
+ *   (the page with maximum overlap, earliest page on ties, zero-length segments owned by
+ *   start time); findSegmentsInRange is a plain overlap filter and does not decide ownership
  * - Text concatenation with proper spacing
  * - Vietnamese diacritics preservation (UTF-8)
  * - Punctuation and formatting preservation
  */
 export class TranscriptMatcher {
   /**
-   * Finds transcript segments within a timestamp range.
-   *
-   * Smart Segment Assignment Strategy:
-   * - Segments fully contained within range are always included
-   * - Segments spanning boundaries are assigned to page containing >50% of duration
-   * - This prevents duplicate text across pages while preserving all content
-   *
-   * Examples:
-   * - Segment 120-126 at Page 4→5 boundary (125s): 5s in P4, 1s in P5 → assign to P4
-   * - Segment 230-237 at Page 8→9 boundary (231s): 1s in P8, 6s in P9 → assign to P9
+   * Segments that overlap the range at all (a zero-length segment counts if its start is inside).
+   * This does not decide page ownership; use assignSegmentsToPages for that.
    *
    * @param transcript Array of transcript segments
    * @param rangeStart Start time in seconds
    * @param rangeEnd End time in seconds
-   * @returns Array of segments within range
+   * @returns Array of segments overlapping the range
    */
   public findSegmentsInRange(
     transcript: TranscriptSegment[],
@@ -61,24 +55,55 @@ export class TranscriptMatcher {
     rangeEnd: number
   ): TranscriptSegment[] {
     return transcript.filter((segment) => {
-      const segmentStart = segment.startTime;
-      const segmentEnd = segment.endTime;
-      const segmentDuration = segmentEnd - segmentStart;
+      if (segment.endTime <= segment.startTime) {
+        return segment.startTime >= rangeStart && segment.startTime < rangeEnd;
+      }
+      return Math.min(segment.endTime, rangeEnd) - Math.max(segment.startTime, rangeStart) > 0;
+    });
+  }
 
-      // Case 1: Segment fully within range
-      if (segmentStart >= rangeStart && segmentEnd <= rangeEnd) {
-        return true;
+  /**
+   * Assigns every segment to exactly one page of the given ordered, non-overlapping partition.
+   * Positive-duration segments go to the page with the maximum overlap (earliest page on ties);
+   * zero-length segments go to the page containing their start (the final page if the start is
+   * exactly the final end); segments overlapping no page are dropped.
+   * Returns one list per page, index-aligned with `pages`.
+   */
+  public assignSegmentsToPages(
+    transcript: TranscriptSegment[],
+    pages: Array<{ startTime: number; endTime: number }>
+  ): TranscriptSegment[][] {
+    const owned: TranscriptSegment[][] = pages.map(() => []);
+    if (pages.length === 0) {
+      return owned;
+    }
+    const last = pages.length - 1;
+
+    for (const segment of transcript) {
+      let owner = -1;
+
+      if (segment.endTime <= segment.startTime) {
+        owner = pages.findIndex((p) => segment.startTime >= p.startTime && segment.startTime < p.endTime);
+        if (owner === -1 && segment.startTime === pages[last].endTime) {
+          owner = last;
+        }
+      } else {
+        let bestOverlap = 0;
+        for (let i = 0; i < pages.length; i++) {
+          const overlap = Math.min(segment.endTime, pages[i].endTime) - Math.max(segment.startTime, pages[i].startTime);
+          if (overlap > bestOverlap) { // strict: the earliest page keeps a tie
+            bestOverlap = overlap;
+            owner = i;
+          }
+        }
       }
 
-      // Case 2: Segment spans boundaries - calculate overlap percentage
-      const overlapStart = Math.max(segmentStart, rangeStart);
-      const overlapEnd = Math.min(segmentEnd, rangeEnd);
-      const overlapDuration = Math.max(0, overlapEnd - overlapStart);
-      const overlapPercentage = overlapDuration / segmentDuration;
+      if (owner >= 0) {
+        owned[owner].push(segment);
+      }
+    }
 
-      // Assign to this page if >50% of segment duration overlaps
-      return overlapPercentage > 0.5;
-    });
+    return owned;
   }
 
   /**
@@ -160,10 +185,10 @@ export class TranscriptMatcher {
     pages: PageDefinition[]
   ): StoryPageData[] {
     const results: StoryPageData[] = [];
+    const owned = this.assignSegmentsToPages(transcript, pages);
 
-    for (const page of pages) {
-      // Find segments for this page's timestamp range
-      const segments = this.findSegmentsInRange(transcript, page.startTime, page.endTime);
+    pages.forEach((page, index) => {
+      const segments = owned[index];
 
       // Concatenate segments into cohesive text
       const vietnameseText = this.concatenateSegments(segments);
@@ -182,7 +207,7 @@ export class TranscriptMatcher {
       };
 
       results.push(pageData);
-    }
+    });
 
     // Complete sentences at page boundaries (Whisper often cuts mid-sentence)
     return this.completeSentenceBoundaries(results);

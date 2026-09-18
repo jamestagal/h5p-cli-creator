@@ -116,8 +116,16 @@ export class SegmentMatcher {
       }
 
       // Stop expanding window if:
-      // 1. Candidate way too large (prevents runaway)
-      // 2. Similarity starts decreasing significantly (we've gone past the page content)
+      // 1. The candidate is already a literal match for the page text. Jaccard similarity is
+      //    computed over token SETS, so a repeated word (e.g. back-to-back "Bonjour" segments
+      //    in a repetition drill) keeps scoring 1.0 as the window grows past the segment that
+      //    already accounts for the whole page; a literal string match is the point beyond
+      //    which growing the window can only swallow a later, distinct segment.
+      // 2. Candidate way too large (prevents runaway)
+      // 3. Similarity starts decreasing significantly (we've gone past the page content)
+      if (normalizedCandidateText === normalizedPageText) {
+        break;
+      }
       if (candidateText.length > pageText.length * 2) {
         break;
       }

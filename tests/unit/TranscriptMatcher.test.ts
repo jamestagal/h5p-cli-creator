@@ -36,24 +36,25 @@ describe("TranscriptMatcher", () => {
       expect(segments[1].text).toBe("Third segment.");
     });
 
-    it("should include segments that overlap start boundary", () => {
+    it("should return segments that overlaps the start boundary", () => {
       const segments = matcher.findSegmentsInRange(transcript, 5, 15);
       expect(segments).toHaveLength(2);
       expect(segments[0].text).toBe("First segment.");
       expect(segments[1].text).toBe("Second segment.");
     });
 
-    it("should include segments that overlap end boundary", () => {
+    it("should return segments that overlaps the end boundary", () => {
       const segments = matcher.findSegmentsInRange(transcript, 15, 25);
       expect(segments).toHaveLength(2);
       expect(segments[0].text).toBe("Second segment.");
       expect(segments[1].text).toBe("Third segment.");
     });
 
-    it("should handle range starting at 0", () => {
+    it("should return segments that overlaps a range starting at 0", () => {
       const segments = matcher.findSegmentsInRange(transcript, 0, 15);
       expect(segments).toHaveLength(2);
       expect(segments[0].text).toBe("First segment.");
+      expect(segments[1].text).toBe("Second segment.");
     });
 
     it("should return empty array for range with no segments", () => {
@@ -149,6 +150,35 @@ describe("TranscriptMatcher", () => {
       const result = matcher.matchToPages(transcript, pages);
       expect(result[0].transcriptSegments).toHaveLength(1);
       expect(result[0].transcriptSegments[0].text).toBe("This is page one content.");
+    });
+  });
+
+  describe("assignSegmentsToPages", () => {
+    const pages = [
+      { startTime: 0, endTime: 10 },
+      { startTime: 10, endTime: 20 },
+      { startTime: 20, endTime: 30 }
+    ];
+    const segs = [
+      { startTime: 0, endTime: 4, text: "a" },     // inside page 0
+      { startTime: 9, endTime: 13, text: "b" },    // 1s in page 0, 3s in page 1 -> page 1
+      { startTime: 5, endTime: 15, text: "c" },    // 5s/5s tie -> earliest page (0)
+      { startTime: 8, endTime: 10, text: "d" },    // ends exactly on a boundary -> page 0
+      { startTime: 16, endTime: 19, text: "e" },   // inside page 1
+      { startTime: 0, endTime: 30, text: "f" },    // spans all three equally -> earliest page (0)
+      { startTime: 20, endTime: 20, text: "g" },   // zero-length on a boundary -> page containing its start (2)
+      { startTime: 30, endTime: 30, text: "h" },   // zero-length on the final end -> last page (2)
+      { startTime: 40, endTime: 45, text: "z" }    // outside every page -> dropped
+    ];
+
+    it("assigns every in-range segment to exactly one page by maximum overlap with earliest-page ties", () => {
+      const owned = matcher.assignSegmentsToPages(segs, pages).map((list) => list.map((s) => s.text));
+      expect(owned).toEqual([["a", "c", "d", "f"], ["b", "e"], ["g", "h"]]);
+      expect(owned.flat().sort()).toEqual(["a", "b", "c", "d", "e", "f", "g", "h"]);
+    });
+
+    it("returns one empty list per page when there are no segments", () => {
+      expect(matcher.assignSegmentsToPages([], pages)).toEqual([[], [], []]);
     });
   });
 });
