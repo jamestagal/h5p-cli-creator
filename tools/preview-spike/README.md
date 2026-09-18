@@ -1,0 +1,1 @@
+Local experimental tooling for the phase-1 preview-sandbox spike (spec §7). Not production preview-server code; the token/CORS handling here is a test rig. Results: `docs/superpowers/specs/spike-results/2026-09-preview-sandbox.md`.

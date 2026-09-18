@@ -2,6 +2,7 @@
   "name": "@leaplearn/preview-spike",
   "private": true,
   "type": "module",
+  "description": "Local experimental tooling: phase-1 preview sandbox spike (not production code)",
   "scripts": {
     "start": "tsx run.ts",
     "test": "echo spike",
