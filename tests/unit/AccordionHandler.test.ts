@@ -1,4 +1,5 @@
 import { AccordionHandler, AccordionContent } from "../../src/handlers/embedded/AccordionHandler";
+import { AIAccordionHandler } from "../../src/handlers/ai/AIAccordionHandler";
 import { HandlerContext } from "../../src/handlers/HandlerContext";
 import { ChapterBuilder } from "../../src/compiler/ChapterBuilder";
 import { QuizGenerator } from "../../src/ai/QuizGenerator";
@@ -139,13 +140,18 @@ describe("AccordionHandler", () => {
   });
 
   describe("validate - AI Accordion", () => {
+    let aiHandler: AIAccordionHandler;
+    beforeEach(() => {
+      aiHandler = new AIAccordionHandler();
+    });
+
     it("should accept valid ai-accordion content", () => {
       const item: any = {
         type: "ai-accordion",
         prompt: "Create FAQ about photosynthesis"
       };
 
-      const result = handler.validate(item);
+      const result = aiHandler.validate(item);
       expect(result.valid).toBe(true);
     });
 
@@ -162,7 +168,7 @@ describe("AccordionHandler", () => {
         }
       };
 
-      const result = handler.validate(item);
+      const result = aiHandler.validate(item);
       expect(result.valid).toBe(true);
     });
 
@@ -171,7 +177,7 @@ describe("AccordionHandler", () => {
         type: "ai-accordion"
       };
 
-      const result = handler.validate(item);
+      const result = aiHandler.validate(item);
       expect(result.valid).toBe(false);
       expect(result.error).toContain("requires 'prompt' field");
     });
@@ -183,7 +189,7 @@ describe("AccordionHandler", () => {
         panelCount: "five"
       };
 
-      const result = handler.validate(item);
+      const result = aiHandler.validate(item);
       expect(result.valid).toBe(false);
       expect(result.error).toContain("panelCount' must be a number");
     });
@@ -195,7 +201,7 @@ describe("AccordionHandler", () => {
         panelCount: 25
       };
 
-      const result = handler.validate(item);
+      const result = aiHandler.validate(item);
       expect(result.valid).toBe(false);
       expect(result.error).toContain("panelCount must be between 1 and 20");
     });
@@ -279,6 +285,11 @@ describe("AccordionHandler", () => {
   });
 
   describe("process - AI Accordion", () => {
+    let aiHandler: AIAccordionHandler;
+    beforeEach(() => {
+      aiHandler = new AIAccordionHandler();
+    });
+
     it("should generate accordion panels using AI", async () => {
       const mockAIResponse = JSON.stringify([
         { title: "What is photosynthesis?", content: "Photosynthesis is the process..." },
@@ -299,20 +310,11 @@ describe("AccordionHandler", () => {
         }
       };
 
-      await handler.process(mockContext, item);
-
-      // Verify AI prompt was built
-      expect(mockAIPromptBuilder.buildPrompt).toHaveBeenCalledWith({
-        contentType: "accordion",
-        targetAudience: "grade-6",
-        tone: "educational",
-        customization: undefined,
-        outputFormat: "plain-html"
-      });
+      await aiHandler.process(mockContext, item);
 
       // Verify AI generation was called
       expect(mockQuizGenerator.generateRawContent).toHaveBeenCalledWith(
-        "System prompt for accordion",
+        expect.stringContaining("READING LEVEL: GRADE-6"),
         expect.stringContaining("Create FAQ about photosynthesis basics")
       );
 
@@ -340,7 +342,7 @@ describe("AccordionHandler", () => {
         prompt: "Create FAQ"
       };
 
-      await handler.process(mockContext, item);
+      await aiHandler.process(mockContext, item);
 
       expect(mockQuizGenerator.generateRawContent).toHaveBeenCalledWith(
         expect.any(String),
@@ -357,7 +359,7 @@ describe("AccordionHandler", () => {
         panelCount: 3
       };
 
-      await handler.process(mockContext, item);
+      await aiHandler.process(mockContext, item);
 
       // Should still add content with fallback panels
       expect(mockChapterBuilder.addCustomContent).toHaveBeenCalledTimes(1);
@@ -384,7 +386,7 @@ describe("AccordionHandler", () => {
         panelCount: 1
       };
 
-      await handler.process(mockContext, item);
+      await aiHandler.process(mockContext, item);
 
       expect(mockContext.logger.log).toHaveBeenCalledWith(
         expect.stringContaining('Generating AI accordion: "Test"')
