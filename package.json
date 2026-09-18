@@ -8,7 +8,8 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
-    "fetch-libraries": "node tools/fetch-libraries/dist/index.js"
+    "fetch-libraries": "node tools/fetch-libraries/dist/index.js",
+    "verify": "pnpm -r build && pnpm -r typecheck && pnpm -r lint && pnpm -r test && pnpm --filter @leaplearn/engine test:smoke"
   },
   "devDependencies": {
     "cli-legacy": "workspace:*",
