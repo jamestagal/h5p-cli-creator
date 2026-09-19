@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const REMOVED_KEYWORDS = ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength", "maxLength", "pattern", "maxItems", "uniqueItems"] as const;
 /** Keywords the structured-outputs grammar rejects (docs: "Structured outputs" → JSON Schema limitations). */
-export const UNSUPPORTED_SCHEMA_KEYWORDS: ReadonlySet<string> = new Set([...REMOVED_KEYWORDS, "$schema", "patternProperties", "propertyNames", "if", "then", "else", "not", "dependentRequired", "dependentSchemas", "contains", "minContains", "maxContains", "minProperties", "maxProperties"]);
+export const UNSUPPORTED_SCHEMA_KEYWORDS: ReadonlySet<string> = new Set([...REMOVED_KEYWORDS, "$schema", "patternProperties", "propertyNames", "if", "then", "else", "not", "dependentRequired", "dependentSchemas", "contains", "minContains", "maxContains", "minProperties", "maxProperties", "default"]);
 export const SUPPORTED_FORMATS: ReadonlySet<string> = new Set(["date-time", "time", "date", "duration", "email", "hostname", "uri", "ipv4", "ipv6", "uuid"]);
 
 type Node = Record<string, unknown>;

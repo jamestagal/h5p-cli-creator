@@ -38,6 +38,9 @@ describe("toProviderSchema", () => {
     expect(() => assertProviderCompatible({ type: "object", additionalProperties: false, required: ["x"], properties: { x: { $ref: "https://example.test/x.json" } } })).toThrow(/external \$ref/);
     expect(UNSUPPORTED_SCHEMA_KEYWORDS.has("multipleOf")).toBe(true);
   });
+  it("rejects a default in a non-property position (array item), where a property-level default is not what tightens it", () => {
+    expect(() => assertProviderCompatible(toStrictJsonSchema(z.object({ a: z.array(z.string().default("x")) })))).toThrow(/default/);
+  });
   it("does not carry refinements (they are enforced in code after parsing)", () => {
     const s = toProviderSchema(z.object({ n: z.number() }).refine((o) => o.n > 1));
     expect(JSON.stringify(s)).not.toMatch(/refine/);
