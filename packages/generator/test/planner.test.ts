@@ -34,6 +34,23 @@ describe("planner", () => {
     expect(plan[6]).toMatchObject({ type: "flashcards", conceptIds: ["c1", "c2", "c3"] });
     expect(provider.requests[0]?.user).toContain("PC3.2 (unsupported by the source)");
   });
+  it("returns activities in ascending slot order regardless of the model's ordering", async () => {
+    const shuffled = { activities: [
+      { slot: 7, type: "flashcards", conceptIds: ["c1", "c2", "c3"], criteriaIds: ["PC2.1", "PC2.2"], focus: "key terms" },
+      { slot: 3, type: "multiChoice", conceptIds: ["c3"], criteriaIds: [], focus: "hazards" },
+      { slot: 1, type: "multiChoice", conceptIds: ["c1"], criteriaIds: ["PC2.1"], focus: "who may remove a lock" },
+      { slot: 5, type: "blanks", conceptIds: ["c2"], criteriaIds: ["PC2.2"], focus: "test sequence" },
+      { slot: 2, type: "multiChoice", conceptIds: ["c2"], criteriaIds: ["PC2.2"], focus: "proving the tester" },
+      { slot: 6, type: "blanks", conceptIds: ["c3"], criteriaIds: [], focus: "hazards" },
+      { slot: 4, type: "blanks", conceptIds: ["c1"], criteriaIds: ["PC2.1"], focus: "lock and tag" }
+    ] };
+    const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(shuffled) })]);
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-plan", sleep: async () => undefined });
+    const plan = await planActivities(map, ["multiChoice", "blanks", "flashcards"], runner);
+    expect(plan.map((p) => p.activityId)).toEqual(["act-1", "act-2", "act-3", "act-4", "act-5", "act-6", "act-7"]);
+    expect(plan.map((p) => p.slot)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(plan.map((p) => p.type)).toEqual(["multiChoice", "multiChoice", "multiChoice", "blanks", "blanks", "blanks", "flashcards"]);
+  });
   it("rejects a plan whose slots or ids do not match", async () => {
     const bad = { activities: [{ slot: 1, type: "multiChoice", conceptIds: ["c9"], criteriaIds: ["PC2.1"], focus: "x" }] };
     const provider = new FakeProvider(Array.from({ length: 3 }, () => fakeResponse({ outputText: JSON.stringify(bad) })));

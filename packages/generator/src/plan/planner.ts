@@ -57,5 +57,9 @@ export async function planActivities(map: ConceptMap, selectedTypes: PlannedType
       return issues;
     }
   });
-  return value.activities.map((a) => ({ activityId: `act-${a.slot}`, slot: a.slot, type: a.type, conceptIds: [...new Set(a.conceptIds)], criteriaIds: [...new Set(a.criteriaIds)], focus: a.focus.trim() }));
+  const bySlot = new Map(value.activities.map((a) => [a.slot, a]));
+  return slots.map((s) => {
+    const a = bySlot.get(s.slot)!;
+    return { activityId: `act-${a.slot}`, slot: a.slot, type: a.type, conceptIds: [...new Set(a.conceptIds)], criteriaIds: [...new Set(a.criteriaIds)], focus: a.focus.trim() };
+  });
 }
