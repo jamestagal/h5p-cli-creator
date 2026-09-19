@@ -17,17 +17,28 @@ describe("quality checks", () => {
     expect(checkPlainText("<p>hi</p>", "question")).toEqual(["question contains HTML tags"]);
     expect(checkPlainText("**bold**", "question")).toEqual(["question contains markdown markers"]);
     expect(checkPlainText("", "question")).toEqual(["question is empty"]);
+    expect(checkPlainText("Only the *worker* may remove it.", "question")).toEqual(["question contains markdown markers"]);
+    expect(checkPlainText("_worker_", "question")).toEqual(["question contains markdown markers"]);
+    expect(checkPlainText("Follow the lockout procedure before you begin.", "question")).toEqual([]);
+    expect(checkPlainText("snake_case_word", "question")).toEqual([]);
+    expect(checkPlainText("The total is 2 * 3 kilograms.", "question")).toEqual([]);
   });
   it("multiChoice: exactly one correct, distinct answers, 2-8 options", () => {
-    const ok = { title: "T", question: "Who may remove a lock?", answers: [{ text: "The worker who applied it", correct: true, feedback: "" }, { text: "Any supervisor", correct: false, feedback: "" }], evidenceIds: ["ev-s1"] };
+    const ok = { title: "T", question: "Who may remove a lock?", answers: [{ text: "The worker who applied it", correct: true, feedback: "Correct." }, { text: "Any supervisor", correct: false, feedback: "Not quite." }], evidenceIds: ["ev-s1"] };
     expect(checkMultiChoice(ok)).toEqual([]);
     expect(checkMultiChoice({ ...ok, answers: [{ ...ok.answers[0]!, correct: true }, { ...ok.answers[1]!, correct: true }] })).toContain("exactly one answer must be correct");
     expect(checkMultiChoice({ ...ok, answers: [ok.answers[0]!, { text: "the worker who applied it", correct: false, feedback: "" }] })).toContain("answer 2 duplicates another answer");
     expect(checkMultiChoice({ ...ok, answers: [ok.answers[0]!] })).toContain("between 2 and 8 answers are required");
+    expect(checkMultiChoice({ ...ok, answers: [ok.answers[0]!, { ...ok.answers[1]!, feedback: "**not quite**" }] })).toContain("answers[2].feedback contains markdown markers");
+    expect(checkMultiChoice({ ...ok, answers: [ok.answers[0]!, { ...ok.answers[1]!, feedback: "" }] })).toContain("answers[2].feedback is empty");
   });
   it("blanks: tokens, delimiters, and answers grounded in the evidence each blank cites", () => {
-    const texts: Record<string, string> = { "ev-s1": "Only the worker who applied a lock may remove it.", "ev-s2": "A tag names the worker, the date and the reason." };
-    const evidenceTextFor = (ids: string[]) => ids.map((id) => texts[id] ?? "").join(" ");
+    const texts: Record<string, string> = {
+      "ev-s1": "Only the worker who applied a lock may remove it.",
+      "ev-s2": "A tag names the worker, the date and the reason.",
+      "ev-s3": "The supervisor confirms the isolation before handing back the key."
+    };
+    const evidenceTextFor = (ids: string[]) => ids.map((id) => texts[id] ?? "");
     const ok = { title: "T", taskDescription: "Fill the gaps.", passage: "Only the {{b1}} who applied a lock may remove it, and the tag names the {{b2}}.", blanks: [{ answers: ["worker"], tip: null, evidenceIds: ["ev-s1"] }, { answers: ["date", "reason"], tip: "on the tag", evidenceIds: ["ev-s2"] }] };
     expect(checkBlanks(ok, evidenceTextFor)).toEqual([]);
     expect(checkBlanks({ ...ok, passage: "Only the {{b1}} and {{b1}}." }, evidenceTextFor)).toContain("token {{b1}} must appear exactly once");
@@ -37,6 +48,12 @@ describe("quality checks", () => {
     expect(checkBlanks({ ...ok, blanks: [{ answers: ["date"], tip: null, evidenceIds: ["ev-s1"] }, ok.blanks[1]!] }, evidenceTextFor)).toContain('blank 1 answer "date" does not occur in the evidence it cites'); // present in ev-s2, but the blank cites ev-s1
     expect(checkBlanks({ ...ok, blanks: [{ answers: ["worker"], tip: null, evidenceIds: [] }, ok.blanks[1]!] }, evidenceTextFor)).toContain("blank 1 cites no evidence");
     expect(checkBlanks({ ...ok, passage: "{{b1}} {{b2}}" }, evidenceTextFor)).toContain("passage needs at least 8 words around the blanks");
+    // "it the supervisor" spans the join between ev-s1 ("...remove it.") and ev-s3 ("The supervisor...");
+    // grounding must be checked per-quote, never against a joined string, so this is reported as ungrounded.
+    expect(checkBlanks({ ...ok, blanks: [{ answers: ["it the supervisor"], tip: null, evidenceIds: ["ev-s1", "ev-s3"] }, ok.blanks[1]!] }, evidenceTextFor)).toContain('blank 1 answer "it the supervisor" does not occur in the evidence it cites');
+    const passageWithStrayTokens = "Only the {{b1}} {{b0}} who applied a lock may remove it, and the tag names the {{b2}} {{b01}}.";
+    expect(checkBlanks({ ...ok, passage: passageWithStrayTokens }, evidenceTextFor)).toContain("unexpected token {{b0}}");
+    expect(checkBlanks({ ...ok, passage: passageWithStrayTokens }, evidenceTextFor)).toContain("unexpected token {{b01}}");
   });
   it("flashcards: bounds, distinct fronts, back differs from front", () => {
     const card = (front: string, back: string) => ({ front, back, tip: null, evidenceIds: ["ev-s1"] });
@@ -45,5 +62,7 @@ describe("quality checks", () => {
     expect(checkFlashcards({ ...ok, cards: ok.cards.slice(0, 3) }, 4, 12)).toContain("between 4 and 12 cards are required");
     expect(checkFlashcards({ ...ok, cards: [...ok.cards.slice(0, 3), card("spanner", "x")] }, 4, 12)).toContain("card 4 duplicates another card's front");
     expect(checkFlashcards({ ...ok, cards: [...ok.cards.slice(0, 3), card("Same", "same")] }, 4, 12)).toContain("card 4 back must differ from its front");
+    expect(checkFlashcards({ ...ok, description: "" }, 4, 12)).toContain("description is empty");
+    expect(checkFlashcards({ ...ok, description: "**Tool** basics" }, 4, 12)).toContain("description contains markdown markers");
   });
 });
