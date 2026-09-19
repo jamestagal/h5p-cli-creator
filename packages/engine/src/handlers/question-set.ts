@@ -7,10 +7,10 @@ export function createQuestionSetHandler(children: Map<string, ActivityHandler>)
   return {
     type: "questionSet",
     mainLibrary: "H5P.QuestionSet",
-    requiredLibraries: (spec) => ["H5P.QuestionSet", ...new Set(spec.children.flatMap((c) => requireHandler(children, c.type).requiredLibraries(c as never)))],
+    requiredLibraries: (spec) => ["H5P.QuestionSet", ...new Set(spec.children.flatMap((c, i) => requireHandler(children, c.type, `children[${i}]`).requiredLibraries(c as never)))],
     build(spec, ctx): H5PContent {
       const questions = spec.children.map((child, i) => {
-        const h = requireHandler(children, child.type);
+        const h = requireHandler(children, child.type, `children[${i}]`);
         const childCtx: BuildContext = { ...ctx, ids: ctx.ids.scope(`questions/${i}`) };
         return { ...h.build(child as never, childCtx), subContentId: ctx.ids.subContentId(`questions/${i}`) };
       });

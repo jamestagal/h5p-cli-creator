@@ -11,14 +11,14 @@ export const flashcardsHandler: ActivityHandler<FlashcardsSpec> = {
   mainLibrary: "H5P.Flashcards",
   requiredLibraries: () => ["H5P.Flashcards"],
   build(spec, ctx): H5PContent {
-    const cards = spec.cards.map((c) => {
+    const cards = spec.cards.map((c, index) => {
       const card: Record<string, unknown> = { text: escapeHtml(c.front), answer: escapeHtml(c.back) };
       if (c.tip) card["tip"] = escapeHtml(c.tip);
       if (c.imageAssetId) {
         const a = ctx.assets.get(c.imageAssetId);
-        if (!a) throw new EngineError(`asset ${c.imageAssetId} is not in the manifest`, "ASSET_MISSING");
+        if (!a) throw new EngineError(`asset ${c.imageAssetId} is not in the manifest`, "ASSET_MISSING", `cards[${index}].imageAssetId`);
         const ext = EXT[a.mimeType];
-        if (!ext) throw new EngineError(`unsupported image type ${a.mimeType}`, "ASSET_TYPE");
+        if (!ext) throw new EngineError(`unsupported image type ${a.mimeType}`, "ASSET_TYPE", `cards[${index}].imageAssetId`);
         const path = `images/${spec.id}-${c.id}.${ext}`;
         ctx.mediaPaths.set(path, c.imageAssetId);
         card["image"] = { path, mime: a.mimeType, copyright: { license: "U" } };

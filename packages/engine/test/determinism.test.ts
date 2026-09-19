@@ -3,7 +3,6 @@ import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { readFileSync, createReadStream, statSync } from "node:fs";
 import JSZip from "jszip";
-import { ZodError } from "zod";
 import { ActivitySpec, type AssetEntry } from "@leaplearn/shared";
 import { compile, compileToBuffer, compileToFile, createRegistry, validate, type LibraryRegistry, type Logger } from "../src/index.js";
 
@@ -67,7 +66,7 @@ describe("compile", () => {
     expect(await readdir(dir)).toEqual([]);
 
     const invalid = load("multi-choice"); (invalid as { answers: unknown }).answers = "nope";
-    await expect(compileToFile(invalid, new Map(), resolve(dir, "out.h5p"), { registry })).rejects.toThrow();
+    await expect(compileToFile(invalid, new Map(), resolve(dir, "out.h5p"), { registry })).rejects.toMatchObject({ name: "ValidationError", code: "VALIDATION", issues: [expect.objectContaining({ path: "answers", code: "SCHEMA" })] });
     expect(await readdir(dir)).toEqual([]); // validation failed before any file was opened
 
     await expect(compileToFile(load("multi-choice"), new Map(), resolve(dir, "missing-dir", "out.h5p"), { registry })).rejects.toThrow(/ENOENT/);
@@ -80,7 +79,8 @@ describe("compile", () => {
   it("validate accepts an image-bearing spec when the manifest has the asset, and reports the missing asset otherwise", async () => {
     expect(await validate(load("multi-choice"), new Map(), { registry })).toEqual([]);
     expect(await validate(load("flashcards"), new Map([["card", card()]]), { registry })).toEqual([]);
-    await expect(validate(load("flashcards"), new Map(), { registry })).rejects.toThrow(/asset card is not in the manifest/);
+    expect(await validate(load("flashcards"), new Map(), { registry })).toEqual([{ path: "cards[1].imageAssetId", message: "asset card is not in the manifest", code: "ASSET_MISSING" }]);
+    await expect(compileToBuffer(load("flashcards"), new Map(), { registry })).rejects.toMatchObject({ name: "ValidationError", code: "VALIDATION", issues: [{ path: "cards[1].imageAssetId", message: "asset card is not in the manifest", code: "ASSET_MISSING" }] });
   });
 
   it("changes bytes when the revision changes (sub-content ids differ)", async () => {
@@ -180,13 +180,14 @@ describe("compile", () => {
     };
     const assets = new Map([["card", card()]]);
 
-    const validationError: unknown = await validate(duplicateFlashcards, assets, { registry }).then(
-      () => { throw new Error("expected validate() to reject"); },
-      (err: unknown) => err
-    );
-    expect(validationError).toBeInstanceOf(ZodError);
-    expect((validationError as ZodError).issues.some((i) => /duplicate id "c1"/.test(i.message))).toBe(true);
+    expect(await validate(duplicateFlashcards, assets, { registry })).toEqual([{ path: "cards[1].id", message: 'duplicate id "c1" in cards', code: "SCHEMA" }]);
+    await expect(compileToBuffer(duplicateFlashcards, assets, { registry, revision: 1 })).rejects.toMatchObject({ name: "ValidationError", code: "VALIDATION", issues: [expect.objectContaining({ path: "cards[1].id", code: "SCHEMA" })] });
+  });
 
-    await expect(compileToBuffer(duplicateFlashcards, assets, { registry, revision: 1 })).rejects.toBeInstanceOf(ZodError);
+  it("validate returns coded schema issues with a path instead of throwing", async () => {
+    const badShape = { ...load("multi-choice"), answers: "nope" } as unknown as ActivitySpec;
+    const issues = await validate(badShape, new Map(), { registry });
+    expect(issues.length).toBeGreaterThan(0);
+    for (const issue of issues) expect(issue).toMatchObject({ code: "SCHEMA", path: expect.stringMatching(/^answers/) });
   });
 });

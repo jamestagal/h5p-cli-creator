@@ -51,9 +51,9 @@ git remote add upstream https://github.com/sr258/h5p-cli-creator.git
 pnpm install
 ```
 
-5. Build the project:
+5. Build the project (the root `pnpm build` filters out `apps/cli-legacy`; use the filter form for the legacy CLI):
 ```bash
-pnpm run build
+pnpm --filter cli-legacy build
 ```
 
 ### Running Tests
@@ -65,12 +65,12 @@ pnpm test
 
 Run specific test file:
 ```bash
-pnpm test -- apps/cli-legacy/tests/handlers/core/TextHandler.test.ts
+pnpm --filter cli-legacy test -- apps/cli-legacy/tests/handlers/core/TextHandler.test.ts
 ```
 
 Run tests in watch mode:
 ```bash
-pnpm test -- --watch
+pnpm --filter cli-legacy test -- --watch
 ```
 
 ## Development Workflow
@@ -316,7 +316,7 @@ Update the following files:
 
 1. Run your handler tests:
 ```bash
-pnpm test -- apps/cli-legacy/tests/handlers/your-category/YourHandler.test.ts
+pnpm --filter cli-legacy test -- apps/cli-legacy/tests/handlers/your-category/YourHandler.test.ts
 ```
 
 2. Create a test YAML file in `examples/`:
@@ -355,7 +355,7 @@ All contributions must include tests. Aim for:
 ### Running Coverage Report
 
 ```bash
-pnpm test -- --coverage
+pnpm --filter cli-legacy test -- --coverage
 ```
 
 ## Code Style Guidelines

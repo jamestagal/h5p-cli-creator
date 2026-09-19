@@ -15,7 +15,8 @@ This is a pnpm workspace monorepo:
 - `apps/cli` — `leap`, the CLI on the new engine (currently just `leap flashcards`).
 - `apps/cli-legacy` — the original `h5p-cli-creator` tool, frozen (bug fixes only). **The rest of this
   README, and `CONTRIBUTING.md`'s handler-development guide, document this legacy CLI**; its own
-  docs and examples live under `apps/cli-legacy/` (`apps/cli-legacy/docs`, `apps/cli-legacy/examples`).
+  docs and examples live under `apps/cli-legacy/` (`apps/cli-legacy/developer-guides/`,
+  `apps/cli-legacy/user-guides/`, `apps/cli-legacy/examples`).
 - `tools/fetch-libraries` — resolves and caches H5P content-type libraries into `libraries/`.
 - `tools/preview-spike` — throwaway spike code, not part of the shipped product.
 - `libraries/` — the locked library cache (`libraries.lock.json`) used at compile time.
@@ -115,7 +116,7 @@ return new Response(h5pBuffer, {
 });
 ```
 
-For complete API integration instructions, see the [API Integration Guide](docs/developer-guides/api-integration.md).
+For complete API integration instructions, see the [API Integration Guide](apps/cli-legacy/developer-guides/api-integration.md).
 
 ## Run
 
@@ -526,7 +527,7 @@ chapters:
 - [Multi-Language AI Guide](examples/multi-language/README.md) - Complete guide with configuration examples
 - [Teacher's Guide: AI Configuration](docs/user-guides/teacher-guide-ai-config.md) - Choosing reading levels, customization tips
 - [YAML Format Reference](docs/user-guides/yaml-format.md) - Complete YAML syntax with aiConfig examples
-- [API Integration Guide](docs/developer-guides/api-integration.md) - Using aiConfig in web applications
+- [API Integration Guide](apps/cli-legacy/developer-guides/api-integration.md) - Using aiConfig in web applications
 - [Prompt Engineering Reference](docs/developer-guides/prompt-engineering.md) - How system prompts work (technical)
 
 **YAML Input Format:**

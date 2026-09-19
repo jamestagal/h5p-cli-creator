@@ -25,9 +25,9 @@ export function resolveLibraryKey(registry: LibraryRegistry, machineName: string
   return `${l.machineName}-${l.majorVersion}.${l.minorVersion}`;
 }
 
-export function requireHandler(children: Map<string, ActivityHandler>, type: string): ActivityHandler {
+export function requireHandler(children: Map<string, ActivityHandler>, type: string, path?: string): ActivityHandler {
   const h = children.get(type);
-  if (!h) throw new EngineError(`no handler for ${type}`, "HANDLER_MISSING");
+  if (!h) throw new EngineError(`no handler for ${type}`, "HANDLER_MISSING", path);
 
   return h;
 }
