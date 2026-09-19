@@ -7,6 +7,7 @@ import { compileToFile, createRegistry } from "@leaplearn/engine";
 import { csvToFlashcardsSpec } from "./csv-to-flashcards.js";
 import { generate } from "./generate.js";
 import { localImageResolver, networkImageResolver } from "./image-resolver.js";
+import { review } from "./review.js";
 
 let reported = false;
 function reportFailure(msg: string | null | undefined, err: Error | undefined): void {
@@ -56,6 +57,19 @@ try {
       .option("concurrency", { type: "number", default: 3, describe: "activity types generated at once (each type is one serial lane)" }),
       async (argv) => {
         const code = await generate({ source: argv.source, out: argv.out, ...(argv.unit ? { unit: argv.unit } : {}), types: argv.types, budgetUsd: argv["budget-usd"], maxRequests: argv["max-requests"], maxTokens: argv["max-tokens"], maxSeconds: argv["max-seconds"], language: argv.language, readingLevel: argv["reading-level"], tone: argv.tone, ...(argv.customisation ? { customisation: argv.customisation } : {}), ...(argv.name ? { name: argv.name } : {}), libraries: argv.libraries, provider: argv.provider, ...(argv.fixtures ? { fixtures: argv.fixtures } : {}), concurrency: argv.concurrency }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
+        process.exitCode = code;
+      })
+    .command("review", "Record a human acceptance or alignment decision against a promoted activity and refresh mapping.csv and cost.json", (y) => y
+      .option("out", { type: "string", demandOption: true, describe: "the import directory" })
+      .option("activity", { type: "string", demandOption: true })
+      .option("reviewer", { type: "string", demandOption: true })
+      .option("decision", { choices: ["accepted", "rejected"] as const })
+      .option("notes", { type: "string" })
+      .option("criterion", { type: "string" })
+      .option("alignment", { choices: ["confirmed", "rejected", "added"] as const })
+      .option("item", { type: "string" }),
+      async (argv) => {
+        const code = await review({ out: argv.out, activity: argv.activity, reviewer: argv.reviewer, ...(argv.decision ? { decision: argv.decision } : {}), ...(argv.notes ? { notes: argv.notes } : {}), ...(argv.criterion ? { criterion: argv.criterion } : {}), ...(argv.alignment ? { alignment: argv.alignment } : {}), ...(argv.item ? { item: argv.item } : {}) }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
         process.exitCode = code;
       })
     .demandCommand(1)
