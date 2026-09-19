@@ -1,19 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { ingestMarkdown, ingestText } from "../src/ingest/index.js";
 import { alignConcepts, chunkSentences, extractConceptMap, MAX_ALIGN_QUOTES, verifyEvidence, evidenceForSentence } from "../src/concepts/index.js";
 import { createRunner } from "../src/llm/runner.js";
 import { FakeProvider, fakeResponse } from "../src/llm/fake-provider.js";
 import { createBudget } from "../src/llm/budget.js";
 import { criteriaOf, type Concept, type UnitOfCompetency } from "@leaplearn/shared";
-import type { AttemptEvent, AttemptRecorder } from "../src/llm/types.js";
-import type { SourceDocument } from "../src/ingest/index.js";
-import { SYNTHETIC_CHUNK_TOKENS } from "./helpers/synthetic.js";
+import { conceptResponses, MemoryRecorder, sid, syntheticDoc, SYNTHETIC_CHUNK_TOKENS } from "./helpers/synthetic.js";
 
-class MemoryRecorder implements AttemptRecorder { events: AttemptEvent[] = []; async recordStart(e: AttemptEvent) { this.events.push(e); } async recordOutcome(e: AttemptEvent) { this.events.push(e); } }
-const fixtures = resolve(import.meta.dirname, "fixtures/synthetic");
-const sid = (doc: SourceDocument, startsWith: string): string => { const s = doc.sentences.find((x) => x.text.startsWith(startsWith)); if (!s) throw new Error(`no sentence starting "${startsWith}"`); return s.sentenceId; };
 const unit: UnitOfCompetency = {
   code: "SYNELE001", title: "Isolate and test electrical equipment", textHash: "0".repeat(64), knowledgeEvidence: [], performanceEvidence: [],
   elements: [
@@ -25,7 +18,7 @@ const unit: UnitOfCompetency = {
 
 describe("chunking and evidence", () => {
   it("chunks on sentence boundaries within the token budget and puts the boundary between 'test for dead' sentences", async () => {
-    const doc = await ingestMarkdown(await readFile(resolve(fixtures, "source-electrical-safety.md"), "utf8"), { sourceId: "src" });
+    const doc = await syntheticDoc();
     const chunks = chunkSentences(doc.sentences, SYNTHETIC_CHUNK_TOKENS);
     expect(chunks.length).toBeGreaterThanOrEqual(3);
     for (const c of chunks) expect(c.estimatedTokens).toBeLessThanOrEqual(SYNTHETIC_CHUNK_TOKENS + 200);
@@ -46,7 +39,7 @@ describe("chunking and evidence", () => {
 
 describe("extractConceptMap", () => {
   it("extracts per chunk, merges the repeated concept, keeps cross-chunk evidence, and aligns with unsupported criteria", async () => {
-    const doc = await ingestMarkdown(await readFile(resolve(fixtures, "source-electrical-safety.md"), "utf8"), { sourceId: "src" });
+    const doc = await syntheticDoc();
     const chunks = chunkSentences(doc.sentences, SYNTHETIC_CHUNK_TOKENS);
     const lotoEarly = sid(doc, "Lockout and tagout is the method");
     const lotoTag = sid(doc, "A tag is a warning label");
@@ -54,31 +47,9 @@ describe("extractConceptMap", () => {
     const lotoLate = sid(doc, "Lockout and tagout ends when the permit is closed");
     const tfdA = sid(doc, "After the isolator is opened and locked");
     const tfdB = sid(doc, "Testing for dead confirms");
-    const hazards = sid(doc, "Typical hazards are damaged insulation");
-    const inChunk = (i: number, ids: string[]) => ids.filter((id) => chunks[i]!.sentences.some((s) => s.sentenceId === id));
-    // one ConceptsOut per chunk, built from the real sentence ids so the fixture never drifts
-    const perChunk = chunks.map((_, i) => {
-      const concepts: Array<{ name: string; summary: string; sentenceIds: string[] }> = [];
-      const loto = inChunk(i, [lotoEarly, lotoTag, lotoRemove, lotoLate]); if (loto.length) concepts.push({ name: "Lockout and tagout", summary: "Locks and tags keep isolated equipment isolated.", sentenceIds: loto });
-      const tfd = inChunk(i, [tfdA, tfdB]); if (tfd.length) concepts.push({ name: "Testing for dead", summary: "Prove the tester, test every pair, record the result.", sentenceIds: tfd });
-      const hz = inChunk(i, [hazards]); if (hz.length) concepts.push({ name: "Hazard identification", summary: "Inspect for damaged insulation, moisture, stored energy, multiple supplies.", sentenceIds: hz });
-      if (concepts.length === 0) concepts.push({ name: "Personal protective equipment", summary: "PPE reduces severity but does not replace isolation.", sentenceIds: [chunks[i]!.sentences[0]!.sentenceId] });
-      return concepts;
-    });
+    const { perChunk, mergeOut, script } = conceptResponses(doc);
     const tempIds = perChunk.flatMap((cs, i) => cs.map((_, j) => `k${i}-${j}`));
-    const byName = (name: string) => perChunk.flatMap((cs, i) => cs.map((c, j) => ({ c, id: `k${i}-${j}` }))).filter((x) => x.c.name === name).map((x) => x.id);
-    const mergeOut = { concepts: [
-      { name: "Lockout and tagout", summary: "Locks and tags keep isolated equipment isolated until the permit closes.", memberIds: byName("Lockout and tagout") },
-      { name: "Testing for dead", summary: "Prove the tester before and after; test every pair; record it.", memberIds: byName("Testing for dead") },
-      { name: "Hazard identification", summary: "Inspect and record hazards on the permit.", memberIds: byName("Hazard identification") },
-      { name: "Personal protective equipment", summary: "PPE reduces severity but does not replace isolation.", memberIds: byName("Personal protective equipment") }
-    ].filter((c) => c.memberIds.length > 0) };
     expect(new Set(mergeOut.concepts.flatMap((c) => c.memberIds)).size).toBe(tempIds.length);
-    const alignOut = { criteria: [
-      { criterionId: "PC1.1", conceptIds: ["c3"] }, { criterionId: "PC1.2", conceptIds: ["c3"] }, { criterionId: "PC2.1", conceptIds: ["c1"] }, { criterionId: "PC2.2", conceptIds: ["c2"] },
-      { criterionId: "PC3.1", conceptIds: ["c1"] }, { criterionId: "PC3.2", conceptIds: [] }, { criterionId: "PC3.3", conceptIds: ["c1"] }
-    ] };
-    const script = [...perChunk.map((c) => fakeResponse({ outputText: JSON.stringify({ concepts: c }) })), fakeResponse({ outputText: JSON.stringify(mergeOut) }), fakeResponse({ outputText: JSON.stringify(alignOut) })];
     const provider = new FakeProvider(script);
     const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-concepts", sleep: async () => undefined });
 

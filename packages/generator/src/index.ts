@@ -18,3 +18,6 @@ export * from "./concepts/index.js";
 export * from "./plan/planner.js";
 export * from "./quality/checks.js";
 export * from "./produce/index.js";
+export * from "./store/types.js";
+export * from "./store/memory-store.js";
+export * from "./pipeline/index.js";
