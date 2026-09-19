@@ -70,12 +70,19 @@ export function criteriaBlock(input: ProduceInput): string {
   return `\nPERFORMANCE CRITERIA THIS ACTIVITY HELPS REVISE:\n${input.plan.criteriaIds.map((id) => `- ${id}: ${byId.get(id) ?? ""}`).join("\n")}`;
 }
 
-/** Converts model output to a spec; a schema failure becomes verify reasons (a content failure) instead of an exception. */
+/**
+ * Converts model output to a spec; a schema failure or a missing-provenance failure becomes verify
+ * reasons (a content failure) instead of an exception. `assertGeneratedProvenance` throws a plain
+ * `Error` (see `@leaplearn/shared`'s `activities/index.ts`), so that case is folded into a
+ * `provenance: ...` reason alongside the `ZodError` case; any other thrown value is not one this
+ * conversion is expected to produce and is rethrown.
+ */
 export function tryConvert<T>(convert: () => T): { spec: T } | { issues: string[] } {
   try {
     return { spec: convert() };
   } catch (err) {
     if (err instanceof ZodError) return { issues: err.issues.map((i) => `spec ${i.path.join(".") || "(root)"}: ${i.message}`) };
+    if (err instanceof Error) return { issues: [`provenance: ${err.message}`] };
     throw err;
   }
 }
