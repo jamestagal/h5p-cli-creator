@@ -15,8 +15,15 @@ export interface SafeFetchOptions {
   timeoutMs?: number;
   allowedContentTypes?: string[];
   lookup?: (hostname: string) => Promise<string[]>;
-  /** Test-only escape hatch (a loopback test server); never set it in application code. The metadata address stays blocked. */
-  unsafeAllowPrivateNetworks?: boolean;
+  /**
+   * Test-only escape hatch (a loopback test server); never set it in application code. An address
+   * passes only when it exactly matches one of these strings — the literal IP the hop resolved to,
+   * or the literal host after bracket-stripping, before any IPv6/embedded-IPv4 canonicalisation.
+   * Any other representation of the same address (e.g. its IPv4-mapped IPv6 form) still goes through
+   * `isBlockedAddress` unchanged, and the metadata address (and any IPv6 embedding of it) stays
+   * blocked unconditionally even if listed.
+   */
+  unsafeAllowAddresses?: string[];
 }
 export interface SafeFetchResult { status: number; contentType: string | null; body: Buffer; finalUrl: string; connectedAddress: string; }
 
@@ -132,8 +139,11 @@ async function resolveAllowed(url: URL, options: SafeFetchOptions, deadline: Dea
   }
   for (const a of addresses) {
     if (isMetadata(a)) throw new SafeFetchError(`${host} resolves to the metadata address`, reason);
-    if (!options.unsafeAllowPrivateNetworks && isBlockedAddress(a)) throw new SafeFetchError(`${host} resolves to a blocked address ${a}`, reason);
-    if (options.unsafeAllowPrivateNetworks && !isIPv4(a) && !parseIPv6(a)) throw new SafeFetchError(`${host} resolves to an unparsable address ${a}`, reason);
+    // Exact-string match against the un-canonicalised address, before isBlockedAddress applies any
+    // IPv6/embedded-IPv4 canonicalisation: an allow-listed "127.0.0.1" must not also permit
+    // "::ffff:7f00:1" (the same address in IPv4-mapped IPv6 form), which is a distinct string.
+    const explicitlyAllowed = options.unsafeAllowAddresses?.includes(a) ?? false;
+    if (!explicitlyAllowed && isBlockedAddress(a)) throw new SafeFetchError(`${host} resolves to a blocked address ${a}`, reason);
   }
   return addresses[0]!;
 }

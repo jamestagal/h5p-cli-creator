@@ -3,16 +3,20 @@ import { createServer, type Server } from "node:http";
 import { embeddedIPv4, isBlockedAddress, parseIPv6, safeFetch, SafeFetchError } from "../src/net/safe-fetch.js";
 
 let server: Server; let base: string; let port: number; const timers: NodeJS.Timeout[] = [];
+const hits = { mapped: 0, ok: 0 };
 beforeAll(async () => {
   server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://x");
-    if (url.pathname === "/ok") { res.writeHead(200, { "content-type": "image/jpeg" }); res.end(Buffer.alloc(1024, 1)); return; }
+    if (url.pathname === "/ok") { hits.ok += 1; res.writeHead(200, { "content-type": "image/jpeg" }); res.end(Buffer.alloc(1024, 1)); return; }
     if (url.pathname === "/host") { res.writeHead(200, { "content-type": "text/plain" }); res.end(req.headers.host ?? ""); return; }
     if (url.pathname === "/big") { res.writeHead(200, { "content-type": "application/octet-stream" }); res.end(Buffer.alloc(200_000, 2)); return; }
     if (url.pathname === "/hop") { res.writeHead(302, { location: "/ok" }); res.end(); return; }
     if (url.pathname === "/loop") { res.writeHead(302, { location: "/loop" }); res.end(); return; }
     if (url.pathname === "/metadata") { res.writeHead(302, { location: "http://169.254.169.254/latest/meta-data/" }); res.end(); return; }
-    if (url.pathname === "/mapped") { res.writeHead(302, { location: "http://[::ffff:127.0.0.1]/ok" }); res.end(); return; }
+    // Same loopback address as /ok's host, expressed as its IPv4-mapped IPv6 literal; the port is
+    // included so a guard that failed to block this would actually land the request on /ok.
+    if (url.pathname === "/mapped") { hits.mapped += 1; res.writeHead(302, { location: `http://[::ffff:127.0.0.1]:${port}/ok` }); res.end(); return; }
+    if (url.pathname === "/mapped-metadata") { res.writeHead(302, { location: "http://[::ffff:169.254.169.254]/latest/meta-data/" }); res.end(); return; }
     if (url.pathname === "/slow") { timers.push(setTimeout(() => { res.writeHead(200); res.end("late"); }, 2000)); return; }
     if (url.pathname === "/html") { res.writeHead(200, { "content-type": "text/html" }); res.end("<p>"); return; }
     res.writeHead(404); res.end();
@@ -52,7 +56,7 @@ describe("address classification", () => {
 });
 
 describe("safeFetch", () => {
-  const allow = { unsafeAllowPrivateNetworks: true };
+  const allow = { unsafeAllowAddresses: ["127.0.0.1"] };
   it("rejects non-http schemes and loopback targets by default", async () => {
     await expect(safeFetch("file:///etc/passwd")).rejects.toBeInstanceOf(SafeFetchError);
     await expect(safeFetch("file:///etc/passwd")).rejects.toMatchObject({ reason: "scheme" });
@@ -76,8 +80,22 @@ describe("safeFetch", () => {
   });
   it("re-validates every redirect target, after normalisation", async () => {
     await expect(safeFetch(`${base}/metadata`, allow)).rejects.toMatchObject({ reason: "redirect_target" });
-    await expect(safeFetch(`${base}/mapped`)).rejects.toMatchObject({ reason: "blocked_address" });
     await expect(safeFetch(`${base}/loop`, { ...allow, maxRedirects: 3 })).rejects.toMatchObject({ reason: "too_many_redirects" });
+  });
+  it("blocks a redirect to the allow-listed loopback address expressed as IPv4-mapped IPv6, and never lets the request land", async () => {
+    hits.mapped = 0; hits.ok = 0;
+    const caught: unknown = await safeFetch(`${base}/mapped`, { ...allow }).catch((error: unknown) => error);
+    expect(caught).toBeInstanceOf(SafeFetchError);
+    expect(caught).toMatchObject({ reason: "redirect_target" });
+    expect((caught as SafeFetchError).message).toMatch(/blocked address/);
+    expect(hits.mapped).toBe(1);
+    expect(hits.ok).toBe(0);
+  });
+  it("blocks a redirect to the metadata address expressed as IPv4-mapped IPv6, even under the allow list", async () => {
+    const caught: unknown = await safeFetch(`${base}/mapped-metadata`, { ...allow }).catch((error: unknown) => error);
+    expect(caught).toBeInstanceOf(SafeFetchError);
+    expect(caught).toMatchObject({ reason: "redirect_target" });
+    expect((caught as SafeFetchError).message).toMatch(/metadata address/);
   });
   it("caps the body size, the total time (DNS included), and the content type", async () => {
     await expect(safeFetch(`${base}/big`, { ...allow, maxBytes: 100_000 })).rejects.toMatchObject({ reason: "too_large" });
