@@ -1,5 +1,5 @@
 import { escapeHtml, validate, type LibraryRegistry } from "@leaplearn/engine";
-import type { ActivitySpec, ConceptMap, UnitOfCompetency } from "@leaplearn/shared";
+import { ProvenanceError, type ActivitySpec, type ConceptMap, type UnitOfCompetency } from "@leaplearn/shared";
 import { ZodError } from "zod";
 import type { StageRunner } from "../llm/runner.js";
 import type { ActivityPlan, PlannedType, PlanRules } from "../plan/planner.js";
@@ -72,17 +72,17 @@ export function criteriaBlock(input: ProduceInput): string {
 
 /**
  * Converts model output to a spec; a schema failure or a missing-provenance failure becomes verify
- * reasons (a content failure) instead of an exception. `assertGeneratedProvenance` throws a plain
- * `Error` (see `@leaplearn/shared`'s `activities/index.ts`), so that case is folded into a
- * `provenance: ...` reason alongside the `ZodError` case; any other thrown value is not one this
- * conversion is expected to produce and is rethrown.
+ * reasons (a content failure) instead of an exception. Only the two errors a conversion is expected
+ * to throw are converted: `ZodError` (a schema failure) and `ProvenanceError` (thrown by
+ * `assertGeneratedProvenance` in `@leaplearn/shared`). Any other error is not one this conversion is
+ * expected to produce and is rethrown unchanged.
  */
 export function tryConvert<T>(convert: () => T): { spec: T } | { issues: string[] } {
   try {
     return { spec: convert() };
   } catch (err) {
     if (err instanceof ZodError) return { issues: err.issues.map((i) => `spec ${i.path.join(".") || "(root)"}: ${i.message}`) };
-    if (err instanceof Error) return { issues: [`provenance: ${err.message}`] };
+    if (err instanceof ProvenanceError) return { issues: [`provenance: ${err.message}`] };
     throw err;
   }
 }

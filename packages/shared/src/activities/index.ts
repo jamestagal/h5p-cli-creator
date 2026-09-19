@@ -43,13 +43,21 @@ function items(spec: ActivitySpec): Array<{ id: string; provenance?: { evidenceI
   }
 }
 
+/** Thrown only by `assertGeneratedProvenance`, so callers can distinguish a provenance defect from any other error. */
+export class ProvenanceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProvenanceError";
+  }
+}
+
 /**
  * Generated content must be traceable: the activity and every item carry provenance with at least
  * one evidenceId. Throws naming the first offender. Never called for manually authored content.
  */
 export function assertGeneratedProvenance(spec: ActivitySpec): void {
-  if (!hasEvidence(spec.provenance)) throw new Error(`activity ${spec.id} has no evidence provenance`);
-  for (const item of items(spec)) if (!hasEvidence(item.provenance)) throw new Error(`item ${item.id} in activity ${spec.id} has no evidence provenance`);
+  if (!hasEvidence(spec.provenance)) throw new ProvenanceError(`activity ${spec.id} has no evidence provenance`);
+  for (const item of items(spec)) if (!hasEvidence(item.provenance)) throw new ProvenanceError(`item ${item.id} in activity ${spec.id} has no evidence provenance`);
   if (spec.type === "questionSet") spec.children.forEach(assertGeneratedProvenance);
   if (spec.type === "interactiveBook") for (const ch of spec.chapters) for (const it of ch.items) if (it.type !== "text" && it.type !== "image" && it.type !== "audio" && it.type !== "video") assertGeneratedProvenance(it);
 }

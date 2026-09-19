@@ -77,10 +77,10 @@ describe("blanks producer", () => {
     expect(produced.spec.provenance).toEqual({ conceptIds: ["c1", "c2"], evidenceIds: ["ev-s1", "ev-s3"], criteriaIds: ["PC2.1", "PC2.2"] });
   });
 
-  it("converts an assertGeneratedProvenance failure raised during conversion into a `provenance: ...` reason instead of throwing", () => {
+  it("converts a ProvenanceError raised during conversion into a `provenance: ...` reason instead of throwing", () => {
     // checkBlanks already rejects a blank with no cited evidence before conversion is ever attempted
     // in the live produce() flow, so this exercises tryConvert directly with a converter that raises
-    // the same plain Error assertGeneratedProvenance throws (see @leaplearn/shared's activities/index.ts).
+    // the ProvenanceError assertGeneratedProvenance throws (see @leaplearn/shared's activities/index.ts).
     const block = evidenceBlock(map, ["c1"]);
     const noEvidence: BlanksOut = { ...good, blanks: [{ ...good.blanks[0]!, evidenceIds: [] }, good.blanks[1]!] };
     const converted = tryConvert(() => toBlanksSpec(noEvidence, input, block));
@@ -88,5 +88,10 @@ describe("blanks producer", () => {
     if (!("issues" in converted)) throw new Error("expected issues");
     expect(converted.issues).toHaveLength(1);
     expect(converted.issues[0]).toMatch(/^provenance: item b1 in activity act-4 has no evidence provenance$/);
+  });
+
+  it("rethrows an error tryConvert does not recognize instead of swallowing it as a reason", () => {
+    expect(() => tryConvert(() => { throw new TypeError("boom"); })).toThrow(TypeError);
+    expect(() => tryConvert(() => { throw new TypeError("boom"); })).toThrow("boom");
   });
 });
