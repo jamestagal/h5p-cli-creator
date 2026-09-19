@@ -1,4 +1,4 @@
-import type { Concept, Evidence } from "@leaplearn/shared";
+import { CONCEPT_NAME_MAX, CONCEPT_SUMMARY_MAX, type Concept, type Evidence } from "@leaplearn/shared";
 import { modelForRole } from "../llm/models.js";
 import type { StageRunner } from "../llm/runner.js";
 import { MergeOut, MergeOutSchema } from "../schemas/model-output.js";
@@ -23,10 +23,18 @@ export async function mergeConcepts(chunkConcepts: ChunkConcept[][], runner: Sta
     schema: MergeOut,
     verify: (out) => {
       const issues: string[] = []; const seen = new Set<string>();
-      for (const c of out.concepts) for (const id of c.memberIds) {
-        if (!ids.has(id)) issues.push(`memberIds contains unknown id ${id}`);
-        else if (seen.has(id)) issues.push(`id ${id} is assigned to more than one concept`);
-        seen.add(id);
+      for (const c of out.concepts) {
+        const label = c.name.trim() || "(unnamed concept)";
+        if (c.memberIds.length === 0) issues.push(`concept "${label}" has no memberIds; merge its members into an existing concept or drop it`);
+        if (!c.name.trim()) issues.push("a concept has an empty name");
+        else if (c.name.trim().length > CONCEPT_NAME_MAX) issues.push(`concept "${label}" name is longer than ${CONCEPT_NAME_MAX} characters`);
+        if (!c.summary.trim()) issues.push(`concept "${label}" has an empty summary`);
+        else if (c.summary.trim().length > CONCEPT_SUMMARY_MAX) issues.push(`concept "${label}" summary is longer than ${CONCEPT_SUMMARY_MAX} characters`);
+        for (const id of c.memberIds) {
+          if (!ids.has(id)) issues.push(`memberIds contains unknown id ${id}`);
+          else if (seen.has(id)) issues.push(`id ${id} is assigned to more than one concept`);
+          seen.add(id);
+        }
       }
       for (const id of ids) if (!seen.has(id)) issues.push(`id ${id} was not assigned to any concept`);
       return issues;

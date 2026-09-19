@@ -1,4 +1,4 @@
-import type { Evidence } from "@leaplearn/shared";
+import { CONCEPT_NAME_MAX, CONCEPT_SUMMARY_MAX, type Evidence } from "@leaplearn/shared";
 import type { SourceDocument } from "../ingest/source-document.js";
 import { modelForRole } from "../llm/models.js";
 import type { StageRunner } from "../llm/runner.js";
@@ -28,9 +28,13 @@ export async function extractChunkConcepts(doc: SourceDocument, chunk: Chunk, ru
       if (out.concepts.length === 0) issues.push("no concepts were returned; return at least one concept supported by the evidence");
       if (out.concepts.length > max) issues.push(`${out.concepts.length} concepts returned; at most ${max}`);
       out.concepts.forEach((c, i) => {
+        const label = c.name.trim() || `concept ${i + 1}`;
         if (!c.name.trim()) issues.push(`concept ${i + 1} has an empty name`);
-        if (c.sentenceIds.length === 0) issues.push(`concept "${c.name}" cites no sentences`);
-        for (const id of c.sentenceIds) if (!allowed.has(id)) issues.push(`concept "${c.name}" cites ${id}, which is not in the evidence list`);
+        else if (c.name.trim().length > CONCEPT_NAME_MAX) issues.push(`concept "${label}" name is longer than ${CONCEPT_NAME_MAX} characters`);
+        if (!c.summary.trim()) issues.push(`concept "${label}" has an empty summary`);
+        else if (c.summary.trim().length > CONCEPT_SUMMARY_MAX) issues.push(`concept "${label}" summary is longer than ${CONCEPT_SUMMARY_MAX} characters`);
+        if (c.sentenceIds.length === 0) issues.push(`concept "${label}" cites no sentences`);
+        for (const id of c.sentenceIds) if (!allowed.has(id)) issues.push(`concept "${label}" cites ${id}, which is not in the evidence list`);
       });
       return issues;
     }

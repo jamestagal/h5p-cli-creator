@@ -9,10 +9,13 @@ export const Evidence = z.object({
   quote: z.string().min(1)
 }).refine((e) => e.charEnd > e.charStart, { message: "charEnd must be greater than charStart", path: ["charEnd"] });
 
+export const CONCEPT_NAME_MAX = 120;
+export const CONCEPT_SUMMARY_MAX = 600;
+
 export const Concept = z.object({
   conceptId: z.string().min(1),
-  name: z.string().min(1).max(120),
-  summary: z.string().min(1).max(600),
+  name: z.string().min(1).max(CONCEPT_NAME_MAX),
+  summary: z.string().min(1).max(CONCEPT_SUMMARY_MAX),
   evidence: z.array(Evidence).min(1)
 });
 

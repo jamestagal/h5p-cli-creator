@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { ingestMarkdown } from "../src/ingest/index.js";
-import { chunkSentences, extractConceptMap, verifyEvidence, evidenceForSentence } from "../src/concepts/index.js";
+import { ingestMarkdown, ingestText } from "../src/ingest/index.js";
+import { alignConcepts, chunkSentences, extractConceptMap, MAX_ALIGN_QUOTES, verifyEvidence, evidenceForSentence } from "../src/concepts/index.js";
 import { createRunner } from "../src/llm/runner.js";
 import { FakeProvider, fakeResponse } from "../src/llm/fake-provider.js";
 import { createBudget } from "../src/llm/budget.js";
-import { criteriaOf, type UnitOfCompetency } from "@leaplearn/shared";
+import { criteriaOf, type Concept, type UnitOfCompetency } from "@leaplearn/shared";
 import type { AttemptEvent, AttemptRecorder } from "../src/llm/types.js";
 import type { SourceDocument } from "../src/ingest/index.js";
 import { SYNTHETIC_CHUNK_TOKENS } from "./helpers/synthetic.js";
@@ -105,5 +105,73 @@ describe("extractConceptMap", () => {
     const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op", sleep: async () => undefined });
     await expect(extractConceptMap(doc, null, runner, { chunkTokens: 6000 })).rejects.toMatchObject({ name: "ContentFailure" });
     expect(provider.requests[1]?.user).toContain("s99");
+  });
+  it("skips the merge call for a single chunk and numbers concepts c1... in encounter order", async () => {
+    const doc = await ingestText("Sentence one here. Sentence two here.", { sourceId: "src" });
+    const s1 = sid(doc, "Sentence one");
+    const s2 = sid(doc, "Sentence two");
+    const out = { concepts: [
+      { name: "First idea", summary: "About sentence one.", sentenceIds: [s1] },
+      { name: "Second idea", summary: "About sentence two.", sentenceIds: [s2] }
+    ] };
+    const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(out) })]);
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-single", sleep: async () => undefined });
+    const map = await extractConceptMap(doc, null, runner, { chunkTokens: 6000 });
+    expect(provider.requests).toHaveLength(1);
+    expect(provider.requests[0]?.purpose).toBe("extract");
+    expect(map.concepts.map((c) => c.conceptId)).toEqual(["c1", "c2"]);
+  });
+  it("omits the alignment key entirely when no unit is supplied", async () => {
+    const doc = await ingestText("Only sentence here.", { sourceId: "src" });
+    const s1 = sid(doc, "Only sentence");
+    const out = { concepts: [{ name: "Idea", summary: "About the sentence.", sentenceIds: [s1] }] };
+    const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(out) })]);
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-no-unit", sleep: async () => undefined });
+    const map = await extractConceptMap(doc, null, runner, { chunkTokens: 6000 });
+    expect("alignment" in map).toBe(false);
+  });
+  it("rejects a merge reply that adds an extra members-less concept as a content failure", async () => {
+    const doc = await ingestText("Sentence one here. Sentence two here.", { sourceId: "src" });
+    const s1 = sid(doc, "Sentence one");
+    const s2 = sid(doc, "Sentence two");
+    const extract1 = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "First idea", summary: "About sentence one.", sentenceIds: [s1] }] }) });
+    const extract2 = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "Second idea", summary: "About sentence two.", sentenceIds: [s2] }] }) });
+    const badMerge = fakeResponse({ outputText: JSON.stringify({ concepts: [
+      { name: "First idea", summary: "About sentence one.", memberIds: ["k0-0"] },
+      { name: "Second idea", summary: "About sentence two.", memberIds: ["k1-0"] },
+      { name: "Extra empty concept", summary: "Should not exist.", memberIds: [] }
+    ] }) });
+    const provider = new FakeProvider([extract1, extract2, badMerge, badMerge, badMerge]);
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-merge-bad", sleep: async () => undefined });
+    await expect(extractConceptMap(doc, null, runner, { chunkTokens: 10 })).rejects.toMatchObject({ name: "ContentFailure", reasons: expect.arrayContaining([expect.stringContaining("Extra empty concept")]) });
+  });
+  it("rejects an extract reply with an empty summary as a content failure", async () => {
+    const doc = await ingestText("Only sentence here.", { sourceId: "src" });
+    const s1 = sid(doc, "Only sentence");
+    const bad = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "Idea", summary: "", sentenceIds: [s1] }] }) });
+    const provider = new FakeProvider([bad, bad, bad]);
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-extract-bad", sleep: async () => undefined });
+    await expect(extractConceptMap(doc, null, runner, { chunkTokens: 6000 })).rejects.toMatchObject({ name: "ContentFailure", reasons: expect.arrayContaining([expect.stringContaining("summary")]) });
+  });
+});
+
+describe("alignConcepts evidence quotes", () => {
+  it("shows at most MAX_ALIGN_QUOTES evidence quotes per concept and counts the remainder", async () => {
+    const doc = await ingestText(Array.from({ length: 10 }, (_, i) => `Sentence number ${i + 1} here.`).join(" "), { sourceId: "src" });
+    expect(doc.sentences).toHaveLength(10);
+    const evidence = doc.sentences.map((s) => evidenceForSentence(doc, s.sentenceId));
+    const concept: Concept = { conceptId: "c1", name: "Many sentences", summary: "Ten sentences of evidence.", evidence };
+    const soloUnit: UnitOfCompetency = {
+      code: "TESTU", title: "Test unit", textHash: "1".repeat(64), knowledgeEvidence: [], performanceEvidence: [],
+      elements: [{ id: "E1", number: "1", text: "Element", performanceCriteria: [{ id: "PC1.1", number: "1.1", text: "Some criterion" }] }]
+    };
+    const alignOut = { criteria: [{ criterionId: "PC1.1", conceptIds: ["c1"] }] };
+    const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(alignOut) })]);
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-align-quotes", sleep: async () => undefined });
+    await alignConcepts([concept], soloUnit, runner);
+    const request = provider.requests[0]!;
+    const quoteLines = request.user.match(/\[ev-/g) ?? [];
+    expect(quoteLines).toHaveLength(MAX_ALIGN_QUOTES);
+    expect(request.user).toContain(`(${evidence.length - MAX_ALIGN_QUOTES} more sentences not shown)`);
   });
 });
