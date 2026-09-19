@@ -1,0 +1,85 @@
+/*
+ * LeapLearn import wizard — proposed reference tokens, 2026-09-19.
+ * Companion: 2026-09-19-smart-import-ui-reference.md
+ * Values are visual estimates/design proposals, NOT extracted H5P CSS.
+ * No runtime import exists yet. State/accessibility verification belongs to the UI phase.
+ */
+:root {
+  --ll-color-surface: #ffffff;
+  --ll-color-surface-subtle: #fafbff;
+  --ll-color-surface-card: #f2f3ff;
+  --ll-color-surface-hover: #ecefff;
+  --ll-color-surface-selected: #e5eaff;
+  --ll-color-text-strong: #111827;
+  --ll-color-text: #374151;
+  --ll-color-text-muted: #5f6878;
+  --ll-color-border: #dfe3ec;
+  --ll-color-border-control: #7b8492;
+  --ll-color-border-dropzone: #9ca3af;
+  --ll-color-accent: #1b6aff;
+  --ll-color-primary: #1d4ed8;
+  --ll-color-primary-hover: #1e40af;
+  --ll-color-on-primary: #ffffff;
+  --ll-color-link: #1d4ed8;
+  --ll-color-focus: #1d4ed8;
+  --ll-color-disabled-bg: #e5e7eb;
+  --ll-color-disabled-text: #6b7280;
+  --ll-color-success: #166534;
+  --ll-color-success-bg: #f0fdf4;
+  --ll-color-warning: #92400e;
+  --ll-color-warning-bg: #fffbeb;
+  --ll-color-error: #b91c1c;
+  --ll-color-error-bg: #fef2f2;
+  --ll-color-overlay: rgb(17 24 39 / 48%);
+
+  --ll-font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --ll-font-size-helper: 0.875rem;
+  --ll-font-size-body: 1rem;
+  --ll-font-size-card-title: 1.125rem;
+  --ll-font-size-section-title: 1.25rem;
+  --ll-font-size-dialog-title: 1.75rem;
+  --ll-font-weight-regular: 400;
+  --ll-font-weight-semibold: 600;
+  --ll-font-weight-bold: 700;
+  --ll-line-height-body: 1.5;
+  --ll-line-height-heading: 1.2;
+
+  --ll-space-1: 0.25rem;
+  --ll-space-2: 0.5rem;
+  --ll-space-3: 0.75rem;
+  --ll-space-4: 1rem;
+  --ll-space-6: 1.5rem;
+  --ll-space-8: 2rem;
+  --ll-space-12: 3rem;
+  --ll-space-16: 4rem;
+  --ll-radius-control: 0.375rem;
+  --ll-radius-tile: 1rem;
+  --ll-radius-dialog: 0.75rem;
+  --ll-border-width: 1px;
+  --ll-selection-border-width: 2px;
+  --ll-focus-width: 3px;
+  --ll-focus-offset: 3px;
+  --ll-shadow-dialog: 0 16px 48px rgb(17 24 39 / 20%);
+
+  --ll-target-min: 2.75rem;
+  --ll-field-min-height: 3rem;
+  --ll-textarea-min-height: 9rem;
+  --ll-source-tile-min-height: 7.5rem;
+  --ll-activity-card-padding: 1.5rem;
+  --ll-source-icon-size: 2rem;
+  --ll-activity-icon-size: 2.5rem;
+  --ll-checkbox-size: 1.25rem;
+  --ll-step-size: 2.75rem;
+  --ll-dialog-max-width: 75rem;
+  --ll-dialog-viewport-gap: 1rem;
+  --ll-dialog-body-padding: 2rem;
+  --ll-footer-padding: 1.5rem;
+  --ll-duration-feedback: 120ms;
+  --ll-ease-feedback: ease-out;
+}
+
+/* Apply feedback duration to color/border changes only; no layout animation is implied. */
+@media (prefers-reduced-motion: reduce) {
+  :root { --ll-duration-feedback: 0ms; }
+}
