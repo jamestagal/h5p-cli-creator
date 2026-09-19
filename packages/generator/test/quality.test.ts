@@ -64,7 +64,7 @@ describe("quality checks", () => {
     expect(checkFlashcards({ ...ok, cards: ok.cards.slice(0, 3) }, 4, 12)).toContain("between 4 and 12 cards are required");
     expect(checkFlashcards({ ...ok, cards: [...ok.cards.slice(0, 3), card("spanner", "x")] }, 4, 12)).toContain("card 4 duplicates another card's front");
     expect(checkFlashcards({ ...ok, cards: [...ok.cards.slice(0, 3), card("Same", "same")] }, 4, 12)).toContain("card 4 back must differ from its front");
-    expect(checkFlashcards({ ...ok, description: "" }, 4, 12)).toContain("description is empty");
+    expect(checkFlashcards({ ...ok, description: "" }, 4, 12)).toEqual([]);
     expect(checkFlashcards({ ...ok, description: "**Tool** basics" }, 4, 12)).toContain("description contains markdown markers");
   });
 });

@@ -104,7 +104,7 @@ export function checkBlanks(out: BlanksOut, evidenceTextFor: (evidenceIds: strin
 }
 
 export function checkFlashcards(out: FlashcardsOut, min: number, max: number): string[] {
-  const issues = [...checkPlainText(out.title, "title"), ...checkPlainText(out.description, "description")];
+  const issues = [...checkPlainText(out.title, "title"), ...(out.description.trim() ? checkPlainText(out.description, "description") : [])];
   if (out.cards.length < min || out.cards.length > max) issues.push(`between ${min} and ${max} cards are required`);
   const fronts = new Set<string>();
   out.cards.forEach((c, i) => {

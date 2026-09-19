@@ -56,4 +56,11 @@ describe("flashcards producer", () => {
     expect(provider.requests[1]?.user).toContain("between 4 and 12 cards are required");
     expect(provider.requests[2]?.user).toContain("duplicates another card's front");
   });
+  it("treats an empty description as absent: passes verify on the first attempt and omits the key", async () => {
+    const noDescription = { ...good, description: "" };
+    const { runner } = mk([fakeResponse({ outputText: JSON.stringify(noDescription) })]);
+    const produced = await createProducers().get("flashcards")!.produce({ ...input, plan: { ...input.plan, activityId: "act-7", type: "flashcards" } }, runner, { registry });
+    expect(produced.attempts).toBe(1);
+    expect(produced.spec).not.toHaveProperty("description");
+  });
 });

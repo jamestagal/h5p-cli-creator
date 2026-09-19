@@ -1,4 +1,4 @@
-import { ActivitySpec, type FlashcardsSpec } from "@leaplearn/shared";
+import { ActivitySpec, assertGeneratedProvenance, type FlashcardsSpec } from "@leaplearn/shared";
 import { modelForRole } from "../llm/models.js";
 import type { StageRunner } from "../llm/runner.js";
 import { buildSystemPrompt } from "../prompts/system.js";
@@ -19,7 +19,9 @@ export function toFlashcardsSpec(out: FlashcardsOut, input: ProduceInput, block:
   });
   const spec: Record<string, unknown> = { id: input.plan.activityId, title: out.title.trim(), type: "flashcards", language: input.language, cards, provenance: deriveProvenance(input, block, out.cards.flatMap((c) => c.evidenceIds)) };
   if (out.description.trim()) spec["description"] = out.description.trim();
-  return ActivitySpec.parse(spec) as FlashcardsSpec;
+  const parsed = ActivitySpec.parse(spec) as FlashcardsSpec;
+  assertGeneratedProvenance(parsed);
+  return parsed;
 }
 
 export const flashcardsProducer: Producer = {
