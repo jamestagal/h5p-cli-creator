@@ -25,7 +25,7 @@ Use `pnpm` (not `npm`) for every command in this repo. `pnpm verify` runs build,
 test and the engine's Playwright smoke suite in one shot, and assumes you've already run
 `pnpm install --frozen-lockfile`.
 
-## `leap generate`
+## Generate activities
 
 Generates `multiChoice`, `blanks` and `flashcards` activities from a source document (`.pdf`, `.md`
 or `.txt`) and an optional unit of competency, compiles each one to `.h5p`, and writes a mapping
@@ -35,6 +35,20 @@ table and a cost report:
 node apps/cli/dist/index.js generate \
   --source ./course-notes.md --unit ./SYNELE001.txt --out ./out/synele001
 ```
+
+The reproducible demo run, over the labelled synthetic fixtures, recording every response so the
+end-to-end test can replay it offline:
+
+```bash
+node --env-file=.env apps/cli/dist/index.js generate \
+  --source packages/generator/test/fixtures/synthetic/source-electrical-safety.pdf \
+  --unit packages/generator/test/fixtures/synthetic/unit-synele001.txt \
+  --out /tmp/leap-demo --budget-usd 2 \
+  --provider record --fixtures packages/generator/test/fixtures/replay/synthetic
+```
+
+`ANTHROPIC_API_KEY` comes from the gitignored root `.env` (`node --env-file`), never from a
+command line and never from an exported shell variable.
 
 `--out` is the import store as well as the output directory: rerunning the same command resumes the
 same import (the import id is a slug of the directory name) rather than starting a new one. Four
@@ -63,6 +77,68 @@ the race the tombstone exists to close. They are one small directory per dead lo
 ```bash
 rm -rf ./out/synele001/lock.stale-*
 ```
+
+### Offline and recorded runs: `--provider replay|record`
+
+`--provider` chooses where model responses come from, and `--fixtures <dir>` is required for both
+offline modes:
+
+- `anthropic` (the default) calls the API.
+- `record` calls the API and writes each response to the fixture directory, keyed by a hash of the
+  request (model, system prompt, cached context, user text, output schema, output allowance).
+- `replay` serves responses from the fixture directory and makes no network call at all. A request
+  with no recording fails with a `ReplayMissError` that names the purpose, rather than falling back
+  to the API.
+
+Replay is byte-exact only while the prompts are identical to the recorded run: the same fixture
+bytes, the same `PROMPT_VERSION`, the same model ids and the same request profiles. Any prompt
+change means re-recording. `pnpm verify` never calls the API — its tests use hand-authored fake
+responses or these recorded fixtures.
+
+### The only outbound fetch
+
+`safeFetch` in `packages/generator` is the single outbound HTTP path in application code (the new
+CLI reaches it only when resolving `http(s)` image URLs, under `leap flashcards --allow-network`).
+Every hop resolves the host itself, classifies every address after IPv6 normalisation, and connects
+through an agent pinned to the validated address, so the name is never resolved a second time;
+private, loopback, link-local, multicast and metadata addresses are refused, redirects are re-checked
+and capped, and one deadline covers DNS, every hop and the body.
+
+Its `unsafeAllowAddresses?: string[]` option is a **test-only exact-address allowance** for a
+loopback test server; never set it in application code. An address passes only when it matches one of
+the listed strings exactly, before any IPv6 or embedded-IPv4 canonicalisation, so allow-listing
+`127.0.0.1` does not also permit `::ffff:7f00:1`. The metadata address, and any IPv6 embedding of it,
+stays blocked unconditionally even when listed.
+
+### Recording a review decision: `leap review`
+
+A human judgement about a promoted activity is a record, not an edit. `leap review` writes it against
+the activity's **current promoted revision** (a new revision starts with no reviews), then rewrites
+`mapping.csv` and `cost.json`:
+
+```bash
+# accept or reject the activity itself
+node apps/cli/dist/index.js review --out ./out/synele001 \
+  --activity act-1 --reviewer "$USER" --decision accepted --notes "answers check out"
+
+# confirm, reject or add a suggested criterion mapping (optionally for one item)
+node apps/cli/dist/index.js review --out ./out/synele001 \
+  --activity act-4 --reviewer "$USER" --criterion PC2.2 --alignment confirmed --item b1
+```
+
+A `mapping.csv` row says `suggested` until a review exists for it, then `confirmed`, `rejected` or
+`added`. Acceptances drive the cost report's accepted count and cost per accepted activity. `review`
+takes the same directory lock as `generate`, so it refuses to run while a generation is in progress.
+
+### Exit codes
+
+| Code | `leap generate` | `leap review` |
+|---|---|---|
+| `0` | every planned activity was promoted (`ready`) | the decision was recorded |
+| `2` | some activities were promoted and some failed (`ready_with_failures`); the per-activity lines name each failure and its reason | — |
+| `1` | nothing was promoted, or the run was refused: the directory is locked by another `leap` process, the inputs no longer match the import's fingerprint, or an argument was rejected | the import, activity, revision or criterion named does not exist, the activity has no promoted revision, or the directory is locked |
+
+A `2` is a real result to read, not a crash: the failed activities carry a reason (`content:`, `budget:`, `system:` or `skipped:`), and rerunning the same command resumes the import and re-dispatches everything except the `content:` failures.
 
 ## Handler-Based Architecture
 

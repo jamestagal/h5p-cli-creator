@@ -1983,8 +1983,8 @@ Answers review finding 6. The owner's rule: SSRF protection is implemented and t
 - Test: `packages/generator/test/safe-fetch.test.ts`, `apps/cli/test/image-resolver.test.ts` (adjust)
 
 **Interfaces:**
-- Produces: `safeFetch(url: string, options?: SafeFetchOptions): Promise<SafeFetchResult>` with `SafeFetchOptions = { maxRedirects?: number (5); maxBytes?: number (10 MiB); timeoutMs?: number (15 000, one total deadline covering DNS, every hop and the body); allowedContentTypes?: string[]; lookup?: (hostname) => Promise<string[]>; unsafeAllowPrivateNetworks?: boolean (false; test-only) }`, `SafeFetchResult = { status: number; contentType: string | null; body: Buffer; finalUrl: string; connectedAddress: string }`; `parseIPv6(ip): number[] | null` (eight 16-bit groups; accepts an embedded dotted IPv4 tail and surrounding brackets); `embeddedIPv4(groups): string | null` (mapped `::ffff:0:0/96`, compatible `::/96`, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`); `isBlockedAddress(ip: string): boolean` (IPv4: `0.0.0.0/8`, `10/8`, `100.64/10`, `127/8`, `169.254/16`, `172.16/12`, `192.168/16`, `224/4`, `240/4`; IPv6: unspecified, loopback, `fc00::/7`, `fe80::/10`, `ff00::/8`, any embedded IPv4 checked as IPv4; anything unparsable is blocked); `SafeFetchError` with `reason: "scheme" | "blocked_address" | "dns" | "too_many_redirects" | "redirect_target" | "timeout" | "too_large" | "content_type" | "http"`.
-- Rules: only `http:` and `https:`; the hostname is resolved by the injected `lookup` or `dns.promises.lookup(host, { all: true })` within the deadline; every address must pass (an IP-literal host is checked directly; the metadata address is blocked even under `unsafeAllowPrivateNetworks`); the request is sent through an undici `Agent` whose `connect.lookup` returns the first validated address, so the socket can only reach that address; `redirect: "manual"`; each `Location` is resolved against the current URL, re-validated and counted; the body is read incrementally and aborted past `maxBytes`; the agent is closed after the hop.
+- Produces: `safeFetch(url: string, options?: SafeFetchOptions): Promise<SafeFetchResult>` with `SafeFetchOptions = { maxRedirects?: number (5); maxBytes?: number (10 MiB); timeoutMs?: number (15 000, one total deadline covering DNS, every hop and the body); allowedContentTypes?: string[]; lookup?: (hostname) => Promise<string[]>; unsafeAllowAddresses?: string[] (test-only exact-address allowance; the metadata address is blocked unconditionally) }`, `SafeFetchResult = { status: number; contentType: string | null; body: Buffer; finalUrl: string; connectedAddress: string }`; `parseIPv6(ip): number[] | null` (eight 16-bit groups; accepts an embedded dotted IPv4 tail and surrounding brackets); `embeddedIPv4(groups): string | null` (mapped `::ffff:0:0/96`, compatible `::/96`, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`); `isBlockedAddress(ip: string): boolean` (IPv4: `0.0.0.0/8`, `10/8`, `100.64/10`, `127/8`, `169.254/16`, `172.16/12`, `192.168/16`, `224/4`, `240/4`; IPv6: unspecified, loopback, `fc00::/7`, `fe80::/10`, `ff00::/8`, any embedded IPv4 checked as IPv4; anything unparsable is blocked); `SafeFetchError` with `reason: "scheme" | "blocked_address" | "dns" | "too_many_redirects" | "redirect_target" | "timeout" | "too_large" | "content_type" | "http"`.
+- Rules: only `http:` and `https:`; the hostname is resolved by the injected `lookup` or `dns.promises.lookup(host, { all: true })` within the deadline; every address must pass (an IP-literal host is checked directly; the metadata address is blocked unconditionally, whatever `unsafeAllowAddresses` lists); the request is sent through an undici `Agent` whose `connect.lookup` returns the first validated address, so the socket can only reach that address; `redirect: "manual"`; each `Location` is resolved against the current URL, re-validated and counted; the body is read incrementally and aborted past `maxBytes`; the agent is closed after the hop.
 
 - [ ] **Step 1: Failing tests**
 
@@ -2044,7 +2044,7 @@ describe("address classification", () => {
 });
 
 describe("safeFetch", () => {
-  const allow = { unsafeAllowPrivateNetworks: true };
+  const allow = { unsafeAllowAddresses: ["127.0.0.1"] };
   it("rejects non-http schemes and loopback targets by default", async () => {
     await expect(safeFetch("file:///etc/passwd")).rejects.toMatchObject({ reason: "scheme" });
     await expect(safeFetch(`${base}/ok`)).rejects.toMatchObject({ reason: "blocked_address" });
@@ -2084,7 +2084,7 @@ describe("safeFetch", () => {
   });
 });
 ```
-`/mapped` proves normalisation: the redirect target `http://[::ffff:127.0.0.1]/ok` becomes `[::ffff:7f00:1]` inside `URL`, and the guard must still see loopback (the earlier dotted-only regex did not). The metadata redirect relies on `169.254.169.254` being blocked even when `unsafeAllowPrivateNetworks` is true (a separate rule, implemented below).
+`/mapped` proves normalisation: the redirect target `http://[::ffff:127.0.0.1]/ok` becomes `[::ffff:7f00:1]` inside `URL`, and the guard must still see loopback (the earlier dotted-only regex did not). The metadata redirect relies on `169.254.169.254` being blocked unconditionally, whatever `unsafeAllowAddresses` lists (a separate rule, implemented below).
 
 - [ ] **Step 2: Run to see them fail**, then implement.
 
@@ -2107,8 +2107,13 @@ export interface SafeFetchOptions {
   timeoutMs?: number;
   allowedContentTypes?: string[];
   lookup?: (hostname: string) => Promise<string[]>;
-  /** Test-only escape hatch (a loopback test server); never set it in application code. The metadata address stays blocked. */
-  unsafeAllowPrivateNetworks?: boolean;
+  /**
+   * Test-only escape hatch (a loopback test server); never set it in application code. An address passes only
+   * when it exactly matches one of these strings, before any IPv6/embedded-IPv4 canonicalisation, so an
+   * allow-listed "127.0.0.1" does not also permit "::ffff:7f00:1". The metadata address (and any IPv6
+   * embedding of it) stays blocked unconditionally even if listed.
+   */
+  unsafeAllowAddresses?: string[];
 }
 export interface SafeFetchResult { status: number; contentType: string | null; body: Buffer; finalUrl: string; connectedAddress: string; }
 
@@ -2224,8 +2229,11 @@ async function resolveAllowed(url: URL, options: SafeFetchOptions, deadline: Dea
   }
   for (const a of addresses) {
     if (isMetadata(a)) throw new SafeFetchError(`${host} resolves to the metadata address`, reason);
-    if (!options.unsafeAllowPrivateNetworks && isBlockedAddress(a)) throw new SafeFetchError(`${host} resolves to a blocked address ${a}`, reason);
-    if (options.unsafeAllowPrivateNetworks && !isIPv4(a) && !parseIPv6(a)) throw new SafeFetchError(`${host} resolves to an unparsable address ${a}`, reason);
+    // Exact-string match against the un-canonicalised address, before isBlockedAddress applies any
+    // IPv6/embedded-IPv4 canonicalisation: an allow-listed "127.0.0.1" must not also permit
+    // "::ffff:7f00:1" (the same address in IPv4-mapped IPv6 form), which is a distinct string.
+    const explicitlyAllowed = options.unsafeAllowAddresses?.includes(a) ?? false;
+    if (!explicitlyAllowed && isBlockedAddress(a)) throw new SafeFetchError(`${host} resolves to a blocked address ${a}`, reason);
   }
   return addresses[0]!;
 }
@@ -6261,7 +6269,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 | Check | Where |
 |---|---|
 | Error classification is the first commit of the phase, and the old thrown-validation assertions are gone | `git log --reverse` shows Task 1's commit before any `packages/generator` commit; `grep -n "ZodError" packages/engine/test/determinism.test.ts` prints nothing |
-| SSRF guard tested and wired before any fetch | Task 6's commit precedes Task 15's CLI; `grep -rn "fetch(" apps/cli/src packages/generator/src` shows only `safe-fetch.ts`; the pinning test reaches `pinned.test` only through the injected lookup |
+| SSRF guard tested and wired before any fetch | Task 6's commit precedes Task 15's CLI; `grep -rnE "(^\|[^A-Za-z])fetch\(" apps/cli/src packages/generator/src` prints nothing (the word boundary is needed because a literal `fetch(` would also match a wrapper call; both the wrapper `safeFetch(` and the aliased import `undiciFetch(` capitalise the F, so neither form matches either); `grep -rnE 'from "(undici\|node:http\|node:https)"' apps/cli/src packages/generator/src` shows only `net/safe-fetch.ts`, so it is the one place that can open a connection; the pinning test reaches `pinned.test` only through the injected lookup |
 | Review finding 1 (Sonnet 5 request shape, schema projection) | `test/anthropic-provider.test.ts` (no sampling key, `thinking: disabled`), `test/model-output.test.ts` (all eight real schemas) |
 | Review finding 2 (SDK retries) | `test/anthropic-provider.test.ts` asserts `maxRetries: 0`; `test/runner.test.ts` asserts two starts, two outcomes, two reservations |
 | Review finding 3 (four limits reserved before dispatch) | `test/cost.test.ts` (no split of the same totals costs more than the reservation for a given count), `test/budget.test.ts` (each limit refused by name); the caps' estimated nature is stated where they are defined and the per-attempt underestimate is recorded (see the revision-2 rows below) |
@@ -6300,3 +6308,10 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - **Budget semantics:** spec §4 lists four budget quantities without saying which can be enforced exactly. In phase 2 the request count and the elapsed time (per import, accumulated across runs) are hard limits; spend and tokens are estimated caps, because no local tokenizer for Sonnet 5 exists and the provider charges before the ledger can know the real count. The reservation uses 0.5 tokens per character plus a fixed overhead allowance as calibration constants; every attempt records its reservation underestimate, the report states spend over the cap as a separate figure, and the demo reports both. The `count_tokens` endpoint (one extra request per attempt) is the phase-5 route to exact reservations if the recorded overshoot is material.
 - **Review and acceptance:** the records exist from phase 2 and are written from the CLI; the review screen arrives in phase 5. `mapping.csv` says `suggested` until a review exists for the row. The demo's single acceptance is a plumbing check, not the phase-3 gate.
 - **Credential owner:** every attempt records `credentialOwner: "server"`; per-org keys (§9) arrive with accounts in phase 5.
+- **Where retries live:** spec §5 describes retry behaviour around the model call; in phase 2 `callModel` never retries. It reserves, records a start, dispatches once and records an outcome. The stage runner owns every retry, so each one is a separate attempt with its own reservation, start and outcome, sharing the logical call's `callKey` and carrying a `retryIndex`.
+- **`checkMultiChoice` is stricter than the spec:** spec §3 asks option-based types to have *at least one* correct answer; phase 2 requires **exactly one**, because the `multiChoice` producer emits a single-answer question and H5P scores it that way. Multi-answer option types arrive with the remaining producers in phase 4.
+- **Produce concurrency:** spec §3 gives a default concurrency of 4; phase 2 defaults to **3** and the unit of concurrency is a type lane, not an activity — one serial lane per selected type, at most three lanes at once (`--concurrency`). The lane structure is what makes the near-duplicate check exact, so the number is a consequence of the three phase-2 types rather than a tuned figure.
+- **`billingUncertain` placement:** spec §4 lists `billing_uncertain` on `generation_attempts`; phase 2 records it on the `OperationRecord` instead. Reconciliation discovers a start with no outcome and cannot know whether the provider billed it, so the uncertainty belongs to the operation that must be re-run, and the attempt rows stay immutable events that are never rewritten after the fact.
+- **`currentRun` on the import record:** not in the §4 column list. A run anchor (`startedAt`, `elapsedBeforeMs`) is persisted on the import before the first dispatch and cleared when the run ends, so a killed run's elapsed time can be charged conservatively on resume instead of being given back. Phase 5 needs the same two columns on `imports`.
+- **No preview extraction on build:** §4's `activity_revisions.preview_key` stays unused in phase 2. The CLI writes the `.h5p` to `builds/` and records a `buildKey`; the separate-origin preview arrives with the web app in phase 5.
+- **Six model roles, not three:** spec §3 names `extract`, `produce` and `parseUnit`. `models.ts` keys six roles — `parseUnit`, `extract`, `merge`, `align`, `plan`, `produce` — because merging, alignment and planning are their own calls with their own schemas and cost lines. All six remain provisional until the phase-3 gate.
