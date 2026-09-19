@@ -25,8 +25,8 @@
 | Model output schemas vs activity schemas | Separate "model output" Zod schemas with no optionals/defaults/refinements (nullable where needed); code converts them to `ActivitySpec`, assigns ids, attaches provenance, then the full spec parse and the engine validator run | JSON Schema cannot carry refinements; ids are assigned in code (spec §2.2); keeps prompts and cache prefixes stable |
 | Web-page ingestion | Deferred to phase 5 (where the server exists); phase 2 ingests text, markdown and PDF text layers | Owner scope for phase 2; the SSRF guard is built now and wired into the only fetch that exists (`apps/cli` image resolver) |
 | Prompt caching | 5-minute ephemeral caching on the system block and the concept-map context block; cache writes priced at the 5-minute rate | Sonnet 5 needs ≥1,024 tokens in the cached prefix, Haiku 4.5 ≥4,096; below that the API silently does not cache, and `cache_read_input_tokens` shows whether it did |
-| Budget: what is hard and what is estimated | **Requests and elapsed time are hard limits:** the request count is exact, and the elapsed limit is a per-import deadline (accumulated across runs in `budgetUsed.elapsedMs`) that is checked before every dispatch and every backoff wait and passed to the adapter as the SDK timeout, so no attempt can outlive it. **Spend and tokens are estimated caps:** the reservation counts input tokens as `ceil(0.5 × characters)` of system + cached context + user + the serialised output schema plus a fixed overhead allowance, prices them at the 5-minute cache-write rate and output at `max_tokens`; dispatch is refused once spent + reserved would cross the cap, but an attempt whose real token count exceeds its estimate is charged by the provider before the ledger can know, so the cap can be overshot by at most the underestimate of the attempts in flight. Every outcome records `reservationExceeded` and `underestimateUsdMicro`; the report and the demo total them | The honest description the review asked for. No local tokenizer for Sonnet 5 exists; the `count_tokens` endpoint would give exact counts at the price of one extra request per attempt and is the phase-5 upgrade path if the recorded overshoot is ever material. The pricing-split test proves the rate arithmetic never under-reserves for a given count; it does not, and cannot, prove the count |
-| Resume identity and exclusivity | Every import record stores an immutable `fingerprint` (source text hash, unit text hash, selected types, language, prompt config, chunk budget, plan rules, prompt version, model roles, schema version); the lock is taken first, the import is read and its fingerprint checked **under the lock**, and a mismatch is refused before any write. The lock is a directory lock (`lock/` created with an atomic `mkdir`, an `owner.json` with a random token). Only a **dead local owner** is reclaimed: a live local pid is never reclaimed however old the lock, and a lock from another host is refused with instructions. Reclamation renames the dead lock to a tombstone named by the dead owner's token and keeps it for an hour, so two reclaimers of the same dead lock target the same name and the second rename fails instead of moving a fresh lock; release removes the directory only while it still carries the holder's token, and every ledger append re-checks the token (`LockLostError`). A durable run anchor is written before any dispatch so a killed run's elapsed time is charged conservatively on resume. `leap generate` and `leap review` both hold the lock | Reusing an output directory with a different source, unit, language or chunking would mix old artefacts with new input; two writers would corrupt the JSONL ledgers; read-check-unlink and age-based reclamation were racy and could steal a paused process's lock |
+| Budget: what is hard and what is estimated | **Requests and elapsed time are hard limits on dispatch:** the request count is exact, and the elapsed limit is a per-import deadline (accumulated across runs in `budgetUsed.elapsedMs`) that is checked before every dispatch and every backoff wait and passed to the adapter as the SDK timeout, so no call starts after it and none outlives it; across a crash the accounting is conservative (never below the last saved snapshot; the unobservable tail after the last durable write is charged as one maximum attempt length) rather than exact. **Spend and tokens are estimated caps:** the reservation counts input tokens as `ceil(0.5 × characters)` of system + cached context + user + the serialised output schema plus a fixed overhead allowance, prices them at the 5-minute cache-write rate and output at `max_tokens`; dispatch is refused once spent + reserved would cross the cap, but an attempt whose real token count exceeds its estimate is charged by the provider before the ledger can know, so the cap can be overshot by at most the underestimate of the attempts in flight. Every outcome records `reservationExceeded` and `underestimateUsdMicro`; the report and the demo total them | The honest description the review asked for. No local tokenizer for Sonnet 5 exists; the `count_tokens` endpoint would give exact counts at the price of one extra request per attempt and is the phase-5 upgrade path if the recorded overshoot is ever material. The pricing-split test proves the rate arithmetic never under-reserves for a given count; it does not, and cannot, prove the count |
+| Resume identity and exclusivity | Every import record stores an immutable `fingerprint` (source text hash, unit text hash, selected types, language, prompt config, chunk budget, plan rules, prompt version, model roles, schema version); the lock is taken first, the import is read and its fingerprint checked **under the lock**, and a mismatch is refused before any write. The lock is a directory lock (`lock/` created with an atomic `mkdir`, an `owner.json` with a random token). Only a **dead local owner** is reclaimed: a live local pid is never reclaimed however old the lock, and a lock from another host is refused with instructions. Reclamation renames the dead lock to a tombstone named by the dead owner's token and never removes tombstones (a rename keeps the old mtime, so age-based cleanup would reopen the race), so two reclaimers of the same dead lock target the same, still-present name and the second rename fails instead of moving a fresh lock; release removes the directory only while it still carries the holder's token, and every ledger append re-checks the token (`LockLostError`). A durable run anchor is written before any dispatch so a killed run's elapsed time is charged conservatively on resume. `leap generate` and `leap review` both hold the lock | Reusing an output directory with a different source, unit, language or chunking would mix old artefacts with new input; two writers would corrupt the JSONL ledgers; read-check-unlink and age-based reclamation were racy and could steal a paused process's lock |
 | Concurrency | Activities run in **one serial lane per type**; lanes run concurrently up to `--concurrency` (default 3). Within a lane the near-duplicate check sees every earlier promotion, so the check is exact; a budget refusal or infrastructure failure sets a shared stop flag, in-flight attempts settle, and every undispatched activity gets an explicit outcome (`failed` with `skipped: <reason>`, re-dispatched on resume) | The earlier `Promise.all` let workers keep spending after the import was marked failed and let same-type activities pass the duplicate check against one stale snapshot |
 | Model roles (provisional, §13) | `parseUnit`, `extract`, `merge`, `align`: `claude-haiku-4-5-20251001`; `plan`, `produce`: `claude-sonnet-5` | Spec §8; confirmed by the phase-3 gate, not assumed |
 | Review and acceptance | Minimal **revision-bound** records now: `AcceptanceRecord` (spec §4 `acceptance_decisions`) and `AlignmentReviewRecord` (`alignment_reviews`) in the store, written by `leap review` from the CLI; `mapping.csv` status becomes `suggested | confirmed | rejected | added`; the cost report gains accepted count and cost per accepted activity | The owner's ruling: the UI can wait, the quality gate and cost-per-accepted-activity measurement cannot. Phase 3 records its judgements with the same records |
@@ -3997,7 +3997,7 @@ The orchestration of spec §5 for the CLI, rebuilt around the review's recovery 
 - `MemoryStore implements ImportStore` (maps; builds kept as Buffers; locks in a `Set`).
 - `runFingerprint(input: FingerprintInput): string` over `{ sourceTextHash, unitTextHash, selectedTypes (sorted), language, promptConfig, customisation, chunkTokens, rules, promptVersion, schemaVersion, models, profiles }` — budget limits are deliberately **not** part of it (a resume may raise them); `IncompatibleResumeError`; `DEFAULT_CHUNK_TOKENS = 6000`.
 - `extractConceptMap(doc, unit, runner, options)` gains `options.chunkCache?: { get(index): Promise<ChunkConcept[] | null>; put(index, concepts): Promise<void> }`; finished chunks are reused on rerun.
-- `budgetFromLedger(limits, events, startedAtMs, elapsedBeforeMs): Budget` (known costs and tokens are spent; a start with no outcome is spent at its reservation; every start counts as a request; the deadline is what is left of the per-import elapsed limit); `reconcileElapsed(run, events, nowMs, maxAttemptMs): number` (the elapsed time an interrupted run is charged: from its durable `startedAt` to the latest durable attempt timestamp, and for every start without an outcome to `min(start.deadlineMs, start + maxAttemptMs)`, never beyond `nowMs`; `RunImportDeps.maxAttemptMs` defaults to the adapter's request timeout and the CLI passes the adapter's exported constant so they cannot drift); `attemptsByKey(events): Map<string, number>`; `reconcile(store, importId, clock)`; `OperationContext.stop?: () => string | null` is handed to every runner so no dispatch or retry happens after the import has stopped; `runOperation<T>(ctx, { purpose; activityId; key; load; work; persist }): Promise<{ result: T; operation: OperationRecord; reused: boolean }>` — order: `load()` first (a persisted result is reused even if the operation record says running or failed, and that record is corrected to succeeded with a note, keeping `billingUncertain`); otherwise a new operation id (`key`, then `key#2`, …), `work`, **`persist`, then** the succeeded record; `runLanes(lanes, concurrency, worker)`.
+- `budgetFromLedger(limits, events, startedAtMs, elapsedBeforeMs): Budget` (known costs and tokens are spent; a start with no outcome is spent at its reservation; every start counts as a request; the deadline is what is left of the per-import elapsed limit); `reconcileElapsed({ run, savedElapsedMs, events, operations, updatedAt, nowMs, maxAttemptMs, limitMs }): number` (the elapsed time an interrupted run is charged, defined so it can only grow: the latest durable timestamp of the run is taken across attempt starts and outcomes, operation starts and completions and the import record's last write; the unobservable tail between that write and the death is charged as one `maxAttemptMs` (the same bound as an unfinished call), capped at the run's own deadline and at real time; the result is never below the elapsed time the last budget snapshot already saved. `RunImportDeps.maxAttemptMs` defaults to the adapter's request timeout and the CLI passes the adapter's exported constant so they cannot drift). The elapsed limit is therefore hard as a **deadline on dispatch** (no call starts after it, none outlives it) and conservative as **accounting across a crash**; those are the two promises, stated in that form wherever the limit is described; `attemptsByKey(events): Map<string, number>`; `reconcile(store, importId, clock)`; `OperationContext.stop?: () => string | null` is handed to every runner so no dispatch or retry happens after the import has stopped; `runOperation<T>(ctx, { purpose; activityId; key; load; work; persist }): Promise<{ result: T; operation: OperationRecord; reused: boolean }>` — order: `load()` first (a persisted result is reused even if the operation record says running or failed, and that record is corrected to succeeded with a note, keeping `billingUncertain`); otherwise a new operation id (`key`, then `key#2`, …), `work`, **`persist`, then** the succeeded record; `runLanes(lanes, concurrency, worker)`.
 - `runImport(input: RunImportInput, deps: RunImportDeps): Promise<ImportRecord>` — takes the store lock **first**, then reads the import record and checks its fingerprint under the lock (a pre-lock read could be stale), and canonicalises `selectedTypes` (duplicates removed, first occurrence order kept) before anything else so `--types multiChoice,multiChoice` cannot create two lanes over the same activities; with `RunImportInput = { importId; name; source: SourceDocument; unitText: string | null; selectedTypes; budget: { usdMicro: number } & Partial<BudgetLimits>; promptConfig; language; customisation: string | null; orgId?: string }` and `RunImportDeps = { store; provider; registry; engineFingerprint; concurrency?: 3; chunkTokens?; rules?; clock?; sleep?; onProgress?: (event: ProgressEvent) => void }`; `ProgressEvent = { kind: "status"; status } | { kind: "activity"; activityId; status; error?: string } | { kind: "attempt"; purpose; status; costUsdMicro: number | null }`; `SKIPPED_PREFIX = "skipped: "`; `isPending(activity)`.
 - `engineFingerprint` = `\`engine@${engineVersion}+lock:${sha256(libraries.lock.json).slice(0, 12)}\`` computed by the caller (CLI); tests pass a constant.
 - Failure categories: `ContentFailure` → activity `failed`, `error: "content: …"` (terminal for the activity; regeneration is a human action); `BudgetRefused` → activity `failed`, `error: "budget: …"`, the stop flag is set, every activity not yet dispatched becomes `failed` with `error: "skipped: budget: …"`; `RunStopped` (a lane's runner found the stop flag before a dispatch or a retry) → `failed` with `error: "skipped: …"`; `InfrastructureFailure` (or any other error) → the activity `failed` with `error: "system: …"`, the stop flag is set, lanes settle, the import is marked `failed` and the error is rethrown. A **storage failure while recording an outcome or persisting the budget** never escapes a lane worker: it sets the stop flag, every other lane settles, the import is marked `failed` with `system: …`, the error is rethrown after all lanes have finished, and only then does `runImport`'s `finally` release the lock. On resume, activities whose error starts with `skipped:`, `budget:` or `system:` are re-dispatched; `content:` failures are not.
@@ -4498,6 +4498,13 @@ describe("runImport", () => {
     expect(after.currentRun).toBeNull(); // the resumed run folded its anchor on the way out
     expect(after.budgetUsed.elapsedMs).toBeGreaterThanOrEqual(6000); // start at +1000 with no outcome: charged to min(deadline, +1000 + 5000)
     expect(after.budgetUsed.elapsedMs).toBeLessThan(60_000); // not the whole allowance: the maximum attempt length bounds a hung call
+    const snapshotStore = new MemoryStore(); // a run that died during compilation, after a budget snapshot later than every attempt
+    await snapshotStore.putImport({ importId: "imp-a", orgId: "local", name: "n", sourceType: "markdown", status: "generating", customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice"], fingerprint, budget: { ...DEFAULT_BUDGET_LIMITS, usdMicro: 5_000_000, elapsedMs: 60_000 }, budgetUsed: { spentUsdMicro: 10, reservedUsdMicro: 0, spentTokens: 10, requests: 1, elapsedMs: 5000 }, currentRun: { startedAt: new Date(T0).toISOString(), elapsedBeforeMs: 0 }, error: null, idempotencyKey: "imp-a", createdAt: "t", updatedAt: new Date(T0 + 5000).toISOString() });
+    await snapshotStore.recorderFor("imp-a").recordStart({ event: "start", attemptId: "att-1", operationId: "imp-a:concepts", callKey: "extract:chunk-0", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: T0 + 60_000, purpose: "extract", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 10, reservedOutputTokens: 10, reservedUsdMicro: 1, startedAt: new Date(T0 + 500).toISOString() });
+    await snapshotStore.recorderFor("imp-a").recordOutcome({ event: "outcome", attemptId: "att-1", operationId: "imp-a:concepts", providerRequestId: null, rawUsage: null, inputTokens: 5, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, latencyMs: 500, pricingVersion: "v", costUsdMicro: 10, costStatus: "known", stopReason: "end_turn", status: "ok", error: null, reservationExceeded: false, underestimateUsdMicro: 0, completedAt: new Date(T0 + 1000).toISOString() });
+    await runImport(base, deps(snapshotStore, new FakeProvider([]), { clock: later, maxAttemptMs: 100 })).catch(() => undefined);
+    const kept = (await snapshotStore.getImport("imp-a"))!;
+    expect(kept.budgetUsed.elapsedMs).toBeGreaterThanOrEqual(5100); // the saved 5000 is never reduced to the attempts' 1000, and the tail after the last durable write (the snapshot at +5000) is charged one maximum attempt length
     const tight = await input("imp-a", { unitText: null, selectedTypes: ["multiChoice"], budget: { usdMicro: 5_000_000, elapsedMs: 6000 } });
     const empty = new FakeProvider([]);
     const refused = await runImport(tight, deps(store, empty, { clock: () => new Date(T0 + 200_000), maxAttemptMs: 5000 }));
@@ -4764,22 +4771,36 @@ export interface OperationContext {
   stop?: () => string | null;
 }
 
+export interface ElapsedEvidence {
+  run: { startedAt: string; elapsedBeforeMs: number };
+  /** budgetUsed.elapsedMs as last saved by the interrupted run; the result never goes below it. */
+  savedElapsedMs: number;
+  events: AttemptEvent[];
+  operations: OperationRecord[];
+  /** The import record's own last write. */
+  updatedAt: string;
+  nowMs: number;
+  maxAttemptMs: number;
+  limitMs: number;
+}
+
 /**
- * The elapsed time an interrupted run must be charged, from its durable anchor: up to the latest durable attempt
- * timestamp, and for every start without an outcome up to the sooner of that attempt's deadline and the maximum
- * attempt length (the adapter's timeout bounds a hung call). Never more than the time that has actually passed.
+ * The elapsed time an interrupted run is charged. Everything durable the run wrote after its anchor counts: attempt
+ * starts and outcomes, operation starts and completions, the import record's last write. The time between the last
+ * of those and the death cannot be observed, so it is charged as one maximum attempt length (the same bound as a
+ * call that never finished), capped at the run's own deadline and at the time that has really passed. The result
+ * never falls below what the run's last budget snapshot already recorded.
  */
-export function reconcileElapsed(run: { startedAt: string; elapsedBeforeMs: number }, events: AttemptEvent[], nowMs: number, maxAttemptMs: number): number {
-  const startedMs = Date.parse(run.startedAt);
-  const withOutcome = new Set(events.filter((e) => e.event === "outcome").map((o) => o.attemptId));
-  let latest = startedMs;
-  for (const e of events) {
-    const ts = Date.parse(e.event === "start" ? e.startedAt : e.completedAt);
-    if (Number.isNaN(ts) || ts < startedMs) continue;
-    latest = Math.max(latest, ts);
-    if (e.event === "start" && !withOutcome.has(e.attemptId)) latest = Math.max(latest, Math.min(e.deadlineMs, ts + maxAttemptMs));
-  }
-  return run.elapsedBeforeMs + Math.max(0, Math.min(latest, nowMs) - startedMs);
+export function reconcileElapsed(evidence: ElapsedEvidence): number {
+  const startedMs = Date.parse(evidence.run.startedAt);
+  const deadlineMs = startedMs + Math.max(0, evidence.limitMs - evidence.run.elapsedBeforeMs);
+  const stamps: number[] = [Date.parse(evidence.updatedAt)];
+  for (const e of evidence.events) stamps.push(Date.parse(e.event === "start" ? e.startedAt : e.completedAt));
+  for (const o of evidence.operations) { stamps.push(Date.parse(o.startedAt)); if (o.completedAt) stamps.push(Date.parse(o.completedAt)); }
+  const latestDurable = stamps.filter((s) => !Number.isNaN(s) && s >= startedMs).reduce((a, b) => Math.max(a, b), startedMs);
+  const chargedUntil = Math.min(evidence.nowMs, deadlineMs, latestDurable + evidence.maxAttemptMs);
+  const reconstructed = evidence.run.elapsedBeforeMs + Math.max(0, chargedUntil - startedMs);
+  return Math.max(evidence.savedElapsedMs, reconstructed);
 }
 
 /** Rebuilds the import's budget from the attempt ledger: known costs and tokens are spent; a start with no outcome is spent at its reservation (it may have been billed); every start is a request; the deadline is what remains of the per-import elapsed limit. */
@@ -4966,8 +4987,10 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
   const events = await store.listAttempts(input.importId);
   const runStartedMs = clock().getTime();
   const maxAttemptMs = deps.maxAttemptMs ?? DEFAULT_MAX_ATTEMPT_MS;
-  // A run that did not end cleanly left its anchor: charge its time conservatively before this run gets any allowance.
-  const elapsedBeforeMs = record.currentRun ? reconcileElapsed(record.currentRun, events, runStartedMs, maxAttemptMs) : record.budgetUsed.elapsedMs;
+  // A run that did not end cleanly left its anchor: charge its time conservatively (never below the saved snapshot) before this run gets any allowance.
+  const elapsedBeforeMs = record.currentRun
+    ? reconcileElapsed({ run: record.currentRun, savedElapsedMs: record.budgetUsed.elapsedMs, events, operations: await store.listOperations(input.importId), updatedAt: existing?.updatedAt ?? record.updatedAt, nowMs: runStartedMs, maxAttemptMs, limitMs: limits.elapsedMs })
+    : record.budgetUsed.elapsedMs;
   record = { ...record, budgetUsed: { ...record.budgetUsed, elapsedMs: elapsedBeforeMs }, currentRun: { startedAt: new Date(runStartedMs).toISOString(), elapsedBeforeMs }, updatedAt: now() };
   await store.putImport(record); // the anchor is durable before any dispatch
   const budget = budgetFromLedger(limits, events, runStartedMs, elapsedBeforeMs);
@@ -5142,7 +5165,7 @@ Answers review findings 5 (an ownership-safe directory lock; a crash-truncated J
 - Test: `apps/cli/test/lock.test.ts`, `apps/cli/test/file-store.test.ts`, `apps/cli/test/interrupt.test.ts`, `apps/cli/test/report.test.ts`
 
 **Interfaces:**
-- `acquireDirectoryLock(dir, importId, options?: { hooks?: { afterInspect?: (owner) => Promise<void> }; graceMs?: 50 }): Promise<HeldLock>` in `lock.ts`, `HeldLock = StoreLock & { token: string; assertHeld(): Promise<void> }`, `LockLostError`. The lock is the directory `dir/lock/`, created with an atomic `mkdir`; it holds `owner.json` `{ importId, token, pid, hostname, startedAt }`. **Only a dead local owner is ever reclaimed**: a live pid on this host is refused however old the lock is (a paused process is still the owner), an owner on another host is refused with instructions to remove the directory by hand, and a directory with no owner record yet (another process between its `mkdir` and its `writeFile`) is retried briefly then refused. Reclamation renames the dead lock to a tombstone **named by the dead owner's token** (`lock.stale-<token>`) and leaves the tombstone in place for an hour: two reclaimers of the same dead lock target the same tombstone name, so the second `rename` fails (target exists, or source already gone) and can never move a lock that was created after its inspection; the loser goes back to `mkdir`, finds the winner's live lock and is refused. `assertHeld()` re-reads `owner.json` and throws `LockLostError` when the token is no longer this holder's; `FileStore` calls it before every ledger append so a holder whose lock was removed by hand stops instead of writing. `release()` removes the directory only while it still carries this holder's token. Hooks exist so a test can park a reclaimer between its inspection and its rename and replay the exact interleaving the review described.
+- `acquireDirectoryLock(dir, importId, options?: { hooks?: { afterInspect?: (owner) => Promise<void> }; graceMs?: 50 }): Promise<HeldLock>` in `lock.ts`, `HeldLock = StoreLock & { token: string; assertHeld(): Promise<void> }`, `LockLostError`. The lock is the directory `dir/lock/`, created with an atomic `mkdir`; it holds `owner.json` `{ importId, token, pid, hostname, startedAt }`. **Only a dead local owner is ever reclaimed**: a live pid on this host is refused however old the lock is (a paused process is still the owner), an owner on another host is refused with instructions to remove the directory by hand, and a directory with no owner record yet (another process between its `mkdir` and its `writeFile`) is retried briefly then refused. Reclamation renames the dead lock to a tombstone **named by the dead owner's token** (`lock.stale-<token>`) and **never removes tombstones**: `rename` keeps the old directory's mtime, so an age-based sweep could delete a tombstone that is still shielding a reclaimer paused since its inspection, and a paused reclaimer can pause for longer than any retention period. Two reclaimers of the same dead lock therefore always target the same, still-present tombstone name, so the second `rename` fails (target exists, or source already gone) and can never move a lock that was created after its inspection; the loser goes back to `mkdir`, finds the winner's live lock and is refused. Tombstones are one small directory per dead lock reclaimed; a person removes `lock.stale-*` by hand only while no leap process is running (documented in the README). `assertHeld()` re-reads `owner.json` and throws `LockLostError` when the token is no longer this holder's; `FileStore` calls it before every ledger append so a holder whose lock was removed by hand stops instead of writing. `release()` removes the directory only while it still carries this holder's token. Hooks exist so a test can park a reclaimer between its inspection and its rename and replay the exact interleaving the review described.
 - `FileStore(dir, options?: { lock?: LockOptions }) implements ImportStore`: every ledger append goes through a **per-ledger queue** (repair, corruption check and append run strictly one at a time per file, and a file counts as repaired only after its repair succeeded), so concurrent lanes in one process cannot interleave a stale-snapshot truncation with another lane's append; layout under `dir/` — `lock/`, `import.json`, `artifacts/<name>.json`, `activities/<activityId>.json`, `revisions/<activityId>/r<N>.json`, `operations.jsonl`, `attempts.jsonl`, `acceptances.jsonl`, `alignment-reviews.jsonl` (all JSONL append-only; for `operations`, `acceptances` and `alignment-reviews` the latest line per key wins), `builds/<activityId>-r<N>.h5p`; every JSON write goes to `<file>.tmp-<random>` then `rename`; JSONL appends are one JSON object per line. `readJsonl` ignores a final line that has no trailing newline and does not parse (a crash-truncated tail, reported as `truncatedTail: true`) and throws `StoreCorruptError(path, line)` for any other malformed line. Before the first append to a ledger in a process, `FileStore` **repairs the tail** under the lock and inside the ledger's queue: a final complete record that only lacks its newline gets one, a truncated fragment is cut off (`truncate` to the byte length of the last complete line); every earlier record is preserved. Appends are only ever made while the directory lock is held (`runImport` and `leap review` both hold it) and `assertHeld()` runs before each one.
 - `writeMappingCsv(store, importId, path)` — columns `activityId,type,title,revision,itemId,criterionId,status,conceptIds,evidenceIds,firstQuote`; one row per (activity or item) × criterion in the promoted revision's provenance (`itemId` empty for the activity row; `criterionId` empty when there are none); `status` is `suggested` unless an alignment review for that exact revision, item and criterion says `confirmed` or `rejected`; a review with decision `added` produces an extra row with status `added`; RFC 4180 quoting.
 - `costReport(store, importId): Promise<CostReport>` with `CostReport = { pricingVersion; totals: { attempts; costUsdMicro; costStatusCounts: Record<CostStatus, number>; reservationExceeded: number }; shared; direct; byPurpose; byType; perActivity; retryShare; accepted; costPerAcceptedActivityUsdMicro: number | null }` — `shared` = purposes other than `produce`; `direct` = `produce`; `retryShare` = starts with `retryIndex > 0` ÷ all starts; `accepted` = activities whose current revision has an `accepted` acceptance record; `costPerAcceptedActivityUsdMicro` = `totals.costUsdMicro / accepted` rounded, or `null` when nothing is accepted; `formatCostReport(report): string`.
@@ -5247,7 +5270,7 @@ describe("FileStore", () => {
 ```ts
 import { describe, it, expect } from "vitest";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { StoreLockedError } from "@leaplearn/generator";
@@ -5279,9 +5302,11 @@ describe("directory lock", () => {
     await writeLock(dir, { importId: "imp", token: "remote", pid: DEAD_PID, hostname: "another-host", startedAt: "t" });
     await expect(acquireDirectoryLock(dir, "imp")).rejects.toMatchObject({ message: expect.stringMatching(/another-host.*by hand/) });
   });
-  it("replays the reviewed interleaving with a barrier: B inspects the dead lock, A reclaims and acquires, then B fails and A's lock is intact", async () => {
+  it("replays the reviewed interleaving with a barrier and an old lock: B inspects the dead lock, A reclaims and acquires, a third contender cannot clear the tombstone, then B fails and A's lock is intact", async () => {
     const dir = await mkdtemp(join(tmpdir(), "leap-race-"));
     await writeLock(dir, { importId: "imp", token: "dead-token", pid: DEAD_PID, hostname: hostname(), startedAt: "t" });
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await utimes(join(dir, "lock"), twoHoursAgo, twoHoursAgo); // the dead lock is old, so its tombstone inherits an old mtime
     let proceed!: () => void;
     const barrier = new Promise<void>((r) => { proceed = r; });
     let inspected = false;
@@ -5289,11 +5314,13 @@ describe("directory lock", () => {
     while (!inspected) await sleep(5); // B has judged the old lock stale and is parked before its rename
     const a = await acquireDirectoryLock(dir, "imp"); // A reclaims the dead lock and holds a fresh one
     expect((await ownerOf(dir)).token).toBe(a.token);
+    await expect(acquireDirectoryLock(dir, "imp")).rejects.toBeInstanceOf(StoreLockedError); // a third contender: refused, and it must not touch the tombstone
+    expect(existsSync(join(dir, "lock.stale-dead-token"))).toBe(true);
     proceed();
     await expect(b).rejects.toBeInstanceOf(StoreLockedError); // B's rename targets the tombstone A already created and fails; B then sees A alive
     expect((await ownerOf(dir)).token).toBe(a.token); // A's fresh lock was never moved
     await a.assertHeld();
-    expect(existsSync(join(dir, "lock.stale-dead-token"))).toBe(true); // the tombstone is kept for the race window
+    expect(existsSync(join(dir, "lock.stale-dead-token"))).toBe(true); // the tombstone is kept; nothing automatic removes it
     await a.release();
     expect(existsSync(join(dir, "lock"))).toBe(false);
   });
@@ -5453,7 +5480,7 @@ describe("reports", () => {
 `apps/cli/src/lock.ts`:
 ```ts
 import { randomBytes } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { StoreLockedError, type StoreLock } from "@leaplearn/generator";
@@ -5464,35 +5491,27 @@ export interface LockOptions { hooks?: LockHooks; graceMs?: number; }
 export interface HeldLock extends StoreLock { readonly token: string; assertHeld(): Promise<void>; }
 export class LockLostError extends Error { constructor(dir: string) { super(`the lock on ${dir} is no longer held by this process; stopping before writing`); this.name = "LockLostError"; } }
 
-const TOMBSTONE_TTL_MS = 60 * 60 * 1000;
 const isCode = (err: unknown, code: string): boolean => (err as { code?: string }).code === code;
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 function pidAlive(pid: number): boolean { try { process.kill(pid, 0); return true; } catch (err) { return isCode(err, "EPERM"); } }
 async function readOwner(path: string): Promise<LockOwner | null> { try { return JSON.parse(await readFile(path, "utf8")) as LockOwner; } catch { return null; } }
 
-/** Tombstones older than the race window they protect are removed; a tombstone younger than that may still be shielding a reclaim in progress. */
-async function sweepTombstones(dir: string): Promise<void> {
-  for (const name of await readdir(dir)) {
-    if (!name.startsWith("lock.stale-")) continue;
-    const info = await stat(join(dir, name)).catch(() => null);
-    if (info && Date.now() - info.mtimeMs > TOMBSTONE_TTL_MS) await rm(join(dir, name), { recursive: true, force: true });
-  }
-}
-
 /**
  * Directory lock with dead-owner reclamation only. `mkdir` is atomic, so only one process ever creates `lock/`.
  * A live local pid is never reclaimed, whatever the lock's age: a paused process is still the owner. A dead local
- * pid's lock is reclaimed by renaming it to a tombstone named by the dead owner's token; the tombstone stays for an
- * hour. Two reclaimers of the same dead lock therefore target the same tombstone: the second rename fails (the target
- * exists, or the source is gone) and can never move a lock created after that reclaimer's inspection. Release removes
- * the directory only while owner.json still carries this holder's token; assertHeld detects a lock removed from under us.
+ * pid's lock is reclaimed by renaming it to a tombstone named by the dead owner's token. Tombstones are never removed
+ * by this code (rename keeps the old directory's mtime, so any age-based cleanup could delete a tombstone that is still
+ * shielding a paused reclaimer): they stay until a person removes `lock.stale-*` while no leap process is running.
+ * Two reclaimers of the same dead lock therefore always target the same, still-present tombstone: the second rename
+ * fails (the target exists, or the source is gone) and can never move a lock created after that reclaimer's inspection.
+ * Release removes the directory only while owner.json still carries this holder's token; assertHeld detects a lock
+ * removed from under us.
  */
 export async function acquireDirectoryLock(dir: string, importId: string, options: LockOptions = {}): Promise<HeldLock> {
   const lockDir = join(dir, "lock");
   const ownerPath = join(lockDir, "owner.json");
   const me: LockOwner = { importId, token: randomBytes(8).toString("hex"), pid: process.pid, hostname: hostname(), startedAt: new Date().toISOString() };
   await mkdir(dir, { recursive: true });
-  await sweepTombstones(dir);
   let ownerless = 0;
   for (let attempt = 0; attempt < 6; attempt++) {
     try {
@@ -5531,7 +5550,7 @@ export async function acquireDirectoryLock(dir: string, importId: string, option
   throw new StoreLockedError(importId, "a lock that could not be acquired after repeated attempts");
 }
 ```
-Why the tombstone is named by the inspected token and kept: the race the review described is A and B both inspecting dead lock T0, A renaming it away and creating its own lock, then B renaming A's fresh lock. Here both A and B target `lock.stale-T0`; A's rename succeeds and the tombstone now exists; B's rename of `lock` (A's fresh lock) onto an existing non-empty directory fails with `ENOTEMPTY` (or `EEXIST` on some filesystems), B goes back to `mkdir`, reads A's owner record, sees a live pid and is refused. A rename can only ever move the lock that occupies the path at that instant, so the protocol never relies on "the same directory I inspected"; it relies on the tombstone name. A lock from another host is refused rather than reclaimed because pid liveness cannot be judged across hosts and this phase is a single-machine CLI.
+Why the tombstone is named by the inspected token and never removed: the race the review described is A and B both inspecting dead lock T0, A renaming it away and creating its own lock, then B renaming A's fresh lock. Here both A and B target `lock.stale-T0`; A's rename succeeds and the tombstone now exists; B's rename of `lock` (A's fresh lock) onto an existing non-empty directory fails with `ENOTEMPTY` (or `EEXIST` on some filesystems), B goes back to `mkdir`, reads A's owner record, sees a live pid and is refused. Any cleanup keyed on the tombstone's age would reopen the race, because the renamed directory carries the dead lock's old mtime and a third contender could delete it while B is still paused; so nothing here deletes tombstones. A rename can only ever move the lock that occupies the path at that instant, so the protocol never relies on "the same directory I inspected"; it relies on the tombstone name. A lock from another host is refused rather than reclaimed because pid liveness cannot be judged across hosts and this phase is a single-machine CLI.
 
 `apps/cli/src/file-store.ts`:
 ```ts
@@ -6199,7 +6218,7 @@ The replay is byte-exact only if the prompts are identical to the recorded run: 
 
 - [ ] **Step 3: Spec and docs**
 
-`docs/superpowers/specs/2026-09-18-generator-service-design.md`: §3 `packages/generator` → `llm/`: append "Structured output is requested natively (`output_config.format`, JSON Schema projected from the model-output Zod schemas to the subset the API accepts, every property required); the full Zod schema validates the parsed response. Request settings (sampling, thinking) come from per-model profiles. SDK retries are off; the stage runner owns retries and every retry is a recorded, reserved attempt. Of the four budget limits, requests and elapsed time (per import, across runs) are hard; spend and tokens are estimated caps; each attempt's reservation underestimate and the import's spend over its cap are recorded separately. Phase 2 stores imports as a directory of JSON and JSONL files through an `ImportStore` interface with an ownership-safe directory lock and an input fingerprint; phase 5 implements the same interface over Postgres." §4: after the `acceptance_decisions` row add "Both review tables are implemented from phase 2 as revision-bound records in the `ImportStore`, written by `leap review`; the web UI arrives in phase 5." §9 URL fetching: "Implemented as `safeFetch` in `packages/generator` (phase 2): addresses are classified after IPv6 normalisation and the connection is pinned to the validated address; used by every application-side fetch." `README.md`: a "Generate activities" section with the demo command, the output directory layout (including `lock/` and the four ledgers), the four budget flags with which two are hard and which two are estimates, `--provider replay|record`, `leap review`, and the exit codes.
+`docs/superpowers/specs/2026-09-18-generator-service-design.md`: §3 `packages/generator` → `llm/`: append "Structured output is requested natively (`output_config.format`, JSON Schema projected from the model-output Zod schemas to the subset the API accepts, every property required); the full Zod schema validates the parsed response. Request settings (sampling, thinking) come from per-model profiles. SDK retries are off; the stage runner owns retries and every retry is a recorded, reserved attempt. Of the four budget limits, requests and elapsed time (per import, across runs) are hard; spend and tokens are estimated caps; each attempt's reservation underestimate and the import's spend over its cap are recorded separately. Phase 2 stores imports as a directory of JSON and JSONL files through an `ImportStore` interface with an ownership-safe directory lock and an input fingerprint; phase 5 implements the same interface over Postgres." §4: after the `acceptance_decisions` row add "Both review tables are implemented from phase 2 as revision-bound records in the `ImportStore`, written by `leap review`; the web UI arrives in phase 5." §9 URL fetching: "Implemented as `safeFetch` in `packages/generator` (phase 2): addresses are classified after IPv6 normalisation and the connection is pinned to the validated address; used by every application-side fetch." `README.md`: a "Generate activities" section with the demo command, the output directory layout (including `lock/`, any `lock.stale-*` tombstones and when a person may remove them, and the four ledgers), the four budget flags with which two are hard and which two are estimates, `--provider replay|record`, `leap review`, and the exit codes.
 
 - [ ] **Step 4: Root verification and commit**
 
@@ -6223,7 +6242,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - **The budget's four limits are described as what they are:** requests and elapsed time are hard (the count is exact; the per-import deadline is checked before every dispatch and every backoff and bounds the SDK timeout); spend and tokens are estimated caps reserved before dispatch for the whole request at the cache-write rate; every outcome records `reservationExceeded` and `underestimateUsdMicro`, the report totals them, and the demo records them as calibration data (Tasks 2, 4, 5, 7, 15, 17).
 - **Recovery is proven by crash tests and one real kill:** a simulated failure before the concept map, plan, activity records, build or the final activity write is followed by a resume that repeats no finished model call; a candidate revision resumes at compilation; a changed input is refused under the lock; a second writer is refused; a SIGKILLed child process over `FileStore` leaves a held lock and an outcome-less start, and the next run reclaims the lock, reconciles and resumes (Tasks 14, 15).
 - **The lock is ownership-safe and the ledgers stay appendable:** atomic `mkdir`, token, dead-local-owner-only reclamation through a tombstone named by the inspected owner's token, lost-ownership detection before every append, and a barrier test of the reviewed interleaving; a damaged JSONL tail is repaired before the next append inside a per-ledger queue, with a concurrent first-append test (Task 15).
-- **A killed run's time is never given back:** the run anchor is durable before the first dispatch, and a resume charges the interrupted run up to the latest durable timestamp or, for a call that never finished, up to the sooner of its deadline and the maximum attempt length; the real SIGKILL test checks the charge (Tasks 14, 15).
+- **A killed run's time is never given back:** the run anchor is durable before the first dispatch; a resume charges the interrupted run up to its latest durable write (attempts, operations, the import record) plus one maximum attempt length for the unobservable tail, capped at the run's deadline and at real time, and never below the last saved snapshot; the real SIGKILL test and the snapshot-later-than-attempts test check the charge (Tasks 14, 15).
 - **Concurrency cannot violate the rules:** one serial lane per type, a shared stop consulted before every dispatch and every retry, in-flight work settled even when recording an outcome fails, the lock released only after every lane has finished, every undispatched activity given an explicit outcome and re-dispatched on resume, duplicate selected types canonicalised (Tasks 7, 14).
 - **Mappings do not overstate alignment:** item and activity provenance are derived from the cited evidence and the alignment; each blank's answer is checked against that blank's evidence; the alignment prompt sees evidence quotes (Tasks 8, 10–13).
 - **Retry share means retries:** every attempt carries a call key and a retry index; the report counts `retryIndex > 0` (Tasks 4, 7, 15).
@@ -6251,7 +6270,9 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 | Revision-2 finding 4 (lock races, read under lock, review lock) | `apps/cli/test/lock.test.ts`; `runImport` reads the record after `lock()`; `review()` holds the lock |
 | Revision-3 finding 1 (reclamation race, live owner) | `apps/cli/test/lock.test.ts` barrier replay of the reviewed interleaving, live-local-owner and other-host refusals, lost-ownership detection |
 | Revision-3 finding 2 (concurrent tail repair) | `apps/cli/test/file-store.test.ts` concurrent first appends to a damaged ledger; `LockLostError` before an append |
-| Revision-3 finding 3 (interrupted elapsed time) | `test/pipeline.test.ts` `imp-a` (anchor, bound by deadline and maximum attempt length); `apps/cli/test/interrupt.test.ts` asserts the charge after SIGKILL |
+| Revision-3 finding 3 (interrupted elapsed time) | `test/pipeline.test.ts` `imp-a` (anchor, bound by deadline and maximum attempt length; saved snapshot later than every attempt is never reduced); `apps/cli/test/interrupt.test.ts` asserts the charge after SIGKILL |
+| Revision-4 finding 1 (tombstone cleanup) | no code removes tombstones; `apps/cli/test/lock.test.ts` barrier replay with a two-hour-old lock and a third contender |
+| Revision-4 finding 2 (reconciliation floor and tail) | `reconcileElapsed` is `max(saved, reconstructed)` with the tail rule; `imp-a` snapshot case |
 | Revision-3 naming | `cost.json` reports `underestimateUsdMicro` (the estimate) and `spendOverCapUsdMicro` (the import) separately |
 | Revision-2 finding 5 (stop before every dispatch, settle on persistence failure, duplicate types) | `test/runner.test.ts` stop case; `test/pipeline.test.ts` `imp-s`, `imp-f`, `imp-t` |
 | Revision-2 finding 6 (added criteria) | `apps/cli/test/review.test.ts` add → reject → confirm, unknown criterion, no-unit import |
