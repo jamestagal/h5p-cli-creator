@@ -30,7 +30,9 @@ describe("quality checks", () => {
     expect(checkMultiChoice({ ...ok, answers: [ok.answers[0]!, { text: "the worker who applied it", correct: false, feedback: "" }] })).toContain("answer 2 duplicates another answer");
     expect(checkMultiChoice({ ...ok, answers: [ok.answers[0]!] })).toContain("between 2 and 8 answers are required");
     expect(checkMultiChoice({ ...ok, answers: [ok.answers[0]!, { ...ok.answers[1]!, feedback: "**not quite**" }] })).toContain("answers[2].feedback contains markdown markers");
-    expect(checkMultiChoice({ ...ok, answers: [ok.answers[0]!, { ...ok.answers[1]!, feedback: "" }] })).toContain("answers[2].feedback is empty");
+    // A wrong answer's feedback may be left empty (Task 11 TASK prompt); only a correct answer's feedback is required.
+    expect(checkMultiChoice({ ...ok, answers: [ok.answers[0]!, { ...ok.answers[1]!, feedback: "" }] })).toEqual([]);
+    expect(checkMultiChoice({ ...ok, answers: [{ ...ok.answers[0]!, feedback: "" }, ok.answers[1]!] })).toContain("answers[1].feedback is empty");
   });
   it("blanks: tokens, delimiters, and answers grounded in the evidence each blank cites", () => {
     const texts: Record<string, string> = {

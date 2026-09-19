@@ -48,6 +48,9 @@ export function languageName(code: string): string { return LANGUAGE_NAMES[code.
 export interface PromptConfig { readingLevel: ReadingLevel; tone: Tone; language: string; instructionalLanguage?: string; customisation?: string; }
 export const DEFAULT_PROMPT_CONFIG: PromptConfig = { readingLevel: "high-school", tone: "educational", language: "en" };
 
+/** Bump whenever any prompt text in this module or a producer changes, so recorded attempts stay attributable to the wording that produced them. */
+export const PROMPT_VERSION = "2026-09-19.2";
+
 /** Deterministic for identical config, so it forms a stable cached prefix. */
 export function buildSystemPrompt(config: PromptConfig): string {
   const level = READING_LEVELS[config.readingLevel];

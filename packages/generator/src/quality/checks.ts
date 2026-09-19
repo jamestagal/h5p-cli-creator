@@ -45,6 +45,12 @@ export function checkPlainText(value: string, where: string): string[] {
   return issues;
 }
 
+/**
+ * A correct answer's feedback restates the evidence and so is required; a wrong answer's feedback
+ * explains the misconception and may be left empty (Task 11 TASK prompt: "may be empty"). Empty
+ * feedback on a wrong answer is therefore not flagged, but non-empty feedback is still checked for
+ * markup on every answer, correct or not.
+ */
 export function checkMultiChoice(out: MultiChoiceOut): string[] {
   const issues = [...checkPlainText(out.title, "title"), ...checkPlainText(out.question, "question")];
   if (out.answers.length < 2 || out.answers.length > 8) issues.push("between 2 and 8 answers are required");
@@ -52,7 +58,7 @@ export function checkMultiChoice(out: MultiChoiceOut): string[] {
   const seen = new Set<string>();
   out.answers.forEach((a, i) => {
     issues.push(...checkPlainText(a.text, `answer ${i + 1}`));
-    issues.push(...checkPlainText(a.feedback, `answers[${i + 1}].feedback`));
+    if (a.correct || a.feedback.trim()) issues.push(...checkPlainText(a.feedback, `answers[${i + 1}].feedback`));
     const n = normaliseText(a.text);
     if (seen.has(n)) issues.push(`answer ${i + 1} duplicates another answer`);
     seen.add(n);

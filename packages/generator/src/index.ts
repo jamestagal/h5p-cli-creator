@@ -17,3 +17,4 @@ export * from "./competency/parse-unit.js";
 export * from "./concepts/index.js";
 export * from "./plan/planner.js";
 export * from "./quality/checks.js";
+export * from "./produce/index.js";
