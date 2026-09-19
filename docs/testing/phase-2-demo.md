@@ -146,9 +146,8 @@ What this run measured:
 **Reading:** the estimate never under-counted. The worst case still left 30% headroom on input
 tokens, and the reservation reserved about 2.7× the money actually spent. The 0.5-tokens-per-character
 constant is conservative for English prose of this kind; the cost is that a run reserves — and so can
-be refused — well before it would really have spent the cap. For this import the effective usable
-budget was roughly a third of the nominal one. If that ever binds in practice, the `count_tokens`
-endpoint (one extra request per attempt) is the phase-5 route to exact reservations.
+be refused — well before it would really have spent the cap. If that ever binds in practice, the
+`count_tokens` endpoint (one extra request per attempt) is the phase-5 route to exact reservations.
 
 Per-attempt detail:
 
