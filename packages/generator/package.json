@@ -1,0 +1,28 @@
+{
+  "name": "@leaplearn/generator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20.19.0 <21" },
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "lint": "eslint src test"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.127.0",
+    "@leaplearn/engine": "workspace:*",
+    "@leaplearn/shared": "workspace:*",
+    "pdf-parse": "^2.4.5",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "pdf-lib": "^1.17.1",
+    "typescript": "~5.9.0",
+    "vitest": "^3.2.0",
+    "eslint": "^9", "typescript-eslint": "^8", "@eslint/js": "^9"
+  }
+}
