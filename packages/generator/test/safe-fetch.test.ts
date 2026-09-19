@@ -92,7 +92,10 @@ describe("safeFetch", () => {
     expect(hits.ok).toBe(0);
   });
   it("blocks a redirect to the metadata address expressed as IPv4-mapped IPv6, even under the allow list", async () => {
-    const caught: unknown = await safeFetch(`${base}/mapped-metadata`, { ...allow }).catch((error: unknown) => error);
+    // The mapped metadata literal ([::ffff:169.254.169.254], normalised by Node to [::ffff:a9fe:a9fe])
+    // is explicitly allow-listed here, alongside 127.0.0.1: the metadata check must still block it,
+    // proving the metadata guard is checked before the allow-list, not merely that it was never listed.
+    const caught: unknown = await safeFetch(`${base}/mapped-metadata`, { unsafeAllowAddresses: ["127.0.0.1", "::ffff:a9fe:a9fe"] }).catch((error: unknown) => error);
     expect(caught).toBeInstanceOf(SafeFetchError);
     expect(caught).toMatchObject({ reason: "redirect_target" });
     expect((caught as SafeFetchError).message).toMatch(/metadata address/);
