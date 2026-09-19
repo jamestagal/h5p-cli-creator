@@ -12,7 +12,7 @@ This is a pnpm workspace monorepo:
 
 - `packages/shared` — the Zod activity contract shared by the engine and its callers.
 - `packages/engine` — the registry, validator, handlers, assembler and public API for the new generation engine.
-- `apps/cli` — `leap`, the CLI on the new engine (currently just `leap flashcards`).
+- `apps/cli` — `leap`, the CLI on the new engine (`leap flashcards` and `leap generate`).
 - `apps/cli-legacy` — the original `h5p-cli-creator` tool, frozen (bug fixes only). **The rest of this
   README, and `CONTRIBUTING.md`'s handler-development guide, document this legacy CLI**; its own
   docs and examples live under `apps/cli-legacy/` (`apps/cli-legacy/developer-guides/`,
@@ -24,6 +24,45 @@ This is a pnpm workspace monorepo:
 Use `pnpm` (not `npm`) for every command in this repo. `pnpm verify` runs build, typecheck, lint,
 test and the engine's Playwright smoke suite in one shot, and assumes you've already run
 `pnpm install --frozen-lockfile`.
+
+## `leap generate`
+
+Generates `multiChoice`, `blanks` and `flashcards` activities from a source document (`.pdf`, `.md`
+or `.txt`) and an optional unit of competency, compiles each one to `.h5p`, and writes a mapping
+table and a cost report:
+
+```bash
+node apps/cli/dist/index.js generate \
+  --source ./course-notes.md --unit ./SYNELE001.txt --out ./out/synele001
+```
+
+`--out` is the import store as well as the output directory: rerunning the same command resumes the
+same import (the import id is a slug of the directory name) rather than starting a new one. Four
+budget limits bound a run: `--budget-usd` and `--max-tokens` are **estimated** caps, enforced
+against per-call reservations, so actual spend can land slightly over them (the cost report states
+the reservation underestimate and any spend over the cap separately); `--max-requests` and
+`--max-seconds` are **hard** limits, and `--max-seconds` counts across every run of the import.
+
+The store's layout is `import.json`, `artifacts/`, `activities/`, `revisions/`, `builds/`, the
+append-only ledgers `operations.jsonl`, `attempts.jsonl`, `acceptances.jsonl` and
+`alignment-reviews.jsonl`, plus the generated `mapping.csv` and `cost.json`.
+
+### The output directory's lock, and `lock.stale-*` tombstones
+
+A run holds the directory lock `<out>/lock/` and releases it when it ends. Only a **dead** owner on
+**this** host is ever reclaimed: a lock whose pid is still alive is respected however old it is (a
+paused process is still the owner), and a lock written on another host is refused with instructions
+to remove it by hand.
+
+Reclaiming a dead owner's lock renames it to `<out>/lock.stale-<token>`. **Nothing removes these
+tombstones automatically**, by design: `rename` keeps the old directory's modification time, so an
+age-based sweep could delete a tombstone that is still shielding a slow reclaimer, and reintroduce
+the race the tombstone exists to close. They are one small directory per dead lock reclaimed. Remove
+`lock.stale-*` by hand, and only while no `leap` process is running:
+
+```bash
+rm -rf ./out/synele001/lock.stale-*
+```
 
 ## Handler-Based Architecture
 
