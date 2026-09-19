@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-09-19T07:53:10.037Z",
+  "request": {
+    "purpose": "produce",
+    "model": "claude-sonnet-5",
+    "maxOutputTokens": 1500,
+    "userPreview": "Write ONE multiple-choice revision question from the evidence.\n- The question tests understanding of the focus, not recall of exact wording.\n- Give 3 or 4 answer options; exactly one is correct; the o"
+  },
+  "response": {
+    "providerRequestId": "req_011CfCSFPMsdg9Th2BnSS1ke",
+    "model": "claude-sonnet-5",
+    "stopReason": "end_turn",
+    "outputText": "{\"title\":\"Pre-Work Hazard Identification and Isolation Permit Documentation\",\"question\":\"A worker is preparing to isolate a piece of equipment. During the inspection, they discover the equipment is fed from more than one power supply. What should the worker do with this finding, and why is it significant?\",\"answers\":[{\"text\":\"Record it as a hazard on the isolation permit, because equipment fed from more than one supply is dangerous and must be documented before work proceeds.\",\"correct\":true,\"feedback\":\"Correct. The worker records hazards found, including multiple supplies, along with the chosen controls on the isolation permit, which must be signed before work begins.\"},{\"text\":\"Ignore it, since only damaged insulation and exposed conductors need to be recorded as hazards.\",\"correct\":false,\"feedback\":\"This is incorrect because equipment fed from more than one supply is specifically identified as a hazard that must also be recorded.\"},{\"text\":\"Proceed with isolation immediately, since the permit only needs to be completed after the work is finished.\",\"correct\":false,\"feedback\":\"This is incorrect because the permit must be signed by the worker and supervisor before any work begins, not after.\"},{\"text\":\"Report it verbally to a supervisor instead of writing it on the permit.\",\"correct\":false,\"feedback\":\"This is incorrect because hazards found must be recorded in writing on the isolation permit, not just reported verbally.\"}],\"evidenceIds\":[\"ev-s28\",\"ev-s29\",\"ev-s30\",\"ev-s31\",\"ev-s32\",\"ev-s34\",\"ev-s35\",\"ev-s36\"]}",
+    "rawUsage": {
+      "input_tokens": 298,
+      "cache_creation_input_tokens": 1396,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 1396,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 514,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "usage": {
+      "inputTokens": 298,
+      "outputTokens": 514,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 1396
+    },
+    "latencyMs": 6963
+  }
+}

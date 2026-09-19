@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-09-19T07:52:50.064Z",
+  "request": {
+    "purpose": "produce",
+    "model": "claude-sonnet-5",
+    "maxOutputTokens": 1500,
+    "userPreview": "Write ONE fill-in-the-blanks revision passage from the evidence.\n- The passage is 2 to 4 sentences of plain text that closely follows the evidence, with 2 to 4 blanks written as {{b1}}, {{b2}}, ... in"
+  },
+  "response": {
+    "providerRequestId": "req_011CfCSE2wm82pvQyVZejCBC",
+    "model": "claude-sonnet-5",
+    "stopReason": "end_turn",
+    "outputText": "{\"title\":\"Work Completion and Restoration Sequence\",\"taskDescription\":\"Fill in the blanks to revise the correct order of steps for completing work and restoring supply after lockout and tagout.\",\"passage\":\"When the work is complete, the worker removes tools and materials, checks that guards and covers are refitted, and confirms that everyone has left the {{b1}}. Each worker then removes only their own lock from the {{b2}}. The last lock removed is the lock of the worker who holds the permit, and only after the supervisor has {{b3}} the completion section. Lockout and tagout ends when the permit is {{b4}}, never before.\",\"blanks\":[{\"answers\":[\"isolated zone\"],\"tip\":\"Where must everyone have left before locks are removed\",\"evidenceIds\":[\"ev-s58\"]},{\"answers\":[\"hasp\"],\"tip\":\"The device each worker's lock is attached to\",\"evidenceIds\":[\"ev-s59\"]},{\"answers\":[\"countersigned\"],\"tip\":\"What the supervisor does to the completion section\",\"evidenceIds\":[\"ev-s61\"]},{\"answers\":[\"closed\"],\"tip\":\"The permit must be this before lockout and tagout truly ends\",\"evidenceIds\":[\"ev-s62\"]}]}",
+    "rawUsage": {
+      "input_tokens": 345,
+      "cache_creation_input_tokens": 1324,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 1324,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 404,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "usage": {
+      "inputTokens": 345,
+      "outputTokens": 404,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 1324
+    },
+    "latencyMs": 5340
+  }
+}

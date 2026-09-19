@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-09-19T07:52:55.340Z",
+  "request": {
+    "purpose": "produce",
+    "model": "claude-sonnet-5",
+    "maxOutputTokens": 1500,
+    "userPreview": "Write ONE fill-in-the-blanks revision passage from the evidence.\n- The passage is 2 to 4 sentences of plain text that closely follows the evidence, with 2 to 4 blanks written as {{b1}}, {{b2}}, ... in"
+  },
+  "response": {
+    "providerRequestId": "req_011CfCSES9H97Sobv2YwtBrV",
+    "model": "claude-sonnet-5",
+    "stopReason": "end_turn",
+    "outputText": "{\"title\":\"Personal Protective Equipment Limitations\",\"taskDescription\":\"Fill in each blank with the exact word or phrase from the evidence that completes the statement about the limitations and use of personal protective equipment.\",\"passage\":\"Insulated gloves are inspected for pinholes by rolling them to trap {{b1}} before each use, while safety glasses protect against {{b2}} particles. Personal protective equipment reduces the severity of an injury; it does not replace {{b3}}. Rings, watches and metal jewellery are removed before electrical work because they conduct current and can cause deep {{b4}}.\",\"blanks\":[{\"answers\":[\"air\"],\"tip\":\"What is trapped inside the glove to check for pinholes\",\"evidenceIds\":[\"ev-s68\"]},{\"answers\":[\"arc flash\"],\"tip\":\"A hazardous electrical event that produces particles\",\"evidenceIds\":[\"ev-s70\"]},{\"answers\":[\"isolation\"],\"tip\":\"The safety procedure that PPE cannot substitute for\",\"evidenceIds\":[\"ev-s74\",\"ev-s75\"]},{\"answers\":[\"burns\"],\"tip\":\"The type of injury caused by metal jewellery conducting current\",\"evidenceIds\":[\"ev-s76\",\"ev-s77\"]}]}",
+    "rawUsage": {
+      "input_tokens": 254,
+      "cache_creation_input_tokens": 1258,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 1258,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 415,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "usage": {
+      "inputTokens": 254,
+      "outputTokens": 415,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 1258
+    },
+    "latencyMs": 5182
+  }
+}

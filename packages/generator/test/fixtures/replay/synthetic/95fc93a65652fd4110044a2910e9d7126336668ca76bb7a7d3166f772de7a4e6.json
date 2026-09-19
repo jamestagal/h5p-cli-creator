@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-09-19T07:53:03.020Z",
+  "request": {
+    "purpose": "produce",
+    "model": "claude-sonnet-5",
+    "maxOutputTokens": 1500,
+    "userPreview": "Write ONE multiple-choice revision question from the evidence.\n- The question tests understanding of the focus, not recall of exact wording.\n- Give 3 or 4 answer options; exactly one is correct; the o"
+  },
+  "response": {
+    "providerRequestId": "req_011CfCSEu8FKMjE2wDVYyR5D",
+    "model": "claude-sonnet-5",
+    "stopReason": "end_turn",
+    "outputText": "{\"title\":\"Lockout and Tagout: Maintaining Isolation\",\"question\":\"When several workers are all involved in isolating the same piece of equipment, what is the correct procedure for controlling re-energisation?\",\"answers\":[{\"text\":\"Each worker applies their own lock to a multi-lock hasp, and the equipment cannot be re-energised until every lock, including the last one, is removed.\",\"correct\":true,\"feedback\":\"Correct. When several workers are involved, each applies their own lock to a multi-lock hasp so the equipment cannot be re-energised until the last lock is removed.\"},{\"text\":\"One worker applies a single lock on behalf of the whole group, and any group member can remove it once their task is finished.\",\"correct\":false,\"feedback\":\"This is incorrect because only the worker who applied a lock may remove it, and each worker involved must apply their own lock rather than relying on one shared lock.\"},{\"text\":\"Each worker attaches a warning tag without a lock, since the tag alone is enough to prevent the equipment from being re-energised.\",\"correct\":false,\"feedback\":\"This is incorrect because a tag without a lock is only a warning, not a control, and must never be used alone where a lock can be fitted.\"},{\"text\":\"Workers take turns locking and unlocking the equipment as they finish their individual tasks, so the equipment can be re-energised as soon as the first person leaves.\",\"correct\":false,\"feedback\":\"This is incorrect because the equipment cannot be re-energised until all locks, including the last one, are removed, not just the first worker's lock.\"}],\"evidenceIds\":[\"ev-s15\",\"ev-s20\",\"ev-s21\",\"ev-s22\",\"ev-s23\",\"ev-s24\",\"ev-s25\"]}",
+    "rawUsage": {
+      "input_tokens": 263,
+      "cache_creation_input_tokens": 1296,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 1296,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 554,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "usage": {
+      "inputTokens": 263,
+      "outputTokens": 554,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 1296
+    },
+    "latencyMs": 6549
+  }
+}

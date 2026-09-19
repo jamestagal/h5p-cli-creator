@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-09-19T07:52:44.708Z",
+  "request": {
+    "purpose": "plan",
+    "model": "claude-sonnet-5",
+    "maxOutputTokens": 3000,
+    "userPreview": "CONCEPTS:\n- c1: Electrical Hazard Severity — Electricity poses an immediate and severe threat to workers, capable of causing fatal injuries within seconds of contact. (evidence: 1 sentence)\n- c2: Isol"
+  },
+  "response": {
+    "providerRequestId": "req_011CfCSDVFmxFLsqofmPS7AG",
+    "model": "claude-sonnet-5",
+    "stopReason": "end_turn",
+    "outputText": "{\"activities\":[{\"slot\":1,\"type\":\"multiChoice\",\"conceptIds\":[\"c1\"],\"criteriaIds\":[],\"focus\":\"Recognize the severity and immediacy of electrical hazards to workers\"},{\"slot\":2,\"type\":\"multiChoice\",\"conceptIds\":[\"c2\"],\"criteriaIds\":[],\"focus\":\"Identify isolation as the fundamental step before electrical work begins\"},{\"slot\":3,\"type\":\"multiChoice\",\"conceptIds\":[\"c3\"],\"criteriaIds\":[\"PC2.1\"],\"focus\":\"Understand how lockout and tagout maintains a de-energized state\"},{\"slot\":4,\"type\":\"multiChoice\",\"conceptIds\":[\"c4\",\"c8\"],\"criteriaIds\":[\"PC1.1\",\"PC1.2\"],\"focus\":\"Apply pre-work hazard identification and its documentation on an isolation permit\"},{\"slot\":5,\"type\":\"multiChoice\",\"conceptIds\":[\"c5\"],\"criteriaIds\":[\"PC2.2\"],\"focus\":\"Verify correct application of the testing for dead procedure\"},{\"slot\":6,\"type\":\"blanks\",\"conceptIds\":[\"c6\"],\"criteriaIds\":[\"PC3.1\",\"PC3.3\"],\"focus\":\"Recall the correct sequence of steps for work completion and restoration\"},{\"slot\":7,\"type\":\"blanks\",\"conceptIds\":[\"c7\"],\"criteriaIds\":[],\"focus\":\"Complete statements about the limitations of personal protective equipment\"},{\"slot\":8,\"type\":\"blanks\",\"conceptIds\":[\"c8\"],\"criteriaIds\":[\"PC1.1\"],\"focus\":\"Fill in key elements required in isolation permit documentation\"},{\"slot\":9,\"type\":\"flashcards\",\"conceptIds\":[\"c1\",\"c2\",\"c3\",\"c4\",\"c5\",\"c6\",\"c7\",\"c8\"],\"criteriaIds\":[\"PC1.1\",\"PC1.2\",\"PC2.1\",\"PC2.2\",\"PC3.1\",\"PC3.3\"],\"focus\":\"Review all key concepts and terminology related to electrical safety isolation procedures\"}]}",
+    "rawUsage": {
+      "input_tokens": 1495,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 690,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "usage": {
+      "inputTokens": 1495,
+      "outputTokens": 690,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 0
+    },
+    "latencyMs": 7376
+  }
+}

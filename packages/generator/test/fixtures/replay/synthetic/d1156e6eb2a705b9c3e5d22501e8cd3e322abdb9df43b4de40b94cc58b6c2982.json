@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-09-19T07:52:59.247Z",
+  "request": {
+    "purpose": "produce",
+    "model": "claude-sonnet-5",
+    "maxOutputTokens": 1500,
+    "userPreview": "Write ONE fill-in-the-blanks revision passage from the evidence.\n- The passage is 2 to 4 sentences of plain text that closely follows the evidence, with 2 to 4 blanks written as {{b1}}, {{b2}}, ... in"
+  },
+  "response": {
+    "providerRequestId": "req_011CfCSEpdNfiXGvJ6n37NHi",
+    "model": "claude-sonnet-5",
+    "stopReason": "end_turn",
+    "outputText": "{\"title\":\"Isolation Permit Documentation\",\"taskDescription\":\"Fill in the blanks to complete the passage about what must be recorded and completed on an isolation permit.\",\"passage\":\"The worker records the hazards found and the {{b1}} chosen on the isolation permit. A permit is signed by the worker and by a {{b2}} before any work proceeds. The result of the {{b3}} is written on the permit before work begins.\",\"blanks\":[{\"answers\":[\"controls\"],\"tip\":\"What is chosen to address the hazards found?\",\"evidenceIds\":[\"ev-s34\",\"ev-s35\"]},{\"answers\":[\"supervisor\"],\"tip\":\"Who else must sign the permit besides the worker?\",\"evidenceIds\":[\"ev-s36\"]},{\"answers\":[\"test\"],\"tip\":\"What outcome is written on the permit before work begins?\",\"evidenceIds\":[\"ev-s51\",\"ev-s52\"]}]}",
+    "rawUsage": {
+      "input_tokens": 318,
+      "cache_creation_input_tokens": 1159,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 1159,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 298,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "usage": {
+      "inputTokens": 318,
+      "outputTokens": 298,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 1159
+    },
+    "latencyMs": 3852
+  }
+}

@@ -37,7 +37,8 @@ node apps/cli/dist/index.js generate \
 ```
 
 The reproducible demo run, over the labelled synthetic fixtures, recording every response so the
-end-to-end test can replay it offline:
+end-to-end test can replay it offline. What one such run cost, and how far the budget estimates were
+from the real usage, is recorded in [`docs/testing/phase-2-demo.md`](docs/testing/phase-2-demo.md):
 
 ```bash
 node --env-file=.env apps/cli/dist/index.js generate \

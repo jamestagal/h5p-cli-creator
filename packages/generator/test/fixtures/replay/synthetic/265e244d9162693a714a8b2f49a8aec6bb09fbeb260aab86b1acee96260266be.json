@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-09-19T07:53:01.461Z",
+  "request": {
+    "purpose": "produce",
+    "model": "claude-sonnet-5",
+    "maxOutputTokens": 3000,
+    "userPreview": "Write a set of 4 to 12 revision flashcards from the evidence.\n- front is a term, question or prompt (short); back is the answer or definition in one or two sentences drawn from the evidence; tip is an"
+  },
+  "response": {
+    "providerRequestId": "req_011CfCSE2yFSta7e6T4TrExn",
+    "model": "claude-sonnet-5",
+    "stopReason": "end_turn",
+    "outputText": "{\"title\":\"Electrical Safety Isolation Procedures Revision Flashcards\",\"description\":\"A set of flashcards reviewing key terminology and procedures for electrical safety isolation, including hazard identification, lockout and tagout, testing for dead, and safe work completion.\",\"cards\":[{\"front\":\"Why is electricity considered such a severe workplace hazard?\",\"back\":\"Electricity can injure or kill a worker in less than a second, making it an immediate and severe threat during work involving electrical equipment.\",\"tip\":\"Think about the speed of harm, not just its severity.\",\"evidenceIds\":[\"ev-s4\"]},{\"front\":\"What is isolation, and why is it preferred over other controls?\",\"back\":\"Isolation is the process of disconnecting equipment from every source of electrical energy before work begins, and a worker who isolates correctly removes the hazard instead of merely managing it.\",\"tip\":\"Consider the difference between removing a hazard and controlling it.\",\"evidenceIds\":[\"ev-s8\",\"ev-s10\"]},{\"front\":\"What is the purpose of lockout and tagout?\",\"back\":\"Lockout and tagout is the method used to keep isolated equipment isolated, using a lockout device such as a padlock or hasp that physically prevents an isolator from being closed, along with a warning tag.\",\"tip\":\"Focus on maintaining, not just achieving, isolation.\",\"evidenceIds\":[\"ev-s15\",\"ev-s16\",\"ev-s17\",\"ev-s18\"]},{\"front\":\"What information must a tag display, and what is its function?\",\"back\":\"A tag is a warning label attached to the lockout device that names the worker, the date and the reason for the isolation, but it only warns rather than physically controls the hazard.\",\"tip\":\"Remember it identifies who, when, and why.\",\"evidenceIds\":[\"ev-s18\",\"ev-s19\"]},{\"front\":\"Who is allowed to remove a lock, and how is this managed when multiple workers are involved?\",\"back\":\"Only the worker who applied a lock may remove it, and when several workers are involved, each applies their own lock to a multi-lock hasp so equipment cannot be re-energised until the last lock is removed.\",\"tip\":\"Think about individual accountability for each lock.\",\"evidenceIds\":[\"ev-s20\",\"ev-s21\",\"ev-s22\",\"ev-s23\"]},{\"front\":\"Why must a tag never be used alone when a lock could be fitted?\",\"back\":\"A tag without a lock is only a warning, not a control, so it must never be used on its own where a lock can be fitted.\",\"tip\":\"Warnings alone do not physically prevent re-energisation.\",\"evidenceIds\":[\"ev-s24\",\"ev-s25\"]},{\"front\":\"What hazards should a worker look for before isolating equipment?\",\"back\":\"Typical hazards include damaged insulation, exposed conductors, moisture near live parts, stored energy in capacitors, and equipment fed from more than one supply.\",\"tip\":\"Recall the list covers both physical damage and hidden energy sources.\",\"evidenceIds\":[\"ev-s28\",\"ev-s29\",\"ev-s30\",\"ev-s31\"]},{\"front\":\"What must be recorded on the isolation permit before work begins?\",\"back\":\"The worker records the hazards found and the controls chosen on the isolation permit, which must be signed by the worker and a supervisor before any work starts.\",\"tip\":\"Think about documentation as a shared responsibility.\",\"evidenceIds\":[\"ev-s34\",\"ev-s35\",\"ev-s36\"]},{\"front\":\"What does testing for dead confirm, and when must it be done?\",\"back\":\"Testing for dead confirms that the conductors to be worked on carry no voltage, and it must be carried out at the point of work using a voltage tester rated for the circuit after the isolator is opened and locked.\",\"tip\":\"Remember this happens after isolation, not instead of it.\",\"evidenceIds\":[\"ev-s38\",\"ev-s39\",\"ev-s42\"]},{\"front\":\"How is a voltage tester proved to ensure a test for dead is valid?\",\"back\":\"The tester is proved on a known live source immediately before and immediately after the test, and if it fails either proving check, the test result is discarded and the tester is replaced.\",\"tip\":\"A zero reading on an unproved tester proves nothing.\",\"evidenceIds\":[\"ev-s43\",\"ev-s44\",\"ev-s45\",\"ev-s46\",\"ev-s49\",\"ev-s50\"]},{\"front\":\"What is the correct sequence for removing locks and closing out work?\",\"back\":\"Each worker removes only their own lock from the hasp, with the last lock removed being that of the worker holding the permit, and only after the supervisor has countersigned the completion section.\",\"tip\":\"Think about reverse order and final supervisor approval.\",\"evidenceIds\":[\"ev-s59\",\"ev-s60\",\"ev-s61\"]},{\"front\":\"Why can personal protective equipment never replace isolation?\",\"back\":\"Personal protective equipment such as insulated gloves, safety glasses and non-conductive footwear reduces the severity of an injury, but it does not replace isolation as a control measure.\",\"tip\":\"PPE manages consequences, isolation removes the hazard itself.\",\"evidenceIds\":[\"ev-s68\",\"ev-s70\",\"ev-s71\",\"ev-s74\",\"ev-s75\"]}]}",
+    "rawUsage": {
+      "input_tokens": 360,
+      "cache_creation_input_tokens": 2891,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 2891,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 1700,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "usage": {
+      "inputTokens": 360,
+      "outputTokens": 1700,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 2891
+    },
+    "latencyMs": 16734
+  }
+}

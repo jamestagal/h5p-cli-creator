@@ -1,0 +1,34 @@
+{
+  "recordedAt": "2026-09-19T07:52:26.661Z",
+  "request": {
+    "purpose": "parseUnit",
+    "model": "claude-haiku-4-5-20251001",
+    "maxOutputTokens": 4000,
+    "userPreview": "UNIT TEXT:\nSYNELE001 Isolate and test electrical equipment (SYNTHETIC UNIT FOR TESTS)\n\nApplication\nThis synthetic unit describes the skills required to isolate electrical equipment, confirm isolation "
+  },
+  "response": {
+    "providerRequestId": "req_011CfCSCDQ1M7q88QKu7By5C",
+    "model": "claude-haiku-4-5-20251001",
+    "stopReason": "end_turn",
+    "outputText": "{\"code\":\"SYNELE001\",\"title\":\"Isolate and test electrical equipment (SYNTHETIC UNIT FOR TESTS)\",\"elements\":[{\"number\":\"1\",\"text\":\"Prepare to isolate equipment\",\"performanceCriteria\":[{\"number\":\"1.1\",\"text\":\"Identify electrical hazards in the work area and record them on the isolation permit\"},{\"number\":\"1.2\",\"text\":\"Confirm every supply to the equipment, including secondary supplies\"}]},{\"number\":\"2\",\"text\":\"Isolate and secure equipment\",\"performanceCriteria\":[{\"number\":\"2.1\",\"text\":\"Apply lockout devices and tags in accordance with site procedure\"},{\"number\":\"2.2\",\"text\":\"Test for dead using a proved voltage tester\"}]},{\"number\":\"3\",\"text\":\"Restore supply\",\"performanceCriteria\":[{\"number\":\"3.1\",\"text\":\"Remove locks and tags in the correct sequence after work is complete\"},{\"number\":\"3.2\",\"text\":\"Complete an incident report for any breach of isolation\"},{\"number\":\"3.3\",\"text\":\"Confirm guards and covers are refitted before supply is restored\"}]}],\"knowledgeEvidence\":[\"types of electrical hazards including stored energy and multiple supplies\",\"purpose of lockout devices and tags\"],\"performanceEvidence\":[\"isolate and test at least one item of equipment fed from two supplies\"]}",
+    "rawUsage": {
+      "input_tokens": 822,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 300,
+      "service_tier": "standard",
+      "inference_geo": "not_available"
+    },
+    "usage": {
+      "inputTokens": 822,
+      "outputTokens": 300,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 0
+    },
+    "latencyMs": 6693
+  }
+}
