@@ -67,15 +67,23 @@ export class FileStore implements ImportStore {
     await writeJsonAtomic(path, value);
   }
 
-  /** A complete final record that lost its newline gets one; a truncated fragment is cut off. Earlier records are untouched; corruption elsewhere still throws on read. Runs inside the ledger's queue, and the ledger counts as repaired only once this has succeeded. */
+  /**
+   * A complete final record that lost its newline gets one; a truncated fragment is cut off. Earlier records are
+   * untouched; corruption elsewhere still throws on read. Runs inside the ledger's queue, and the ledger counts as
+   * repaired only once this has succeeded. Only the parse decides whether the tail is a fragment: a write error while
+   * adding the newline (ENOSPC, EACCES, a lost lock) propagates with the complete, possibly billed record still on disk.
+   */
   private async repairTail(path: string): Promise<void> {
     let text: string;
     try { text = await readFile(path, "utf8"); } catch (err) { if (isEnoent(err)) return; throw err; }
     if (text.length === 0 || text.endsWith("\n")) return;
 
     const cut = text.lastIndexOf("\n") + 1;
-    try { JSON.parse(text.slice(cut)); await appendFile(path, "\n"); }
-    catch { await truncate(path, Buffer.byteLength(text.slice(0, cut))); }
+    let complete = true;
+    try { JSON.parse(text.slice(cut)); } catch { complete = false; }
+    if (!complete) { await truncate(path, Buffer.byteLength(text.slice(0, cut))); return; }
+
+    await appendFile(path, "\n");
   }
   getImport(importId: string) { return readJson<ImportRecord>(this.p("import.json")).then((r) => (r && r.importId === importId ? r : null)); }
   putImport(record: ImportRecord) { return this.writeJson(this.p("import.json"), record); }

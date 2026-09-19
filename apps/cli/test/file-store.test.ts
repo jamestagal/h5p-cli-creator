@@ -1,8 +1,19 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileStore, readJsonl, StoreCorruptError } from "../src/file-store.js";
+
+/** Failure injection for the one filesystem call the tail repair makes: each queued error fails the next append, everything else is the real fs. */
+const appendFailures = vi.hoisted(() => [] as Error[]);
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  const appendFile: typeof actual.appendFile = (...args) => {
+    const failure = appendFailures.shift();
+    return failure ? Promise.reject(failure) : actual.appendFile(...args);
+  };
+  return { ...actual, appendFile };
+});
 
 const importRecord = { importId: "imp", orgId: "local", name: "n", sourceType: "markdown" as const, status: "queued" as const, customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice" as const], fingerprint: "f".repeat(64), budget: { usdMicro: 10, requests: 1, tokens: 1, elapsedMs: 1 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: "imp", createdAt: "t", updatedAt: "t" };
 const start = { event: "start" as const, attemptId: "a1", operationId: "imp:plan", callKey: "plan", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: 0, purpose: "plan" as const, provider: "fake" as const, model: "m", credentialOwner: "server" as const, reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" };
@@ -70,6 +81,19 @@ describe("FileStore", () => {
     expect((await readFile(path2, "utf8")).endsWith("\n")).toBe(true);
     await writeFile(path2, `${JSON.stringify(op)}\nnot json\n`);
     await expect(store.putOperation(op)).rejects.toBeInstanceOf(StoreCorruptError); // corruption elsewhere is still refused
+  });
+  it("keeps a complete final record when the newline repair itself fails, and appends cleanly on the retry", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "leap-repair-fail-"));
+    const path = join(dir, "operations.jsonl");
+    const onDisk = JSON.stringify(operationRecord); // a complete, billed record that lost only its newline
+    await writeFile(path, onDisk);
+    const store = new FileStore(dir);
+    appendFailures.push(Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" }));
+    await expect(store.putOperation({ ...operationRecord, status: "succeeded", outcome: "ok" })).rejects.toMatchObject({ code: "ENOSPC" });
+    expect(appendFailures).toHaveLength(0); // the failure hit the repair's newline append, not some later call
+    expect(await readFile(path, "utf8")).toBe(onDisk); // the write error never costs the record
+    await store.putOperation({ ...operationRecord, status: "succeeded", outcome: "ok" });
+    expect((await readJsonl<{ status: string }>(path)).records.map((o) => o.status)).toEqual(["running", "succeeded"]);
   });
   it("serialises concurrent first appends to a damaged ledger: both new records survive a reopen", async () => {
     const dir = await mkdtemp(join(tmpdir(), "leap-queue-"));
