@@ -25,8 +25,8 @@
 | Model output schemas vs activity schemas | Separate "model output" Zod schemas with no optionals/defaults/refinements (nullable where needed); code converts them to `ActivitySpec`, assigns ids, attaches provenance, then the full spec parse and the engine validator run | JSON Schema cannot carry refinements; ids are assigned in code (spec §2.2); keeps prompts and cache prefixes stable |
 | Web-page ingestion | Deferred to phase 5 (where the server exists); phase 2 ingests text, markdown and PDF text layers | Owner scope for phase 2; the SSRF guard is built now and wired into the only fetch that exists (`apps/cli` image resolver) |
 | Prompt caching | 5-minute ephemeral caching on the system block and the concept-map context block; cache writes priced at the 5-minute rate | Sonnet 5 needs ≥1,024 tokens in the cached prefix, Haiku 4.5 ≥4,096; below that the API silently does not cache, and `cache_read_input_tokens` shows whether it did |
-| Budget: what is hard and what is estimated | **Requests and elapsed time are hard limits:** the request count is exact, and the elapsed limit is a per-import deadline (accumulated across runs in `budgetUsed.elapsedMs`) that is checked before every dispatch and every backoff wait and passed to the adapter as the SDK timeout, so no attempt can outlive it. **Spend and tokens are estimated caps:** the reservation counts input tokens as `ceil(0.5 × characters)` of system + cached context + user + the serialised output schema plus a fixed overhead allowance, prices them at the 5-minute cache-write rate and output at `max_tokens`; dispatch is refused once spent + reserved would cross the cap, but an attempt whose real token count exceeds its estimate is charged by the provider before the ledger can know, so the cap can be overshot by at most the underestimate of the attempts in flight. Every outcome records `reservationExceeded` and `overshootUsdMicro`; the report and the demo total them | The honest description the review asked for. No local tokenizer for Sonnet 5 exists; the `count_tokens` endpoint would give exact counts at the price of one extra request per attempt and is the phase-5 upgrade path if the recorded overshoot is ever material. The pricing-split test proves the rate arithmetic never under-reserves for a given count; it does not, and cannot, prove the count |
-| Resume identity and exclusivity | Every import record stores an immutable `fingerprint` (source text hash, unit text hash, selected types, language, prompt config, chunk budget, plan rules, prompt version, model roles, schema version); the lock is taken first, the import is read and its fingerprint checked **under the lock**, and a mismatch is refused before any write. The lock is a directory lock (`lock/` created with an atomic `mkdir`, an `owner.json` with a random token, an mtime heartbeat); a stale lock (old mtime, or a dead owner pid on this host) is reclaimed by renaming it away first, so two reclaimers can never both win and nobody can delete a live lock; release removes the directory only while it still carries the holder's token. `leap generate` and `leap review` both hold it | Reusing an output directory with a different source, unit, language or chunking would mix old artefacts with new input; two writers would corrupt the JSONL ledgers; read-check-unlink reclamation was racy |
+| Budget: what is hard and what is estimated | **Requests and elapsed time are hard limits:** the request count is exact, and the elapsed limit is a per-import deadline (accumulated across runs in `budgetUsed.elapsedMs`) that is checked before every dispatch and every backoff wait and passed to the adapter as the SDK timeout, so no attempt can outlive it. **Spend and tokens are estimated caps:** the reservation counts input tokens as `ceil(0.5 × characters)` of system + cached context + user + the serialised output schema plus a fixed overhead allowance, prices them at the 5-minute cache-write rate and output at `max_tokens`; dispatch is refused once spent + reserved would cross the cap, but an attempt whose real token count exceeds its estimate is charged by the provider before the ledger can know, so the cap can be overshot by at most the underestimate of the attempts in flight. Every outcome records `reservationExceeded` and `underestimateUsdMicro`; the report and the demo total them | The honest description the review asked for. No local tokenizer for Sonnet 5 exists; the `count_tokens` endpoint would give exact counts at the price of one extra request per attempt and is the phase-5 upgrade path if the recorded overshoot is ever material. The pricing-split test proves the rate arithmetic never under-reserves for a given count; it does not, and cannot, prove the count |
+| Resume identity and exclusivity | Every import record stores an immutable `fingerprint` (source text hash, unit text hash, selected types, language, prompt config, chunk budget, plan rules, prompt version, model roles, schema version); the lock is taken first, the import is read and its fingerprint checked **under the lock**, and a mismatch is refused before any write. The lock is a directory lock (`lock/` created with an atomic `mkdir`, an `owner.json` with a random token). Only a **dead local owner** is reclaimed: a live local pid is never reclaimed however old the lock, and a lock from another host is refused with instructions. Reclamation renames the dead lock to a tombstone named by the dead owner's token and keeps it for an hour, so two reclaimers of the same dead lock target the same name and the second rename fails instead of moving a fresh lock; release removes the directory only while it still carries the holder's token, and every ledger append re-checks the token (`LockLostError`). A durable run anchor is written before any dispatch so a killed run's elapsed time is charged conservatively on resume. `leap generate` and `leap review` both hold the lock | Reusing an output directory with a different source, unit, language or chunking would mix old artefacts with new input; two writers would corrupt the JSONL ledgers; read-check-unlink and age-based reclamation were racy and could steal a paused process's lock |
 | Concurrency | Activities run in **one serial lane per type**; lanes run concurrently up to `--concurrency` (default 3). Within a lane the near-duplicate check sees every earlier promotion, so the check is exact; a budget refusal or infrastructure failure sets a shared stop flag, in-flight attempts settle, and every undispatched activity gets an explicit outcome (`failed` with `skipped: <reason>`, re-dispatched on resume) | The earlier `Promise.all` let workers keep spending after the import was marked failed and let same-type activities pass the duplicate check against one stale snapshot |
 | Model roles (provisional, §13) | `parseUnit`, `extract`, `merge`, `align`: `claude-haiku-4-5-20251001`; `plan`, `produce`: `claude-sonnet-5` | Spec §8; confirmed by the phase-3 gate, not assumed |
 | Review and acceptance | Minimal **revision-bound** records now: `AcceptanceRecord` (spec §4 `acceptance_decisions`) and `AlignmentReviewRecord` (`alignment_reviews`) in the store, written by `leap review` from the CLI; `mapping.csv` status becomes `suggested | confirmed | rejected | added`; the cost report gains accepted count and cost per accepted activity | The owner's ruling: the UI can wait, the quality gate and cost-per-accepted-activity measurement cannot. Phase 3 records its judgements with the same records |
@@ -39,7 +39,7 @@
 - The engine keeps its boundary (no network, `process.env|cwd|exit`, `console`); the **generator** may read `process.env` only in one file (`llm/anthropic-provider.ts` reads `ANTHROPIC_API_KEY` when no key is injected) and never calls `console`; the CLI is the only place that prints.
 - **Exactly one call site talks to the Anthropic SDK** (`llm/anthropic-provider.ts`), with `maxRetries: 0`. Every model call goes through `callModel`, which reserves budget, writes an attempt-start record before dispatch and an attempt-outcome record after completion through the injected `AttemptRecorder`, and never retries. Every retry (content, transient or resumed) is a new attempt with its own start, outcome and reservation, and carries the logical call's stable `callKey` and a `retryIndex`. No placeholder content is ever written into a spec or a package.
 - **Model request settings come only from `REQUEST_PROFILES` in `models.ts`**; no stage or producer sets `temperature`, `top_p`, `top_k` or `thinking`. Response content blocks are selected by `type`, never by position.
-- **Four budget limits, two of them hard.** Requests and elapsed time are hard: the count is exact and the per-import deadline is checked before every dispatch and every backoff wait and bounds the adapter's timeout. Spend and tokens are **estimated caps**: a reservation covers the whole request (system, cached context, user text, serialised output schema, overhead allowance) at the cache-write input rate and `max_tokens` at the output rate; a dispatch whose reservation would cross a cap is refused before any record is written; an attempt whose real usage exceeds its reservation overshoots the cap by that difference, and every outcome records `reservationExceeded` and `overshootUsdMicro` so the overshoot is visible, never silent. No document, test or message calls the spend or token cap a ceiling.
+- **Four budget limits, two of them hard.** Requests and elapsed time are hard: the count is exact and the per-import deadline is checked before every dispatch and every backoff wait and bounds the adapter's timeout. Spend and tokens are **estimated caps**: a reservation covers the whole request (system, cached context, user text, serialised output schema, overhead allowance) at the cache-write input rate and `max_tokens` at the output rate; a dispatch whose reservation would cross a cap is refused before any record is written; an attempt whose real usage exceeds its reservation can push the import over its cap by up to that difference; every outcome records `reservationExceeded` and `underestimateUsdMicro` (the estimate's error), and the report states the import's spend over its cap separately, so neither is silent. No document, test or message calls the spend or token cap a ceiling.
 - **Every dispatch and every retry wait checks the shared stop signal.** Once any lane has stopped the import (budget refusal, infrastructure failure, or a storage failure while recording an outcome), no further provider call is made anywhere; in-flight attempts settle; every lane finishes; only then is the import finalised and the directory lock released.
 - **Every operation persists its result before it is marked succeeded**, through `runOperation`'s `persist` step; a persisted result is reused on resume even when the operation record was interrupted. Activity records are reconciled from the saved plan; a saved candidate revision resumes at compilation; promotion is idempotent and repairable. Resume refuses a changed `fingerprint` and requires the store's exclusive lock.
 - **Provenance is derived, not copied:** an item's `conceptIds` are the concepts whose evidence it cites, its `criteriaIds` are the plan's criteria that those concepts support (per the alignment), and an activity's evidence is the union of its items' evidence.
@@ -115,8 +115,8 @@ packages/generator/test/
 apps/cli/src/
   generate.ts                    leap generate
   review.ts                      leap review (acceptance and alignment-review records)
-  lock.ts                        acquireDirectoryLock (atomic mkdir, token, heartbeat, rename-then-remove reclaim)
-  file-store.ts                  FileStore (atomic JSON, JSONL ledgers repaired before append, the directory lock)
+  lock.ts                        acquireDirectoryLock (atomic mkdir, token, dead-owner-only reclaim via a token-named tombstone, assertHeld)
+  file-store.ts                  FileStore (atomic JSON, JSONL ledgers repaired and appended through a per-ledger queue, the directory lock)
   report.ts                      mapping.csv (review-aware status) + cost report (retry share by retryIndex, cost per accepted activity)
   image-resolver.ts              networkImageResolver uses safeFetch
 docs/superpowers/specs/2026-09-18-generator-service-design.md   §3 amended (structured outputs, file store)
@@ -631,8 +631,8 @@ export function estimateInputTokens(text: string): number {
  * allowance are calibration constants, not a proven bound: no local tokenizer exists for Sonnet 5,
  * and uploaded text, other languages or code may tokenise more densely. Every outcome records
  * whether and by how much the actual usage exceeded the reservation (Task 4) and the report and
- * demo total the overshoot (Tasks 15, 17); the count_tokens endpoint is the exact alternative
- * when that overshoot matters (one extra request per attempt).
+ * demo total the underestimate (Tasks 15, 17); the count_tokens endpoint is the exact alternative
+ * when that underestimate matters (one extra request per attempt).
  */
 export const RESERVATION_TOKENS_PER_CHAR = 0.5;
 export const STRUCTURED_OUTPUT_OVERHEAD_TOKENS = 500;
@@ -699,6 +699,8 @@ export interface AttemptStart {
   retryReason: RetryReason | null;
   /** 1-based content attempt within the operation (transient retries do not advance it). */
   attempt: number;
+  /** The budget deadline this attempt was dispatched under: an interrupted attempt is charged as if it ran until this deadline or the maximum attempt length, whichever is sooner (Task 14). */
+  deadlineMs: number;
   purpose: Purpose;
   provider: "anthropic" | "fake" | "replay";
   model: string;
@@ -728,8 +730,8 @@ export interface AttemptOutcome {
   error: string | null;
   /** True when input + cache-read + cache-write tokens exceeded reservedInputTokens: the estimate under-counted this attempt. */
   reservationExceeded: boolean;
-  /** max(0, costUsdMicro − reservedUsdMicro): what this attempt cost beyond its reservation; null when the cost is unknown. */
-  overshootUsdMicro: number | null;
+  /** max(0, costUsdMicro − reservedUsdMicro): by how much the reservation under-estimated this attempt; null when the cost is unknown. This measures the estimate, not the import's cap (the report computes spend over the cap separately). */
+  underestimateUsdMicro: number | null;
   completedAt: string;
 }
 
@@ -1092,7 +1094,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ### Task 4: LLM core — providers, provider-compatible output schemas, the four-limit budget, and `callModel` with two-event recording
 
-Answers review findings 1 (the wire schema is a tested projection of the Zod schema), 2 (`callModel` never retries; every attempt is metered), 3 (four limits: requests and a per-import deadline are hard, spend and tokens are estimated caps whose overshoot is recorded) and 9 (every attempt record carries a stable call key and a retry index).
+Answers review findings 1 (the wire schema is a tested projection of the Zod schema), 2 (`callModel` never retries; every attempt is metered), 3 (four limits: requests and a per-import deadline are hard, spend and tokens are estimated caps whose per-attempt underestimate is recorded) and 9 (every attempt record carries a stable call key and a retry index).
 
 **Files:**
 - Create: `packages/generator/src/llm/schema.ts`, `src/llm/provider.ts`, `src/llm/fake-provider.ts`, `src/llm/replay-provider.ts`, `src/llm/budget.ts`, `src/llm/call-model.ts`
@@ -1103,7 +1105,7 @@ Answers review findings 1 (the wire schema is a tested projection of the Zod sch
 - Produces (provider): `CallOptions { deadlineMs?: number }` (absolute epoch ms by which the call must be over); `ModelProvider { readonly name: "anthropic" | "fake" | "replay"; complete(req: ModelRequest, options?: CallOptions): Promise<ModelResponse> }`; `ProviderError(message, kind: "transient" | "permanent", status?: number, details?: { requestId?: string | null; retryAfterMs?: number | null })` exposing `requestId: string | null` and `retryAfterMs: number | null`; `FakeProvider(script)` and `fakeResponse(partial)` (test-only); `ReplayProvider(dir)`, `RecordingProvider(inner, dir)`, `requestKey(request)`, `ReplayMissError`.
 - Produces (budget): `BudgetLimits { usdMicro; requests; tokens; elapsedMs }`; `DEFAULT_BUDGET_LIMITS = { requests: 200, tokens: 2_000_000, elapsedMs: 1_800_000 }` (spend has no default; the caller always names it); `Budget { limits; startedAtMs; elapsedBeforeMs; deadlineMs; reservedUsdMicro; spentUsdMicro; reservedTokens; spentTokens; requests }`; `createBudget(limits: { usdMicro: number } & Partial<BudgetLimits>, startedAtMs?, elapsedBeforeMs?): Budget` (`deadlineMs = startedAtMs + max(0, limits.elapsedMs − elapsedBeforeMs)`: the per-import limit minus the time earlier runs already used); `remainingMs(budget, nowMs): number`; `reserve(budget, request, nowMs?): Reservation` with `Reservation = { ok: true; reservedUsdMicro; reservedInputTokens; reservedOutputTokens } | { ok: false; limit: BudgetLimitName; reason }`, `BudgetLimitName = "spend" | "requests" | "tokens" | "elapsed"` — synchronous, so concurrent callers cannot interleave between check and update; `settle(budget, reservation, actual: { costUsdMicro: number | null; tokens: number | null })` (an unknown cost or token count keeps the reservation as spent); `budgetSnapshot(budget, nowMs): { spentUsdMicro; reservedUsdMicro; spentTokens; requests; elapsedMs }` (`elapsedMs` = earlier runs plus this one).
 - Produces (call): `callModel(req, ctx: CallContext): Promise<CallResult>` with `CallContext = { provider; recorder; budget; operationId; callKey; retryIndex; retryReason; attempt; clock?; ids? }` and `CallResult = { kind: "ok"; json; response; attemptId } | { kind: "content_error"; reason; response; attemptId } | { kind: "transient_error" | "provider_error"; error; attemptId; providerRequestId: string | null; retryAfterMs: number | null } | { kind: "budget_refused"; limit: BudgetLimitName; reason }`.
-- Rules: reserve → start record → dispatch with `{ deadlineMs: budget.deadlineMs }` → outcome record (always, also on throw) → settle. `callModel` retries **nothing**; the SDK retries nothing (Task 5); the stage runner (Task 7) owns retries and each retry is a new `callModel` with its own reservation and records. `stop_reason` `max_tokens`, `refusal` and `model_context_window_exceeded` are `content_error`s with a reason; unparsable JSON is a `content_error`; a transient `ProviderError` is `transient_error`; anything else is `provider_error`. The outcome's `providerRequestId` comes from the response, or from the `ProviderError` when the call failed. `reservationExceeded = inputTokens + cacheReadTokens + cacheWriteTokens > reservedInputTokens`; `overshootUsdMicro = max(0, costUsdMicro − reservedUsdMicro)`, null when the cost is unknown. Tests that use a fake clock create their budget from that clock's time so the elapsed deadline is measured on one clock (review finding 7).
+- Rules: reserve → start record → dispatch with `{ deadlineMs: budget.deadlineMs }` → outcome record (always, also on throw) → settle. `callModel` retries **nothing**; the SDK retries nothing (Task 5); the stage runner (Task 7) owns retries and each retry is a new `callModel` with its own reservation and records. `stop_reason` `max_tokens`, `refusal` and `model_context_window_exceeded` are `content_error`s with a reason; unparsable JSON is a `content_error`; a transient `ProviderError` is `transient_error`; anything else is `provider_error`. The outcome's `providerRequestId` comes from the response, or from the `ProviderError` when the call failed. `reservationExceeded = inputTokens + cacheReadTokens + cacheWriteTokens > reservedInputTokens`; `underestimateUsdMicro = max(0, costUsdMicro − reservedUsdMicro)`, null when the cost is unknown. Tests that use a fake clock create their budget from that clock's time so the elapsed deadline is measured on one clock (review finding 7).
 
 - [ ] **Step 1: Failing tests**
 
@@ -1256,15 +1258,15 @@ describe("callModel", () => {
     if (result.kind === "ok") expect(result.json).toEqual({ ok: true });
     expect(recorder.events.map((e) => e.event)).toEqual(["start", "outcome"]);
     const start = recorder.events[0] as AttemptStart;
-    expect(start).toMatchObject({ callKey: "produce:act-1", retryIndex: 0, retryReason: null, attempt: 1, reservedOutputTokens: 500 });
+    expect(start).toMatchObject({ callKey: "produce:act-1", retryIndex: 0, retryReason: null, attempt: 1, reservedOutputTokens: 500, deadlineMs: CLOCK.getTime() + DEFAULT_BUDGET_LIMITS.elapsedMs });
     expect(start.reservedUsdMicro).toBeGreaterThan(0);
     const outcome = outcomes(recorder)[0]!;
-    expect(outcome).toMatchObject({ status: "ok", providerRequestId: "req_1", inputTokens: 120, outputTokens: 30, costStatus: "known", pricingVersion: expect.any(String), reservationExceeded: false, overshootUsdMicro: 0 });
+    expect(outcome).toMatchObject({ status: "ok", providerRequestId: "req_1", inputTokens: 120, outputTokens: 30, costStatus: "known", pricingVersion: expect.any(String), reservationExceeded: false, underestimateUsdMicro: 0 });
     expect(outcome.costUsdMicro).toBe(computeCost(usage, modelForRole("produce")).costUsdMicro);
     expect(recorder.startedBeforeDispatch).toBe(true);
     expect(provider.options[0]).toEqual({ deadlineMs: CLOCK.getTime() + DEFAULT_BUDGET_LIMITS.elapsedMs }); // the provider is told the deadline
   });
-  it("flags an attempt whose actual usage exceeds the reservation and records the overshoot", async () => {
+  it("flags an attempt whose actual usage exceeds the reservation and records the underestimate", async () => {
     const usage = { inputTokens: 5_000_000, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 };
     const provider = new FakeProvider([fakeResponse({ outputText: "{\"ok\":true}", usage })]);
     const recorder = new MemoryRecorder();
@@ -1273,8 +1275,8 @@ describe("callModel", () => {
     const start = recorder.events[0] as AttemptStart;
     const outcome = outcomes(recorder)[0]!;
     expect(outcome.reservationExceeded).toBe(true);
-    expect(outcome.overshootUsdMicro).toBe(computeCost(usage, modelForRole("produce")).costUsdMicro! - start.reservedUsdMicro);
-    expect(c.budget.spentUsdMicro).toBe(outcome.costUsdMicro); // the cap was overshot; the ledger says so rather than hiding it
+    expect(outcome.underestimateUsdMicro).toBe(computeCost(usage, modelForRole("produce")).costUsdMicro! - start.reservedUsdMicro);
+    expect(c.budget.spentUsdMicro).toBe(outcome.costUsdMicro); // the actual cost is what the ledger carries; the underestimate is recorded, never hidden
   });
   it("refuses a dispatch once the per-import deadline has passed", async () => {
     const provider = new FakeProvider([fakeResponse({ outputText: "{\"ok\":true}" })]);
@@ -1299,7 +1301,7 @@ describe("callModel", () => {
     const recorder = new MemoryRecorder();
     const c = ctx(provider, recorder);
     await callModel(req(), c);
-    expect(outcomes(recorder)[0]).toMatchObject({ costUsdMicro: null, costStatus: "unavailable", inputTokens: null, reservationExceeded: false, overshootUsdMicro: null });
+    expect(outcomes(recorder)[0]).toMatchObject({ costUsdMicro: null, costStatus: "unavailable", inputTokens: null, reservationExceeded: false, underestimateUsdMicro: null });
     expect(c.budget.reservedUsdMicro).toBe(0);
     expect(c.budget.spentUsdMicro).toBe((recorder.events[0] as AttemptStart).reservedUsdMicro);
   });
@@ -1668,7 +1670,7 @@ export async function callModel(request: ModelRequest, ctx: CallContext): Promis
 
   const attemptId = (ctx.ids ?? randomUUID)();
   await ctx.recorder.recordStart({
-    event: "start", attemptId, operationId: ctx.operationId, callKey: ctx.callKey, retryIndex: ctx.retryIndex, retryReason: ctx.retryReason, attempt: ctx.attempt,
+    event: "start", attemptId, operationId: ctx.operationId, callKey: ctx.callKey, retryIndex: ctx.retryIndex, retryReason: ctx.retryReason, attempt: ctx.attempt, deadlineMs: ctx.budget.deadlineMs,
     purpose: request.purpose, provider: ctx.provider.name, model: request.model, credentialOwner: "server",
     reservedInputTokens: reservation.reservedInputTokens, reservedOutputTokens: reservation.reservedOutputTokens, reservedUsdMicro: reservation.reservedUsdMicro, startedAt: now().toISOString()
   });
@@ -1697,7 +1699,7 @@ export async function callModel(request: ModelRequest, ctx: CallContext): Promis
     stopReason: response?.stopReason ?? null,
     status, error: failure?.error ?? interpreted?.reason ?? null,
     reservationExceeded: actualInputTokens !== null && actualInputTokens > reservation.reservedInputTokens,
-    overshootUsdMicro: cost.costUsdMicro === null ? null : Math.max(0, cost.costUsdMicro - reservation.reservedUsdMicro),
+    underestimateUsdMicro: cost.costUsdMicro === null ? null : Math.max(0, cost.costUsdMicro - reservation.reservedUsdMicro),
     completedAt: now().toISOString()
   };
   await ctx.recorder.recordOutcome(outcome);
@@ -1862,7 +1864,8 @@ export interface MessagesClient {
 }
 
 const TRANSIENT_STATUSES = new Set([408, 409, 429]);
-const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
+/** Exported so the pipeline's maxAttemptMs (what an interrupted attempt is charged) cannot drift from the request timeout. */
+export const ANTHROPIC_TIMEOUT_MS = 10 * 60 * 1000;
 
 export function buildMessageParams(request: ModelRequest): Record<string, unknown> {
   const profile = requestProfile(request.model);
@@ -1938,7 +1941,7 @@ export function createAnthropicProvider(options: { apiKey?: string; client?: Mes
     if (!apiKey) throw new ProviderError("ANTHROPIC_API_KEY is not set and no api key was injected", "permanent");
     client = new Anthropic({ apiKey, maxRetries: 0 }) as unknown as MessagesClient;
   }
-  const configuredTimeout = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const configuredTimeout = options.timeoutMs ?? ANTHROPIC_TIMEOUT_MS;
   return {
     name: "anthropic",
     async complete(request, callOptions: CallOptions = {}) {
@@ -3989,12 +3992,12 @@ The orchestration of spec §5 for the CLI, rebuilt around the review's recovery 
 - Test: `packages/generator/test/helpers/synthetic.ts`, `test/helpers/crashing-store.ts`, `test/helpers/routed-provider.ts`, `packages/generator/test/pipeline.test.ts`
 
 **Interfaces:**
-- Records (spec §4, tenancy fields kept): `ImportRecord { importId; orgId; name; sourceType; status: ImportStatus; customisation: string | null; language; unitTextHash: string | null; selectedTypes: PlannedType[]; fingerprint: string; budget: BudgetLimits; budgetUsed: { spentUsdMicro; reservedUsdMicro; spentTokens; requests; elapsedMs }; error: string | null; idempotencyKey; createdAt; updatedAt }` (`budgetUsed.elapsedMs` accumulates across runs and is what makes the elapsed limit per-import); `ActivityRecord { activityId; importId; type; order; status: ActivityStatus; currentRevision: number | null; conceptIds; criteriaIds; error: string | null; dropped: boolean }`; `RevisionRecord { activityId; revision; state: RevisionState; spec: ActivitySpec; schemaVersion; promptVersion; modelConfig: { provider; models: Record<string, string>; profiles: Record<string, RequestProfile> }; engineFingerprint; note: string | null; buildKey: string | null; attemptIds: string[]; createdAt }`; `OperationRecord { operationId; importId; activityId: string | null; purpose: Purpose | "build"; status: "running" | "succeeded" | "failed"; idempotencyKey; contentAttempts; outcome: string | null; billingUncertain: boolean; startedAt; completedAt: string | null }`; `AcceptanceRecord { importId; activityId; revision; decision: AcceptanceDecision; reviewer; notes: string | null; decidedAt }`; `AlignmentReviewRecord { importId; activityId; revision; itemId: string | null; unitTextHash: string | null; criterionId; decision: AlignmentDecision; reviewer; decidedAt }`.
+- Records (spec §4, tenancy fields kept): `ImportRecord { importId; orgId; name; sourceType; status: ImportStatus; customisation: string | null; language; unitTextHash: string | null; selectedTypes: PlannedType[]; fingerprint: string; budget: BudgetLimits; budgetUsed: { spentUsdMicro; reservedUsdMicro; spentTokens; requests; elapsedMs }; currentRun: { startedAt: string; elapsedBeforeMs: number } | null; error: string | null; idempotencyKey; createdAt; updatedAt }` (`budgetUsed.elapsedMs` accumulates across runs and is what makes the elapsed limit per-import; `currentRun` is the durable anchor of a run in progress, written before any dispatch and cleared when the run ends, so a killed run's time is never given back); `ActivityRecord { activityId; importId; type; order; status: ActivityStatus; currentRevision: number | null; conceptIds; criteriaIds; error: string | null; dropped: boolean }`; `RevisionRecord { activityId; revision; state: RevisionState; spec: ActivitySpec; schemaVersion; promptVersion; modelConfig: { provider; models: Record<string, string>; profiles: Record<string, RequestProfile> }; engineFingerprint; note: string | null; buildKey: string | null; attemptIds: string[]; createdAt }`; `OperationRecord { operationId; importId; activityId: string | null; purpose: Purpose | "build"; status: "running" | "succeeded" | "failed"; idempotencyKey; contentAttempts; outcome: string | null; billingUncertain: boolean; startedAt; completedAt: string | null }`; `AcceptanceRecord { importId; activityId; revision; decision: AcceptanceDecision; reviewer; notes: string | null; decidedAt }`; `AlignmentReviewRecord { importId; activityId; revision; itemId: string | null; unitTextHash: string | null; criterionId; decision: AlignmentDecision; reviewer; decidedAt }`.
 - `ImportStore`: `lock(importId): Promise<StoreLock>` (rejects with `StoreLockedError` while another holder has it; `StoreLock = { release(): Promise<void> }`); `getImport`, `putImport`; `getArtifact<T>(importId, name)`, `putArtifact(importId, name, value)` with `ArtifactName = "source" | "unit" | "conceptMap" | "plan" | \`chunk-${number}\``; `listActivities`, `putActivity`; `getRevision`, `listRevisions`, `putRevision`; `listOperations`, `putOperation`; `recorderFor(importId)`, `listAttempts(importId)`; `putBuild(importId, activityId, revision, bytes): Promise<string>`, `getBuild(buildKey)`; `listAcceptances(importId)`, `putAcceptance(record)` (latest per activity + revision wins); `listAlignmentReviews(importId)`, `putAlignmentReview(record)` (latest per activity + revision + item + criterion wins).
 - `MemoryStore implements ImportStore` (maps; builds kept as Buffers; locks in a `Set`).
 - `runFingerprint(input: FingerprintInput): string` over `{ sourceTextHash, unitTextHash, selectedTypes (sorted), language, promptConfig, customisation, chunkTokens, rules, promptVersion, schemaVersion, models, profiles }` — budget limits are deliberately **not** part of it (a resume may raise them); `IncompatibleResumeError`; `DEFAULT_CHUNK_TOKENS = 6000`.
 - `extractConceptMap(doc, unit, runner, options)` gains `options.chunkCache?: { get(index): Promise<ChunkConcept[] | null>; put(index, concepts): Promise<void> }`; finished chunks are reused on rerun.
-- `budgetFromLedger(limits, events, startedAtMs, elapsedBeforeMs): Budget` (known costs and tokens are spent; a start with no outcome is spent at its reservation; every start counts as a request; the deadline is what is left of the per-import elapsed limit); `attemptsByKey(events): Map<string, number>`; `reconcile(store, importId, clock)`; `OperationContext.stop?: () => string | null` is handed to every runner so no dispatch or retry happens after the import has stopped; `runOperation<T>(ctx, { purpose; activityId; key; load; work; persist }): Promise<{ result: T; operation: OperationRecord; reused: boolean }>` — order: `load()` first (a persisted result is reused even if the operation record says running or failed, and that record is corrected to succeeded with a note, keeping `billingUncertain`); otherwise a new operation id (`key`, then `key#2`, …), `work`, **`persist`, then** the succeeded record; `runLanes(lanes, concurrency, worker)`.
+- `budgetFromLedger(limits, events, startedAtMs, elapsedBeforeMs): Budget` (known costs and tokens are spent; a start with no outcome is spent at its reservation; every start counts as a request; the deadline is what is left of the per-import elapsed limit); `reconcileElapsed(run, events, nowMs, maxAttemptMs): number` (the elapsed time an interrupted run is charged: from its durable `startedAt` to the latest durable attempt timestamp, and for every start without an outcome to `min(start.deadlineMs, start + maxAttemptMs)`, never beyond `nowMs`; `RunImportDeps.maxAttemptMs` defaults to the adapter's request timeout and the CLI passes the adapter's exported constant so they cannot drift); `attemptsByKey(events): Map<string, number>`; `reconcile(store, importId, clock)`; `OperationContext.stop?: () => string | null` is handed to every runner so no dispatch or retry happens after the import has stopped; `runOperation<T>(ctx, { purpose; activityId; key; load; work; persist }): Promise<{ result: T; operation: OperationRecord; reused: boolean }>` — order: `load()` first (a persisted result is reused even if the operation record says running or failed, and that record is corrected to succeeded with a note, keeping `billingUncertain`); otherwise a new operation id (`key`, then `key#2`, …), `work`, **`persist`, then** the succeeded record; `runLanes(lanes, concurrency, worker)`.
 - `runImport(input: RunImportInput, deps: RunImportDeps): Promise<ImportRecord>` — takes the store lock **first**, then reads the import record and checks its fingerprint under the lock (a pre-lock read could be stale), and canonicalises `selectedTypes` (duplicates removed, first occurrence order kept) before anything else so `--types multiChoice,multiChoice` cannot create two lanes over the same activities; with `RunImportInput = { importId; name; source: SourceDocument; unitText: string | null; selectedTypes; budget: { usdMicro: number } & Partial<BudgetLimits>; promptConfig; language; customisation: string | null; orgId?: string }` and `RunImportDeps = { store; provider; registry; engineFingerprint; concurrency?: 3; chunkTokens?; rules?; clock?; sleep?; onProgress?: (event: ProgressEvent) => void }`; `ProgressEvent = { kind: "status"; status } | { kind: "activity"; activityId; status; error?: string } | { kind: "attempt"; purpose; status; costUsdMicro: number | null }`; `SKIPPED_PREFIX = "skipped: "`; `isPending(activity)`.
 - `engineFingerprint` = `\`engine@${engineVersion}+lock:${sha256(libraries.lock.json).slice(0, 12)}\`` computed by the caller (CLI); tests pass a constant.
 - Failure categories: `ContentFailure` → activity `failed`, `error: "content: …"` (terminal for the activity; regeneration is a human action); `BudgetRefused` → activity `failed`, `error: "budget: …"`, the stop flag is set, every activity not yet dispatched becomes `failed` with `error: "skipped: budget: …"`; `RunStopped` (a lane's runner found the stop flag before a dispatch or a retry) → `failed` with `error: "skipped: …"`; `InfrastructureFailure` (or any other error) → the activity `failed` with `error: "system: …"`, the stop flag is set, lanes settle, the import is marked `failed` and the error is rethrown. A **storage failure while recording an outcome or persisting the budget** never escapes a lane worker: it sets the stop flag, every other lane settles, the import is marked `failed` with `system: …`, the error is rethrown after all lanes have finished, and only then does `runImport`'s `finally` release the lock. On resume, activities whose error starts with `skipped:`, `budget:` or `system:` are re-dispatched; `content:` failures are not.
@@ -4457,9 +4460,9 @@ describe("runImport", () => {
     const store = new MemoryStore();
     const base = await input("imp-5", { unitText: null, selectedTypes: ["multiChoice"] });
     const fingerprint = runFingerprint({ sourceTextHash: base.source.textHash, unitText: null, selectedTypes: base.selectedTypes, language: base.language, promptConfig: base.promptConfig, customisation: null, chunkTokens: CHUNK_TOKENS, rules });
-    await store.putImport({ importId: "imp-5", orgId: "local", name: "n", sourceType: "markdown", status: "generating", customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice"], fingerprint, budget: { usdMicro: 5_000_000, ...DEFAULT_BUDGET_LIMITS }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, error: null, idempotencyKey: "imp-5", createdAt: "2026-09-19T00:00:00Z", updatedAt: "2026-09-19T00:00:00Z" });
+    await store.putImport({ importId: "imp-5", orgId: "local", name: "n", sourceType: "markdown", status: "generating", customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice"], fingerprint, budget: { usdMicro: 5_000_000, ...DEFAULT_BUDGET_LIMITS }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: "imp-5", createdAt: "2026-09-19T00:00:00Z", updatedAt: "2026-09-19T00:00:00Z" });
     await store.putOperation({ operationId: "imp-5:produce:act-1:r1", importId: "imp-5", activityId: "act-1", purpose: "produce", status: "running", idempotencyKey: "imp-5:produce:act-1:r1", contentAttempts: 1, outcome: null, billingUncertain: false, startedAt: "2026-09-19T00:00:00Z", completedAt: null });
-    await store.recorderFor("imp-5").recordStart({ event: "start", attemptId: "att-1", operationId: "imp-5:produce:act-1:r1", callKey: "produce:act-1", retryIndex: 0, retryReason: null, attempt: 1, purpose: "produce", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 10, reservedOutputTokens: 10, reservedUsdMicro: 777, startedAt: "2026-09-19T00:00:00Z" });
+    await store.recorderFor("imp-5").recordStart({ event: "start", attemptId: "att-1", operationId: "imp-5:produce:act-1:r1", callKey: "produce:act-1", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: 0, purpose: "produce", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 10, reservedOutputTokens: 10, reservedUsdMicro: 777, startedAt: "2026-09-19T00:00:00Z" });
     await runImport(base, deps(store, new FakeProvider([]))).catch(() => undefined);
     const op = (await store.listOperations("imp-5")).find((o) => o.operationId === "imp-5:produce:act-1:r1")!;
     expect(op.billingUncertain).toBe(true);
@@ -4473,12 +4476,33 @@ describe("runImport", () => {
     const store = new MemoryStore();
     const base = await input("imp-e", { unitText: null, selectedTypes: ["multiChoice"], budget: { usdMicro: 5_000_000, elapsedMs: 60_000 } });
     const fingerprint = runFingerprint({ sourceTextHash: base.source.textHash, unitText: null, selectedTypes: base.selectedTypes, language: base.language, promptConfig: base.promptConfig, customisation: null, chunkTokens: CHUNK_TOKENS, rules });
-    await store.putImport({ importId: "imp-e", orgId: "local", name: "n", sourceType: "markdown", status: "extracting", customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice"], fingerprint, budget: { ...DEFAULT_BUDGET_LIMITS, usdMicro: 5_000_000, elapsedMs: 60_000 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 60_000 }, error: null, idempotencyKey: "imp-e", createdAt: "t", updatedAt: "t" });
+    await store.putImport({ importId: "imp-e", orgId: "local", name: "n", sourceType: "markdown", status: "extracting", customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice"], fingerprint, budget: { ...DEFAULT_BUDGET_LIMITS, usdMicro: 5_000_000, elapsedMs: 60_000 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 60_000 }, currentRun: null, error: null, idempotencyKey: "imp-e", createdAt: "t", updatedAt: "t" });
     const provider = new FakeProvider([]);
     const record = await runImport(base, deps(store, provider));
     expect(record).toMatchObject({ status: "failed", error: expect.stringMatching(/^budget: .*elapsed/) });
     expect(provider.requests).toHaveLength(0);
     expect(await store.listAttempts("imp-e")).toEqual([]);
+  });
+
+  it("charges an interrupted run's time from its durable anchor, bounded by the attempt's deadline and the maximum attempt length", async () => {
+    const store = new MemoryStore();
+    const T0 = Date.parse("2026-09-19T10:00:00Z");
+    const base = await input("imp-a", { unitText: null, selectedTypes: ["multiChoice"], budget: { usdMicro: 5_000_000, elapsedMs: 60_000 } });
+    const fingerprint = runFingerprint({ sourceTextHash: base.source.textHash, unitText: null, selectedTypes: base.selectedTypes, language: base.language, promptConfig: base.promptConfig, customisation: null, chunkTokens: CHUNK_TOKENS, rules });
+    await store.putImport({ importId: "imp-a", orgId: "local", name: "n", sourceType: "markdown", status: "extracting", customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice"], fingerprint, budget: { ...DEFAULT_BUDGET_LIMITS, usdMicro: 5_000_000, elapsedMs: 60_000 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: { startedAt: new Date(T0).toISOString(), elapsedBeforeMs: 0 }, error: null, idempotencyKey: "imp-a", createdAt: "t", updatedAt: "t" });
+    await store.putOperation({ operationId: "imp-a:concepts", importId: "imp-a", activityId: null, purpose: "extract", status: "running", idempotencyKey: "imp-a:concepts", contentAttempts: 1, outcome: null, billingUncertain: false, startedAt: new Date(T0 + 500).toISOString(), completedAt: null });
+    await store.recorderFor("imp-a").recordStart({ event: "start", attemptId: "att-1", operationId: "imp-a:concepts", callKey: "extract:chunk-0", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: T0 + 60_000, purpose: "extract", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 10, reservedOutputTokens: 10, reservedUsdMicro: 1, startedAt: new Date(T0 + 1000).toISOString() }); // killed during this call
+    const later = () => new Date(T0 + 100_000); // the resume happens long after the kill
+    await runImport(base, deps(store, new FakeProvider([]), { clock: later, maxAttemptMs: 5000 })).catch(() => undefined);
+    const after = (await store.getImport("imp-a"))!;
+    expect(after.currentRun).toBeNull(); // the resumed run folded its anchor on the way out
+    expect(after.budgetUsed.elapsedMs).toBeGreaterThanOrEqual(6000); // start at +1000 with no outcome: charged to min(deadline, +1000 + 5000)
+    expect(after.budgetUsed.elapsedMs).toBeLessThan(60_000); // not the whole allowance: the maximum attempt length bounds a hung call
+    const tight = await input("imp-a", { unitText: null, selectedTypes: ["multiChoice"], budget: { usdMicro: 5_000_000, elapsedMs: 6000 } });
+    const empty = new FakeProvider([]);
+    const refused = await runImport(tight, deps(store, empty, { clock: () => new Date(T0 + 200_000), maxAttemptMs: 5000 }));
+    expect(refused).toMatchObject({ status: "failed", error: expect.stringMatching(/elapsed/) });
+    expect(empty.requests).toHaveLength(0);
   });
 
   it("canonicalises duplicate selected types: one lane and one set of plan slots per type", async () => {
@@ -4563,7 +4587,9 @@ export interface ImportRecord {
   /** Identity of the inputs and configuration the import was created with (fingerprint.ts); a rerun must match it. Budget limits are not part of it. */
   fingerprint: string;
   budget: BudgetLimits;
-  budgetUsed: { spentUsdMicro: number; reservedUsdMicro: number; spentTokens: number; requests: number };
+  budgetUsed: { spentUsdMicro: number; reservedUsdMicro: number; spentTokens: number; requests: number; elapsedMs: number };
+  /** Anchor of a run in progress, persisted before the first dispatch and cleared at the end of the run; a resume that finds it charges the interrupted run's time (reconcileElapsed). */
+  currentRun: { startedAt: string; elapsedBeforeMs: number } | null;
   error: string | null; idempotencyKey: string; createdAt: string; updatedAt: string;
 }
 export interface ActivityRecord {
@@ -4738,6 +4764,24 @@ export interface OperationContext {
   stop?: () => string | null;
 }
 
+/**
+ * The elapsed time an interrupted run must be charged, from its durable anchor: up to the latest durable attempt
+ * timestamp, and for every start without an outcome up to the sooner of that attempt's deadline and the maximum
+ * attempt length (the adapter's timeout bounds a hung call). Never more than the time that has actually passed.
+ */
+export function reconcileElapsed(run: { startedAt: string; elapsedBeforeMs: number }, events: AttemptEvent[], nowMs: number, maxAttemptMs: number): number {
+  const startedMs = Date.parse(run.startedAt);
+  const withOutcome = new Set(events.filter((e) => e.event === "outcome").map((o) => o.attemptId));
+  let latest = startedMs;
+  for (const e of events) {
+    const ts = Date.parse(e.event === "start" ? e.startedAt : e.completedAt);
+    if (Number.isNaN(ts) || ts < startedMs) continue;
+    latest = Math.max(latest, ts);
+    if (e.event === "start" && !withOutcome.has(e.attemptId)) latest = Math.max(latest, Math.min(e.deadlineMs, ts + maxAttemptMs));
+  }
+  return run.elapsedBeforeMs + Math.max(0, Math.min(latest, nowMs) - startedMs);
+}
+
 /** Rebuilds the import's budget from the attempt ledger: known costs and tokens are spent; a start with no outcome is spent at its reservation (it may have been billed); every start is a request; the deadline is what remains of the per-import elapsed limit. */
 export function budgetFromLedger(limits: BudgetLimits, events: AttemptEvent[], startedAtMs: number, elapsedBeforeMs: number): Budget {
   const budget = createBudget(limits, startedAtMs, elapsedBeforeMs);
@@ -4847,7 +4891,7 @@ import { createProducers } from "../produce/index.js";
 import { PROMPT_VERSION, type PromptConfig } from "../prompts/system.js";
 import type { ActivityRecord, ImportRecord, ImportStore, RevisionRecord } from "../store/types.js";
 import { DEFAULT_CHUNK_TOKENS, IncompatibleResumeError, runFingerprint } from "./fingerprint.js";
-import { attemptsByKey, budgetFromLedger, reconcile, runLanes, runOperation, type OperationContext } from "./operations.js";
+import { attemptsByKey, budgetFromLedger, reconcile, reconcileElapsed, runLanes, runOperation, type OperationContext } from "./operations.js";
 
 export interface RunImportInput {
   importId: string; name: string; source: SourceDocument; unitText: string | null; selectedTypes: readonly PlannedType[];
@@ -4857,7 +4901,10 @@ export type ProgressEvent = { kind: "status"; status: ImportStatus } | { kind: "
 export interface RunImportDeps {
   store: ImportStore; provider: ModelProvider; registry: LibraryRegistry; engineFingerprint: string;
   concurrency?: number; chunkTokens?: number; rules?: PlanRules; clock?: () => Date; sleep?: (ms: number) => Promise<void>; onProgress?: (event: ProgressEvent) => void;
+  /** The longest one provider call can take (the adapter's request timeout); bounds what an interrupted attempt is charged. */
+  maxAttemptMs?: number;
 }
+export const DEFAULT_MAX_ATTEMPT_MS = 10 * 60 * 1000;
 
 export const SKIPPED_PREFIX = "skipped: ";
 const RETRIABLE_PREFIXES = [SKIPPED_PREFIX, "budget: ", "system: "];
@@ -4909,7 +4956,7 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
 
   let record: ImportRecord = existing
     ? { ...existing, budget: limits, updatedAt: now() }
-    : { importId: input.importId, orgId: input.orgId ?? "local", name: input.name, sourceType: input.source.kind, status: "queued", customisation: input.customisation, language: input.language, unitTextHash: null, selectedTypes: [...input.selectedTypes], fingerprint, budget: limits, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, error: null, idempotencyKey: input.importId, createdAt: now(), updatedAt: now() };
+    : { importId: input.importId, orgId: input.orgId ?? "local", name: input.name, sourceType: input.source.kind, status: "queued", customisation: input.customisation, language: input.language, unitTextHash: null, selectedTypes: [...input.selectedTypes], fingerprint, budget: limits, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: input.importId, createdAt: now(), updatedAt: now() };
   await store.putImport(record);
   if (record.status === "ready") return record;
   if (record.status === "ready_with_failures" && !(await store.listActivities(input.importId)).some(isPending)) return record;
@@ -4917,11 +4964,19 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
 
   await reconcile(store, input.importId, clock);
   const events = await store.listAttempts(input.importId);
-  const budget = budgetFromLedger(limits, events, clock().getTime(), record.budgetUsed.elapsedMs);
+  const runStartedMs = clock().getTime();
+  const maxAttemptMs = deps.maxAttemptMs ?? DEFAULT_MAX_ATTEMPT_MS;
+  // A run that did not end cleanly left its anchor: charge its time conservatively before this run gets any allowance.
+  const elapsedBeforeMs = record.currentRun ? reconcileElapsed(record.currentRun, events, runStartedMs, maxAttemptMs) : record.budgetUsed.elapsedMs;
+  record = { ...record, budgetUsed: { ...record.budgetUsed, elapsedMs: elapsedBeforeMs }, currentRun: { startedAt: new Date(runStartedMs).toISOString(), elapsedBeforeMs }, updatedAt: now() };
+  await store.putImport(record); // the anchor is durable before any dispatch
+  const budget = budgetFromLedger(limits, events, runStartedMs, elapsedBeforeMs);
   const halt: { stop: { kind: "budget" | "system"; reason: string } | null; error: unknown } = { stop: null, error: undefined };
   const ctx: OperationContext = { store, provider: deps.provider, budget, importId: input.importId, clock, attemptsByKey: attemptsByKey(events), onAttempt: (a) => emit({ kind: "attempt", ...a }), stop: () => halt.stop?.reason ?? null };
   if (deps.sleep) ctx.sleep = deps.sleep;
   const persistBudget = async (): Promise<void> => { record = { ...record, budgetUsed: budgetSnapshot(budget, clock().getTime()), updatedAt: now() }; await store.putImport(record); };
+  /** The run is over: fold its time into the import and clear the anchor. Every exit path calls this before returning or rethrowing. */
+  const foldRun = async (): Promise<void> => { record = { ...record, budgetUsed: budgetSnapshot(budget, clock().getTime()), currentRun: null, updatedAt: now() }; await store.putImport(record); };
 
   try {
     await setStatus("ingesting");
@@ -5038,7 +5093,7 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
     const finalActivities = await store.listActivities(input.importId);
     const promotedCount = finalActivities.filter((a) => a.status === "promoted").length;
     const failedCount = finalActivities.filter((a) => a.status === "failed").length;
-    await persistBudget();
+    await foldRun();
     if (halt.error !== undefined) { await setStatus("failed", halt.stop?.reason ?? `system: ${halt.error instanceof Error ? halt.error.message : String(halt.error)}`); throw halt.error; }
     if (promotedCount === 0) await setStatus("failed", halt.stop ? halt.stop.reason : "no activity was promoted");
     else if (failedCount > 0) await setStatus("ready_with_failures", null);
@@ -5047,7 +5102,7 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
   } catch (err) {
     if (record.status === "failed" && stopMarked(record)) throw err;
     const message = err instanceof Error ? err.message : String(err);
-    await persistBudget();
+    await foldRun();
     if (err instanceof BudgetRefused) { await setStatus("failed", message); return record; }
     if (err instanceof ContentFailure) { await setStatus("failed", `content: ${message}`); return record; }
     await setStatus("failed", `system: ${message}`);
@@ -5087,8 +5142,8 @@ Answers review findings 5 (an ownership-safe directory lock; a crash-truncated J
 - Test: `apps/cli/test/lock.test.ts`, `apps/cli/test/file-store.test.ts`, `apps/cli/test/interrupt.test.ts`, `apps/cli/test/report.test.ts`
 
 **Interfaces:**
-- `acquireDirectoryLock(dir, importId, options?: { staleMs?: 10_000; updateMs?: 2_500 }): Promise<StoreLock>` in `lock.ts`: the lock is the directory `dir/lock/`, created with an atomic `mkdir`; it holds `owner.json` `{ importId, token, pid, hostname, startedAt }`; the holder refreshes the directory's mtime every `updateMs`. A lock is stale when its mtime is older than `staleMs` or its owner pid is dead on this host. A stale lock is reclaimed by **renaming it away first** (atomic; only one reclaimer can succeed, and a fresh lock is never the thing renamed), removing the renamed directory, then creating a new lock; a live lock raises `StoreLockedError` naming the holder. `release()` removes the directory only while `owner.json` still carries this holder's token, by the same rename-then-remove path, so a holder that was reclaimed from never deletes someone else's lock.
-- `FileStore(dir, options?: { lock?: LockOptions }) implements ImportStore`: layout under `dir/` — `lock/`, `import.json`, `artifacts/<name>.json`, `activities/<activityId>.json`, `revisions/<activityId>/r<N>.json`, `operations.jsonl`, `attempts.jsonl`, `acceptances.jsonl`, `alignment-reviews.jsonl` (all JSONL append-only; for `operations`, `acceptances` and `alignment-reviews` the latest line per key wins), `builds/<activityId>-r<N>.h5p`; every JSON write goes to `<file>.tmp-<random>` then `rename`; JSONL appends are one JSON object per line. `readJsonl` ignores a final line that has no trailing newline and does not parse (a crash-truncated tail, reported as `truncatedTail: true`) and throws `StoreCorruptError(path, line)` for any other malformed line. Before the first append to a ledger in a process, `FileStore` **repairs the tail** under the lock: a final complete record that only lacks its newline gets one, a truncated fragment is cut off (`truncate` to the byte length of the last complete line); every earlier record is preserved. Appends are only ever made while the directory lock is held (`runImport` and `leap review` both hold it).
+- `acquireDirectoryLock(dir, importId, options?: { hooks?: { afterInspect?: (owner) => Promise<void> }; graceMs?: 50 }): Promise<HeldLock>` in `lock.ts`, `HeldLock = StoreLock & { token: string; assertHeld(): Promise<void> }`, `LockLostError`. The lock is the directory `dir/lock/`, created with an atomic `mkdir`; it holds `owner.json` `{ importId, token, pid, hostname, startedAt }`. **Only a dead local owner is ever reclaimed**: a live pid on this host is refused however old the lock is (a paused process is still the owner), an owner on another host is refused with instructions to remove the directory by hand, and a directory with no owner record yet (another process between its `mkdir` and its `writeFile`) is retried briefly then refused. Reclamation renames the dead lock to a tombstone **named by the dead owner's token** (`lock.stale-<token>`) and leaves the tombstone in place for an hour: two reclaimers of the same dead lock target the same tombstone name, so the second `rename` fails (target exists, or source already gone) and can never move a lock that was created after its inspection; the loser goes back to `mkdir`, finds the winner's live lock and is refused. `assertHeld()` re-reads `owner.json` and throws `LockLostError` when the token is no longer this holder's; `FileStore` calls it before every ledger append so a holder whose lock was removed by hand stops instead of writing. `release()` removes the directory only while it still carries this holder's token. Hooks exist so a test can park a reclaimer between its inspection and its rename and replay the exact interleaving the review described.
+- `FileStore(dir, options?: { lock?: LockOptions }) implements ImportStore`: every ledger append goes through a **per-ledger queue** (repair, corruption check and append run strictly one at a time per file, and a file counts as repaired only after its repair succeeded), so concurrent lanes in one process cannot interleave a stale-snapshot truncation with another lane's append; layout under `dir/` — `lock/`, `import.json`, `artifacts/<name>.json`, `activities/<activityId>.json`, `revisions/<activityId>/r<N>.json`, `operations.jsonl`, `attempts.jsonl`, `acceptances.jsonl`, `alignment-reviews.jsonl` (all JSONL append-only; for `operations`, `acceptances` and `alignment-reviews` the latest line per key wins), `builds/<activityId>-r<N>.h5p`; every JSON write goes to `<file>.tmp-<random>` then `rename`; JSONL appends are one JSON object per line. `readJsonl` ignores a final line that has no trailing newline and does not parse (a crash-truncated tail, reported as `truncatedTail: true`) and throws `StoreCorruptError(path, line)` for any other malformed line. Before the first append to a ledger in a process, `FileStore` **repairs the tail** under the lock and inside the ledger's queue: a final complete record that only lacks its newline gets one, a truncated fragment is cut off (`truncate` to the byte length of the last complete line); every earlier record is preserved. Appends are only ever made while the directory lock is held (`runImport` and `leap review` both hold it) and `assertHeld()` runs before each one.
 - `writeMappingCsv(store, importId, path)` — columns `activityId,type,title,revision,itemId,criterionId,status,conceptIds,evidenceIds,firstQuote`; one row per (activity or item) × criterion in the promoted revision's provenance (`itemId` empty for the activity row; `criterionId` empty when there are none); `status` is `suggested` unless an alignment review for that exact revision, item and criterion says `confirmed` or `rejected`; a review with decision `added` produces an extra row with status `added`; RFC 4180 quoting.
 - `costReport(store, importId): Promise<CostReport>` with `CostReport = { pricingVersion; totals: { attempts; costUsdMicro; costStatusCounts: Record<CostStatus, number>; reservationExceeded: number }; shared; direct; byPurpose; byType; perActivity; retryShare; accepted; costPerAcceptedActivityUsdMicro: number | null }` — `shared` = purposes other than `produce`; `direct` = `produce`; `retryShare` = starts with `retryIndex > 0` ÷ all starts; `accepted` = activities whose current revision has an `accepted` acceptance record; `costPerAcceptedActivityUsdMicro` = `totals.costUsdMicro / accepted` rounded, or `null` when nothing is accepted; `formatCostReport(report): string`.
 - `leap generate --source <file> --out <dir> [--unit <file>] [--types multiChoice,blanks,flashcards] [--budget-usd 2] [--max-requests 200] [--max-tokens 2000000] [--max-seconds 1800] [--language en] [--reading-level high-school] [--tone educational] [--customisation "…"] [--name …] [--libraries <dir>] [--provider anthropic|replay|record] [--fixtures <dir>] [--concurrency 3]`; `--source` accepts `.pdf`, `.md`, `.txt`; a `--types` list with a repeated type is rejected with a message (the pipeline also canonicalises); `--budget-usd` and `--max-tokens` are described in the help text as estimated caps, `--max-requests` and `--max-seconds` (per import, across runs) as hard limits; `--provider record` wraps the Anthropic provider in `RecordingProvider(fixtures)`; `replay` uses `ReplayProvider(fixtures)` and needs no key; exit 0 when the import ends `ready`, 2 when `ready_with_failures`, 1 on `failed`, on `IncompatibleResumeError` and on `StoreLockedError` (each with a `leap: …` line on stderr); prints the activity table, the mapping path, and the cost report; `importId` defaults to a slug of the output directory name so reruns resume.
@@ -5098,13 +5153,13 @@ Answers review findings 5 (an ownership-safe directory lock; a crash-truncated J
 `apps/cli/test/file-store.test.ts`:
 ```ts
 import { describe, it, expect } from "vitest";
-import { appendFile, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileStore, readJsonl, StoreCorruptError } from "../src/file-store.js";
 
-const importRecord = { importId: "imp", orgId: "local", name: "n", sourceType: "markdown" as const, status: "queued" as const, customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice" as const], fingerprint: "f".repeat(64), budget: { usdMicro: 10, requests: 1, tokens: 1, elapsedMs: 1 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, error: null, idempotencyKey: "imp", createdAt: "t", updatedAt: "t" };
-const start = { event: "start" as const, attemptId: "a1", operationId: "imp:plan", callKey: "plan", retryIndex: 0, retryReason: null, attempt: 1, purpose: "plan" as const, provider: "fake" as const, model: "m", credentialOwner: "server" as const, reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" };
+const importRecord = { importId: "imp", orgId: "local", name: "n", sourceType: "markdown" as const, status: "queued" as const, customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice" as const], fingerprint: "f".repeat(64), budget: { usdMicro: 10, requests: 1, tokens: 1, elapsedMs: 1 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: "imp", createdAt: "t", updatedAt: "t" };
+const start = { event: "start" as const, attemptId: "a1", operationId: "imp:plan", callKey: "plan", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: 0, purpose: "plan" as const, provider: "fake" as const, model: "m", credentialOwner: "server" as const, reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" };
 
 describe("FileStore", () => {
   it("round-trips records, appends ledgers, keeps the latest review per key, and leaves no temp files", async () => {
@@ -5167,66 +5222,108 @@ describe("FileStore", () => {
     await writeFile(path2, `${JSON.stringify(op)}\nnot json\n`);
     await expect(store.putOperation(op)).rejects.toBeInstanceOf(StoreCorruptError); // corruption elsewhere is still refused
   });
+  it("serialises concurrent first appends to a damaged ledger: both new records survive a reopen", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "leap-queue-"));
+    const path = join(dir, "attempts.jsonl");
+    await writeFile(path, `${JSON.stringify(start)}\n{"event":"outcome","attemptId":"a1","opera`);
+    const store = new FileStore(dir);
+    const rec = store.recorderFor("imp");
+    await Promise.all([rec.recordStart({ ...start, attemptId: "a2" }), rec.recordStart({ ...start, attemptId: "a3" })]); // two lanes hit the ledger at once
+    expect((await new FileStore(dir).listAttempts("imp")).map((e) => e.attemptId)).toEqual(["a1", "a2", "a3"]);
+    expect((await readJsonl(path)).truncatedTail).toBe(false);
+  });
+  it("stops writing when its lock has been removed from under it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "leap-lost-store-"));
+    const store = new FileStore(dir);
+    const lock = await store.lock("imp");
+    await rm(join(dir, "lock"), { recursive: true });
+    await expect(store.recorderFor("imp").recordStart(start)).rejects.toMatchObject({ name: "LockLostError" });
+    await lock.release();
+  });
 });
 ```
 
 `apps/cli/test/lock.test.ts`:
 ```ts
 import { describe, it, expect } from "vitest";
-import { mkdir, mkdtemp, stat, utimes, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { StoreLockedError } from "@leaplearn/generator";
-import { acquireDirectoryLock } from "../src/lock.js";
+import { acquireDirectoryLock, LockLostError } from "../src/lock.js";
 
+const DEAD_PID = 2 ** 22 - 1; // above any pid this host can allocate
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-async function staleLock(dir: string): Promise<void> {
+async function writeLock(dir: string, owner: Record<string, unknown>): Promise<void> {
   await mkdir(join(dir, "lock"), { recursive: true });
-  await writeFile(join(dir, "lock", "owner.json"), JSON.stringify({ importId: "imp", token: "old", pid: 2 ** 22 - 1, hostname: hostname(), startedAt: "t" }));
-  const old = new Date(Date.now() - 60_000);
-  await utimes(join(dir, "lock"), old, old);
+  await writeFile(join(dir, "lock", "owner.json"), JSON.stringify(owner));
 }
+const ownerOf = async (dir: string) => JSON.parse(await readFile(join(dir, "lock", "owner.json"), "utf8")) as { token: string; pid: number };
 
 describe("directory lock", () => {
-  it("grants one lock, refuses a second holder while it is fresh, and reacquires after release", async () => {
+  it("grants one lock, refuses a second holder, and reacquires after release", async () => {
     const dir = await mkdtemp(join(tmpdir(), "leap-lock-"));
     const lock = await acquireDirectoryLock(dir, "imp");
     await expect(acquireDirectoryLock(dir, "imp")).rejects.toMatchObject({ name: "StoreLockedError", message: expect.stringMatching(new RegExp(`pid ${process.pid}`)) });
     await lock.release();
-    expect(await stat(join(dir, "lock")).catch(() => null)).toBeNull();
+    expect(existsSync(join(dir, "lock"))).toBe(false);
     const again = await acquireDirectoryLock(dir, "imp");
     await again.release();
   });
-  it("exactly one of two concurrent reclaimers wins a stale lock; the loser can lock once the winner releases", async () => {
+  it("never reclaims a live local owner, however old its lock is, and never a lock from another host", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "leap-live-"));
+    await writeLock(dir, { importId: "imp", token: "paused", pid: process.pid, hostname: hostname(), startedAt: "2020-01-01T00:00:00Z" });
+    await expect(acquireDirectoryLock(dir, "imp")).rejects.toBeInstanceOf(StoreLockedError);
+    await rm(join(dir, "lock"), { recursive: true });
+    await writeLock(dir, { importId: "imp", token: "remote", pid: DEAD_PID, hostname: "another-host", startedAt: "t" });
+    await expect(acquireDirectoryLock(dir, "imp")).rejects.toMatchObject({ message: expect.stringMatching(/another-host.*by hand/) });
+  });
+  it("replays the reviewed interleaving with a barrier: B inspects the dead lock, A reclaims and acquires, then B fails and A's lock is intact", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "leap-race-"));
+    await writeLock(dir, { importId: "imp", token: "dead-token", pid: DEAD_PID, hostname: hostname(), startedAt: "t" });
+    let proceed!: () => void;
+    const barrier = new Promise<void>((r) => { proceed = r; });
+    let inspected = false;
+    const b = acquireDirectoryLock(dir, "imp", { hooks: { afterInspect: async () => { inspected = true; await barrier; } } });
+    while (!inspected) await sleep(5); // B has judged the old lock stale and is parked before its rename
+    const a = await acquireDirectoryLock(dir, "imp"); // A reclaims the dead lock and holds a fresh one
+    expect((await ownerOf(dir)).token).toBe(a.token);
+    proceed();
+    await expect(b).rejects.toBeInstanceOf(StoreLockedError); // B's rename targets the tombstone A already created and fails; B then sees A alive
+    expect((await ownerOf(dir)).token).toBe(a.token); // A's fresh lock was never moved
+    await a.assertHeld();
+    expect(existsSync(join(dir, "lock.stale-dead-token"))).toBe(true); // the tombstone is kept for the race window
+    await a.release();
+    expect(existsSync(join(dir, "lock"))).toBe(false);
+  });
+  it("two reclaimers of the same dead lock without barriers: exactly one wins, and the loser can lock after the winner releases", async () => {
     const dir = await mkdtemp(join(tmpdir(), "leap-reclaim-"));
-    await staleLock(dir);
+    await writeLock(dir, { importId: "imp", token: "dead-token", pid: DEAD_PID, hostname: hostname(), startedAt: "t" });
     const results = await Promise.allSettled([acquireDirectoryLock(dir, "imp"), acquireDirectoryLock(dir, "imp")]);
     const winners = results.filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof acquireDirectoryLock>>> => r.status === "fulfilled");
-    const losers = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
     expect(winners).toHaveLength(1);
-    expect(losers).toHaveLength(1);
-    expect(losers[0]!.reason).toBeInstanceOf(StoreLockedError);
-    expect((await stat(join(dir, "lock"))).isDirectory()).toBe(true); // the winner's live lock was not deleted by the loser
+    expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+    expect((await ownerOf(dir)).token).toBe(winners[0]!.value.token);
     await winners[0]!.value.release();
     const later = await acquireDirectoryLock(dir, "imp");
     await later.release();
   });
-  it("release never removes a lock that was reclaimed from the releasing holder", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "leap-owner-"));
-    const first = await acquireDirectoryLock(dir, "imp", { staleMs: 100, updateMs: 10_000 }); // never refreshes in time
-    await sleep(150);
-    const second = await acquireDirectoryLock(dir, "imp", { staleMs: 100, updateMs: 10_000 }); // reclaims the stale lock
-    await first.release(); // not ours any more: must be a no-op
-    expect((await stat(join(dir, "lock"))).isDirectory()).toBe(true);
-    await second.release();
-    expect(await stat(join(dir, "lock")).catch(() => null)).toBeNull();
+  it("detects lost ownership and never removes a lock that is not its own", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "leap-lost-"));
+    const mine = await acquireDirectoryLock(dir, "imp");
+    await rm(join(dir, "lock"), { recursive: true }); // an operator removed it by hand
+    await expect(mine.assertHeld()).rejects.toBeInstanceOf(LockLostError);
+    const other = await acquireDirectoryLock(dir, "imp");
+    await mine.release(); // not ours: no-op
+    expect((await ownerOf(dir)).token).toBe(other.token);
+    await other.release();
   });
-  it("a holder's heartbeat keeps its lock fresh", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "leap-heartbeat-"));
-    const lock = await acquireDirectoryLock(dir, "imp", { staleMs: 300, updateMs: 50 });
-    await sleep(450);
-    await expect(acquireDirectoryLock(dir, "imp", { staleMs: 300, updateMs: 50 })).rejects.toBeInstanceOf(StoreLockedError);
-    await lock.release();
+  it("waits briefly for a lock whose owner record is still being written, then refuses", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "leap-ownerless-"));
+    await mkdir(join(dir, "lock"));
+    await expect(acquireDirectoryLock(dir, "imp", { graceMs: 5 })).rejects.toMatchObject({ message: expect.stringMatching(/without an owner record/) });
+    expect((await stat(join(dir, "lock"))).isDirectory()).toBe(true);
   });
 });
 ```
@@ -5251,6 +5348,7 @@ const lockPath = resolve(root, "libraries/libraries.lock.json");
 const cacheDir = resolve(root, "libraries/cache");
 const SOURCE = "Lock it out before work starts. Test for dead at the point of work. Restore supply only after guards are refitted.";
 const UNIT = "SYNELE001 Isolate and test electrical equipment";
+const MAX_ATTEMPT_MS = 3000; // what a hung call is charged when the process dies inside it
 const importInput = (source: Awaited<ReturnType<typeof ingestText>>) => ({ importId: "child", name: "child", source, unitText: UNIT, selectedTypes: ["multiChoice"] as const, budget: { usdMicro: 1_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null });
 
 const childScript = `
@@ -5260,11 +5358,11 @@ import { FileStore } from ${JSON.stringify(fileStoreDist)};
 const registry = await createRegistry({ lockPath: ${JSON.stringify(lockPath)}, cacheDir: ${JSON.stringify(cacheDir)} });
 const provider = { name: "fake", async complete() { process.stdout.write("dispatched\\n"); await new Promise((r) => setTimeout(r, 60_000)); throw new Error("unreachable"); } };
 const source = await ingestText(${JSON.stringify(SOURCE)}, { sourceId: "src-child" });
-await runImport({ importId: "child", name: "child", source, unitText: ${JSON.stringify(UNIT)}, selectedTypes: ["multiChoice"], budget: { usdMicro: 1_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null }, { store: new FileStore(process.env.LEAP_TEST_DIR), provider, registry, engineFingerprint: "child" });
+await runImport({ importId: "child", name: "child", source, unitText: ${JSON.stringify(UNIT)}, selectedTypes: ["multiChoice"], budget: { usdMicro: 1_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null }, { store: new FileStore(process.env.LEAP_TEST_DIR), provider, registry, engineFingerprint: "child", maxAttemptMs: ${MAX_ATTEMPT_MS} });
 `;
 
 describe("abrupt termination", () => {
-  it("a SIGKILLed run leaves a start without an outcome and a held lock; the next run reclaims the lock, reconciles, and numbers the resumed attempt", async () => {
+  it("a SIGKILLed run leaves a start without an outcome, a held lock and a run anchor; the next run reclaims the lock, charges the interrupted time, reconciles, and numbers the resumed attempt", async () => {
     for (const p of [engineDist, generatorDist, fileStoreDist]) expect(existsSync(p), `${p} must be built before this test`).toBe(true);
     const dir = await mkdtemp(join(tmpdir(), "leap-kill-"));
     const child = spawn(process.execPath, ["--input-type=module", "-e", childScript], { env: { ...process.env, LEAP_TEST_DIR: dir }, stdio: ["ignore", "pipe", "inherit"] });
@@ -5276,15 +5374,21 @@ describe("abrupt termination", () => {
     await new Promise<void>((exited) => child.on("exit", () => exited()));
     expect((await stat(join(dir, "lock"))).isDirectory()).toBe(true); // no finally ran
     expect((await readJsonl<AttemptStart>(join(dir, "attempts.jsonl"))).records.map((e) => e.event)).toEqual(["start"]);
+    const killed = (await new FileStore(dir).getImport("child"))!;
+    expect(killed.currentRun).not.toBeNull(); // the anchor was written before the dispatch
+    expect(killed.budgetUsed.elapsedMs).toBe(0); // no snapshot ever ran: without the anchor this time would be given back
 
     const registry = await createRegistry({ lockPath, cacheDir });
     const empty: ModelProvider = { name: "fake", async complete() { throw new Error("no scripted response"); } };
     const store = new FileStore(dir);
     const source = await ingestText(SOURCE, { sourceId: "src-child" });
-    await runImport(importInput(source), { store, provider: empty, registry, engineFingerprint: "child" }).catch(() => undefined);
+    await runImport(importInput(source), { store, provider: empty, registry, engineFingerprint: "child", maxAttemptMs: MAX_ATTEMPT_MS }).catch(() => undefined);
     expect((await store.listOperations("child")).find((o) => o.operationId === "child:parseUnit")).toMatchObject({ status: "failed", billingUncertain: true });
     const starts = (await store.listAttempts("child")).filter((e): e is AttemptStart => e.event === "start" && e.callKey === "parseUnit");
     expect(starts.map((s) => [s.retryIndex, s.retryReason])).toEqual([[0, null], [1, "resume"]]);
+    const resumed = (await store.getImport("child"))!;
+    expect(resumed.budgetUsed.elapsedMs).toBeGreaterThanOrEqual(MAX_ATTEMPT_MS); // the killed call was charged up to the maximum attempt length
+    expect(resumed.currentRun).toBeNull(); // the resumed run folded its own anchor
     expect(existsSync(join(dir, "lock"))).toBe(false); // the second run reclaimed the dead holder's lock and released it
   }, 30_000);
 });
@@ -5301,7 +5405,7 @@ describe("reports", () => {
     const store = new MemoryStore();
     const rec = store.recorderFor("imp");
     const start = (id: string, op: string, purpose: AttemptStart["purpose"], callKey: string, retryIndex: number) => rec.recordStart({ event: "start", attemptId: id, operationId: op, callKey, retryIndex, retryReason: retryIndex > 0 ? "content" : null, attempt: retryIndex + 1, purpose, provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" });
-    const outcome = (id: string, op: string, cost: number | null, exceeded = false) => rec.recordOutcome({ event: "outcome", attemptId: id, operationId: op, providerRequestId: null, rawUsage: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, latencyMs: 1, pricingVersion: "v", costUsdMicro: cost, costStatus: cost === null ? "unavailable" : "known", stopReason: "end_turn", status: "ok", error: null, reservationExceeded: exceeded, overshootUsdMicro: exceeded ? 40 : cost === null ? null : 0, completedAt: "t" });
+    const outcome = (id: string, op: string, cost: number | null, exceeded = false) => rec.recordOutcome({ event: "outcome", attemptId: id, operationId: op, providerRequestId: null, rawUsage: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, latencyMs: 1, pricingVersion: "v", costUsdMicro: cost, costStatus: cost === null ? "unavailable" : "known", stopReason: "end_turn", status: "ok", error: null, reservationExceeded: exceeded, underestimateUsdMicro: exceeded ? 40 : cost === null ? null : 0, completedAt: "t" });
     const op = (operationId: string, activityId: string | null, purpose: AttemptStart["purpose"]) => store.putOperation({ operationId, importId: "imp", activityId, purpose, status: "succeeded", idempotencyKey: operationId, contentAttempts: 1, outcome: "ok", billingUncertain: false, startedAt: "t", completedAt: "t" });
     await op("imp:concepts", null, "extract"); await op("imp:produce:act-1:r1", "act-1", "produce");
     // two chunks, a merge and an alignment share one operation; all are first attempts of their own call keys, so none is a retry
@@ -5316,7 +5420,7 @@ describe("reports", () => {
     await store.putArtifact("imp", "conceptMap", { sourceId: "s", textHash: "0".repeat(64), concepts: [{ conceptId: "c1", name: "n", summary: "s", evidence: [{ evidenceId: "ev-s1", sentenceId: "s1", charStart: 0, charEnd: 3, quote: "Hi." }] }] });
 
     const before = await costReport(store, "imp");
-    expect(before.totals).toEqual({ attempts: 6, costUsdMicro: 800, costStatusCounts: { known: 5, estimated: 0, unavailable: 1 }, reservationExceeded: 1, overshootUsdMicro: 40 });
+    expect(before.totals).toEqual({ attempts: 6, costUsdMicro: 800, costStatusCounts: { known: 5, estimated: 0, unavailable: 1 }, reservationExceeded: 1, underestimateUsdMicro: 40, spendOverCapUsdMicro: 0 }); // no import record in this store: nothing is over any cap
     expect(before.shared).toBe(300); expect(before.direct).toBe(500);
     expect(before.retryShare).toBeCloseTo(1 / 6);
     expect(before.perActivity).toEqual([{ activityId: "act-1", type: "multiChoice", status: "promoted", attempts: 2, costUsdMicro: 500 }]);
@@ -5337,7 +5441,7 @@ describe("reports", () => {
     const store = new MemoryStore();
     const rec = store.recorderFor("imp");
     for (const [id, key] of [["a1", "extract:chunk-0"], ["a2", "extract:chunk-1"], ["a3", "merge"], ["a4", "align"]] as const) {
-      await rec.recordStart({ event: "start", attemptId: id, operationId: "imp:concepts", callKey: key, retryIndex: 0, retryReason: null, attempt: 1, purpose: "extract", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" });
+      await rec.recordStart({ event: "start", attemptId: id, operationId: "imp:concepts", callKey: key, retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: 0, purpose: "extract", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" });
     }
     expect((await costReport(store, "imp")).retryShare).toBe(0);
   });
@@ -5349,69 +5453,85 @@ describe("reports", () => {
 `apps/cli/src/lock.ts`:
 ```ts
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { StoreLockedError, type StoreLock } from "@leaplearn/generator";
 
-export interface LockOptions { staleMs?: number; updateMs?: number; }
-export const DEFAULT_LOCK_OPTIONS = { staleMs: 10_000, updateMs: 2_500 };
-interface LockOwner { importId: string; token: string; pid: number; hostname: string; startedAt: string; }
+export interface LockOwner { importId: string; token: string; pid: number; hostname: string; startedAt: string; }
+export interface LockHooks { afterInspect?: (owner: LockOwner) => Promise<void>; }
+export interface LockOptions { hooks?: LockHooks; graceMs?: number; }
+export interface HeldLock extends StoreLock { readonly token: string; assertHeld(): Promise<void>; }
+export class LockLostError extends Error { constructor(dir: string) { super(`the lock on ${dir} is no longer held by this process; stopping before writing`); this.name = "LockLostError"; } }
 
+const TOMBSTONE_TTL_MS = 60 * 60 * 1000;
 const isCode = (err: unknown, code: string): boolean => (err as { code?: string }).code === code;
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 function pidAlive(pid: number): boolean { try { process.kill(pid, 0); return true; } catch (err) { return isCode(err, "EPERM"); } }
 async function readOwner(path: string): Promise<LockOwner | null> { try { return JSON.parse(await readFile(path, "utf8")) as LockOwner; } catch { return null; } }
-async function discard(lockDir: string, tag: string): Promise<boolean> {
-  const tombstone = `${lockDir}.${tag}-${randomBytes(4).toString("hex")}`;
-  try { await rename(lockDir, tombstone); } catch (err) { if (isCode(err, "ENOENT")) return false; throw err; }
-  await rm(tombstone, { recursive: true, force: true });
-  return true;
+
+/** Tombstones older than the race window they protect are removed; a tombstone younger than that may still be shielding a reclaim in progress. */
+async function sweepTombstones(dir: string): Promise<void> {
+  for (const name of await readdir(dir)) {
+    if (!name.startsWith("lock.stale-")) continue;
+    const info = await stat(join(dir, name)).catch(() => null);
+    if (info && Date.now() - info.mtimeMs > TOMBSTONE_TTL_MS) await rm(join(dir, name), { recursive: true, force: true });
+  }
 }
 
 /**
- * Directory lock. `mkdir` is atomic, so only one process ever creates `lock/`. The holder refreshes the
- * directory's mtime every updateMs. A lock is stale when its mtime is older than staleMs or its owner pid
- * is dead on this host. A stale lock is reclaimed by renaming it away first (atomic: exactly one reclaimer
- * can succeed, and a lock created after the staleness check has a different inode and mtime and is never
- * the one renamed), then removed, then a fresh lock is created. Release removes the directory only while
- * owner.json still carries this holder's token, by the same rename-then-remove path.
+ * Directory lock with dead-owner reclamation only. `mkdir` is atomic, so only one process ever creates `lock/`.
+ * A live local pid is never reclaimed, whatever the lock's age: a paused process is still the owner. A dead local
+ * pid's lock is reclaimed by renaming it to a tombstone named by the dead owner's token; the tombstone stays for an
+ * hour. Two reclaimers of the same dead lock therefore target the same tombstone: the second rename fails (the target
+ * exists, or the source is gone) and can never move a lock created after that reclaimer's inspection. Release removes
+ * the directory only while owner.json still carries this holder's token; assertHeld detects a lock removed from under us.
  */
-export async function acquireDirectoryLock(dir: string, importId: string, options: LockOptions = {}): Promise<StoreLock> {
-  const staleMs = options.staleMs ?? DEFAULT_LOCK_OPTIONS.staleMs;
-  const updateMs = options.updateMs ?? DEFAULT_LOCK_OPTIONS.updateMs;
+export async function acquireDirectoryLock(dir: string, importId: string, options: LockOptions = {}): Promise<HeldLock> {
   const lockDir = join(dir, "lock");
   const ownerPath = join(lockDir, "owner.json");
   const me: LockOwner = { importId, token: randomBytes(8).toString("hex"), pid: process.pid, hostname: hostname(), startedAt: new Date().toISOString() };
   await mkdir(dir, { recursive: true });
-  for (let attempt = 0; attempt < 3; attempt++) {
+  await sweepTombstones(dir);
+  let ownerless = 0;
+  for (let attempt = 0; attempt < 6; attempt++) {
     try {
       await mkdir(lockDir);
     } catch (err) {
       if (!isCode(err, "EEXIST")) throw err;
-      const info = await stat(lockDir).catch(() => null);
-      if (!info) continue; // released or reclaimed between our mkdir and stat
       const owner = await readOwner(ownerPath);
-      const stale = Date.now() - info.mtimeMs > staleMs || (owner !== null && owner.hostname === me.hostname && !pidAlive(owner.pid));
-      if (!stale) throw new StoreLockedError(importId, owner ? `pid ${owner.pid} on ${owner.hostname} since ${owner.startedAt}` : "a lock without an owner record");
-      await discard(lockDir, "stale"); // false means another reclaimer renamed it first; either way, try mkdir again
+      if (owner === null) {
+        if (!(await stat(lockDir).catch(() => null))) continue; // released between our mkdir and our read
+        if (++ownerless > 3) throw new StoreLockedError(importId, "a lock without an owner record; remove the lock directory by hand if no leap process is running");
+        await sleep(options.graceMs ?? 50); // another process is between its mkdir and its owner.json write
+        continue;
+      }
+      if (owner.hostname !== me.hostname) throw new StoreLockedError(importId, `pid ${owner.pid} on ${owner.hostname} since ${owner.startedAt}; this phase is local-only, remove the lock directory by hand only if that process is gone`);
+      if (pidAlive(owner.pid)) throw new StoreLockedError(importId, `pid ${owner.pid} on ${owner.hostname} since ${owner.startedAt}`);
+      await options.hooks?.afterInspect?.(owner);
+      const tombstone = join(dir, `lock.stale-${owner.token}`);
+      try { await rename(lockDir, tombstone); } catch (renameErr) {
+        if (isCode(renameErr, "ENOENT") || isCode(renameErr, "ENOTEMPTY") || isCode(renameErr, "EEXIST")) continue; // another reclaimer got there first; re-inspect from mkdir
+        throw renameErr;
+      }
       continue;
     }
     await writeFile(ownerPath, JSON.stringify(me, null, 2) + "\n");
-    const heartbeat = setInterval(() => { const now = new Date(); utimes(lockDir, now, now).catch(() => undefined); }, updateMs);
-    heartbeat.unref();
+    const assertHeld = async (): Promise<void> => { const current = await readOwner(ownerPath); if (current?.token !== me.token) throw new LockLostError(dir); };
     return {
+      token: me.token,
+      assertHeld,
       release: async () => {
-        clearInterval(heartbeat);
         const current = await readOwner(ownerPath);
-        if (current?.token !== me.token) return; // reclaimed from us: not ours to remove
-        await discard(lockDir, "released");
+        if (current?.token !== me.token) return; // not ours (removed by hand or reclaimed after our death would have been impossible while alive): nothing to remove
+        await rm(lockDir, { recursive: true, force: true });
       }
     };
   }
-  throw new StoreLockedError(importId, "a lock that other processes kept reclaiming");
+  throw new StoreLockedError(importId, "a lock that could not be acquired after repeated attempts");
 }
 ```
-Between `mkdir` and `writeFile(owner.json)` the directory is fresh, so no other process treats it as stale; the heartbeat keeps a live holder fresh even during a long provider call. A lock that a dead process left behind is reclaimed at once on the same host (dead pid) and after `staleMs` from another host.
+Why the tombstone is named by the inspected token and kept: the race the review described is A and B both inspecting dead lock T0, A renaming it away and creating its own lock, then B renaming A's fresh lock. Here both A and B target `lock.stale-T0`; A's rename succeeds and the tombstone now exists; B's rename of `lock` (A's fresh lock) onto an existing non-empty directory fails with `ENOTEMPTY` (or `EEXIST` on some filesystems), B goes back to `mkdir`, reads A's owner record, sees a live pid and is refused. A rename can only ever move the lock that occupies the path at that instant, so the protocol never relies on "the same directory I inspected"; it relies on the tombstone name. A lock from another host is refused rather than reclaimed because pid liveness cannot be judged across hosts and this phase is a single-machine CLI.
 
 `apps/cli/src/file-store.ts`:
 ```ts
@@ -5419,7 +5539,7 @@ import { randomBytes } from "node:crypto";
 import { appendFile, mkdir, readdir, readFile, rename, truncate, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { AcceptanceRecord, ActivityRecord, AlignmentReviewRecord, ArtifactName, AttemptEvent, AttemptRecorder, ImportRecord, ImportStore, OperationRecord, RevisionRecord, StoreLock } from "@leaplearn/generator";
-import { acquireDirectoryLock, type LockOptions } from "./lock.js";
+import { acquireDirectoryLock, type HeldLock, type LockOptions } from "./lock.js";
 
 export class StoreCorruptError extends Error {
   constructor(public readonly path: string, public readonly line: number, cause: string) { super(`${path}:${line} is not a JSON record (${cause}); the store is corrupt`); this.name = "StoreCorruptError"; }
@@ -5455,18 +5575,22 @@ export async function readJsonl<T>(path: string): Promise<{ records: T[]; trunca
   return { records, truncatedTail };
 }
 
-/** Directory-backed ImportStore: JSON files written atomically, JSONL ledgers repaired then appended, one directory lock. Ledger appends assume the caller holds the lock. */
+/** Directory-backed ImportStore: JSON files written atomically, JSONL ledgers repaired then appended through one queue per ledger, one directory lock. Ledger appends assume the caller holds the lock and verify it. */
 export class FileStore implements ImportStore {
   private readonly repaired = new Set<string>();
+  private readonly queues = new Map<string, Promise<unknown>>();
+  private held: HeldLock | null = null;
   constructor(private readonly dir: string, private readonly options: { lock?: LockOptions } = {}) {}
   private p(...parts: string[]): string { return join(this.dir, ...parts); }
 
-  lock(importId: string): Promise<StoreLock> { return acquireDirectoryLock(this.dir, importId, this.options.lock ?? {}); }
+  async lock(importId: string): Promise<StoreLock> {
+    const held = await acquireDirectoryLock(this.dir, importId, this.options.lock ?? {});
+    this.held = held;
+    return { release: async () => { this.held = null; await held.release(); } };
+  }
 
-  /** Once per ledger per process: a complete final record that lost its newline gets one; a truncated fragment is cut off. Earlier records are untouched; corruption elsewhere still throws on read. */
+  /** A complete final record that lost its newline gets one; a truncated fragment is cut off. Earlier records are untouched; corruption elsewhere still throws on read. Runs inside the ledger's queue, and the ledger counts as repaired only once this has succeeded. */
   private async repairTail(path: string): Promise<void> {
-    if (this.repaired.has(path)) return;
-    this.repaired.add(path);
     let text: string;
     try { text = await readFile(path, "utf8"); } catch (err) { if (isEnoent(err)) return; throw err; }
     if (text.length === 0 || text.endsWith("\n")) return;
@@ -5493,10 +5617,18 @@ export class FileStore implements ImportStore {
     return all.filter((r): r is RevisionRecord => r !== null).sort((a, b) => a.revision - b.revision);
   }
   putRevision(record: RevisionRecord) { return writeJsonAtomic(this.p("revisions", record.activityId, `r${record.revision}.json`), record); }
-  private async append(file: string, value: unknown): Promise<void> {
-    await mkdir(this.dir, { recursive: true });
+  /** Repair, corruption check and append run strictly one at a time per ledger: a lane can never truncate to a snapshot taken before another lane's append. */
+  private append(file: string, value: unknown): Promise<void> {
     const path = this.p(file);
-    await this.repairTail(path);
+    const previous = this.queues.get(path) ?? Promise.resolve();
+    const task = previous.then(() => this.appendNow(path, value), () => this.appendNow(path, value));
+    this.queues.set(path, task);
+    return task;
+  }
+  private async appendNow(path: string, value: unknown): Promise<void> {
+    if (this.held) await this.held.assertHeld();
+    await mkdir(this.dir, { recursive: true });
+    if (!this.repaired.has(path)) { await this.repairTail(path); this.repaired.add(path); }
     await readJsonl(path); // a malformed line elsewhere is corruption: refuse to append to it
     await appendFile(path, JSON.stringify(value) + "\n");
   }
@@ -5543,7 +5675,8 @@ import { PRICING, type AttemptOutcome, type AttemptStart, type ImportStore, type
 
 export interface CostReport {
   pricingVersion: string;
-  totals: { attempts: number; costUsdMicro: number; costStatusCounts: Record<CostStatus, number>; reservationExceeded: number; overshootUsdMicro: number };
+  /** underestimateUsdMicro sums each attempt's cost beyond its reservation (a property of the estimate); spendOverCapUsdMicro is the import's spend beyond its cap (a property of the import), zero when the cap held. */
+  totals: { attempts: number; costUsdMicro: number; costStatusCounts: Record<CostStatus, number>; reservationExceeded: number; underestimateUsdMicro: number; spendOverCapUsdMicro: number };
   shared: number; direct: number;
   byPurpose: Record<string, { attempts: number; costUsdMicro: number }>;
   byType: Record<string, { activities: number; promoted: number; costUsdMicro: number }>;
@@ -5568,16 +5701,17 @@ export async function costReport(store: ImportStore, importId: string): Promise<
   const starts = events.filter((e): e is AttemptStart => e.event === "start");
   const outcomes = new Map(events.filter((e): e is AttemptOutcome => e.event === "outcome").map((o) => [o.attemptId, o]));
   const activities = await store.listActivities(importId);
+  const importRecord = await store.getImport(importId);
   const opActivity = new Map((await store.listOperations(importId)).map((o) => [o.operationId, o.activityId]));
   const costStatusCounts: Record<CostStatus, number> = { known: 0, estimated: 0, unavailable: 0 };
   const byPurpose: CostReport["byPurpose"] = {}; const perActivityMap = new Map<string, { attempts: number; costUsdMicro: number }>();
-  let total = 0; let shared = 0; let direct = 0; let retries = 0; let reservationExceeded = 0; let overshoot = 0;
+  let total = 0; let shared = 0; let direct = 0; let retries = 0; let reservationExceeded = 0; let underestimate = 0;
   for (const s of starts) {
     const o = outcomes.get(s.attemptId);
     const cost = o?.costUsdMicro ?? 0; // rows without a cost are counted in costStatusCounts.unavailable and excluded from every sum; they never appear as zero-cost successes
     costStatusCounts[o?.costStatus ?? "unavailable"] += 1;
     if (o?.reservationExceeded) reservationExceeded += 1;
-    overshoot += o?.overshootUsdMicro ?? 0;
+    underestimate += o?.underestimateUsdMicro ?? 0;
     total += cost;
     if (s.purpose === "produce") direct += cost; else shared += cost;
     const bp = (byPurpose[s.purpose] ??= { attempts: 0, costUsdMicro: 0 }); bp.attempts += 1; bp.costUsdMicro += cost;
@@ -5593,7 +5727,7 @@ export async function costReport(store: ImportStore, importId: string): Promise<
   });
   const accepted = (await acceptedActivityIds(store, importId)).size;
   return {
-    pricingVersion: PRICING.version, totals: { attempts: starts.length, costUsdMicro: total, costStatusCounts, reservationExceeded, overshootUsdMicro: overshoot }, shared, direct, byPurpose, byType, perActivity,
+    pricingVersion: PRICING.version, totals: { attempts: starts.length, costUsdMicro: total, costStatusCounts, reservationExceeded, underestimateUsdMicro: underestimate, spendOverCapUsdMicro: importRecord ? Math.max(0, total - importRecord.budget.usdMicro) : 0 }, shared, direct, byPurpose, byType, perActivity,
     retryShare: starts.length === 0 ? 0 : retries / starts.length,
     accepted, costPerAcceptedActivityUsdMicro: accepted === 0 ? null : Math.round(total / accepted)
   };
@@ -5603,7 +5737,7 @@ const usd = (micro: number): string => `$${(micro / 1_000_000).toFixed(4)}`;
 
 export function formatCostReport(r: CostReport): string {
   const lines = [
-    `Cost (pricing ${r.pricingVersion}): ${usd(r.totals.costUsdMicro)} over ${r.totals.attempts} attempts (known ${r.totals.costStatusCounts.known}, estimated ${r.totals.costStatusCounts.estimated}, unavailable ${r.totals.costStatusCounts.unavailable} — excluded from the sums; the ledger's budget spend counts them at their reservation); shared ${usd(r.shared)}, direct ${usd(r.direct)}; retry share ${(r.retryShare * 100).toFixed(0)}%; estimate exceeded on ${r.totals.reservationExceeded} attempt(s), overshooting the caps by ${usd(r.totals.overshootUsdMicro)} in total`,
+    `Cost (pricing ${r.pricingVersion}): ${usd(r.totals.costUsdMicro)} over ${r.totals.attempts} attempts (known ${r.totals.costStatusCounts.known}, estimated ${r.totals.costStatusCounts.estimated}, unavailable ${r.totals.costStatusCounts.unavailable} — excluded from the sums; the ledger's budget spend counts them at their reservation); shared ${usd(r.shared)}, direct ${usd(r.direct)}; retry share ${(r.retryShare * 100).toFixed(0)}%; reservations under-estimated on ${r.totals.reservationExceeded} attempt(s) by ${usd(r.totals.underestimateUsdMicro)} in total; spend over the import's cap: ${usd(r.totals.spendOverCapUsdMicro)}`,
     `Accepted activities: ${r.accepted}; cost per accepted activity: ${r.costPerAcceptedActivityUsdMicro === null ? "n/a (none accepted yet; record decisions with leap review)" : usd(r.costPerAcceptedActivityUsdMicro)}`,
     "", "| purpose | attempts | cost |", "|---|---|---|"
   ];
@@ -5670,7 +5804,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
 import { createRegistry } from "@leaplearn/engine";
-import { createAnthropicProvider, IncompatibleResumeError, ingestMarkdown, ingestPdf, ingestText, ReplayProvider, RecordingProvider, runImport, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
+import { ANTHROPIC_TIMEOUT_MS, createAnthropicProvider, IncompatibleResumeError, ingestMarkdown, ingestPdf, ingestText, ReplayProvider, RecordingProvider, runImport, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
 import { FileStore } from "./file-store.js";
 import { formatCostReport, writeReports } from "./report.js";
 
@@ -5720,7 +5854,7 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
   try {
     record = await runImport(
       { importId, name: args.name ?? basename(sourcePath), source, unitText, selectedTypes: types, budget, promptConfig, language: args.language, customisation: args.customisation ?? null },
-      { store, provider: providerFor(args), registry, engineFingerprint: await engineFingerprint(args.libraries), concurrency: args.concurrency, onProgress: (e) => io.err(`${e.kind === "status" ? `status: ${e.status}` : e.kind === "activity" ? `${e.activityId}: ${e.status}${e.error ? ` (${e.error})` : ""}` : `${e.purpose}: ${e.status}${e.costUsdMicro === null ? "" : ` ($${(e.costUsdMicro / 1_000_000).toFixed(4)})`}`}\n`) }
+      { store, provider: providerFor(args), registry, engineFingerprint: await engineFingerprint(args.libraries), concurrency: args.concurrency, maxAttemptMs: ANTHROPIC_TIMEOUT_MS, onProgress: (e) => io.err(`${e.kind === "status" ? `status: ${e.status}` : e.kind === "activity" ? `${e.activityId}: ${e.status}${e.error ? ` (${e.error})` : ""}` : `${e.purpose}: ${e.status}${e.costUsdMicro === null ? "" : ` ($${(e.costUsdMicro / 1_000_000).toFixed(4)})`}`}\n`) }
     );
   } catch (err) {
     if (err instanceof IncompatibleResumeError || err instanceof StoreLockedError) { io.err(`leap: ${err.message}\n`); return 1; }
@@ -5743,7 +5877,7 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
       .option("out", { type: "string", demandOption: true, describe: "output directory (the import store; rerun to resume)" })
       .option("unit", { type: "string", describe: "unit of competency text file" })
       .option("types", { type: "string", default: "multiChoice,blanks,flashcards" })
-      .option("budget-usd", { type: "number", default: 2, describe: "estimated spend cap in USD (reservations are estimates; the report shows any overshoot)" })
+      .option("budget-usd", { type: "number", default: 2, describe: "estimated spend cap in USD (reservations are estimates; the report shows reservation underestimates and any spend over the cap)" })
       .option("max-requests", { type: "number", default: 200, describe: "hard limit on model requests" })
       .option("max-tokens", { type: "number", default: 2_000_000, describe: "estimated cap on reserved input + output tokens" })
       .option("max-seconds", { type: "number", default: 1800, describe: "hard limit on elapsed time for this import, counted across runs" })
@@ -5799,13 +5933,13 @@ import { costReport, mappingRows } from "../src/report.js";
 
 async function seeded(): Promise<MemoryStore> {
   const store = new MemoryStore();
-  await store.putImport({ importId: "imp", orgId: "local", name: "n", sourceType: "markdown", status: "ready", customisation: null, language: "en", unitTextHash: "u".repeat(64), selectedTypes: ["blanks"], fingerprint: "f".repeat(64), budget: { usdMicro: 1, requests: 1, tokens: 1, elapsedMs: 1 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, error: null, idempotencyKey: "imp", createdAt: "t", updatedAt: "t" });
+  await store.putImport({ importId: "imp", orgId: "local", name: "n", sourceType: "markdown", status: "ready", customisation: null, language: "en", unitTextHash: "u".repeat(64), selectedTypes: ["blanks"], fingerprint: "f".repeat(64), budget: { usdMicro: 1, requests: 1, tokens: 1, elapsedMs: 1 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: "imp", createdAt: "t", updatedAt: "t" });
   await store.putArtifact("imp", "unit", { code: "SYNELE001", title: "Isolate and test electrical equipment", textHash: "u".repeat(64), knowledgeEvidence: [], performanceEvidence: [], elements: [{ id: "E2", number: "2", text: "Isolate and secure equipment", performanceCriteria: [{ id: "PC2.1", number: "2.1", text: "Apply lockout devices and tags" }, { id: "PC2.2", number: "2.2", text: "Test for dead" }] }] });
   await store.putActivity({ activityId: "act-4", importId: "imp", type: "blanks", order: 0, status: "promoted", currentRevision: 1, conceptIds: ["c1"], criteriaIds: ["PC2.1"], error: null, dropped: false });
   await store.putActivity({ activityId: "act-5", importId: "imp", type: "blanks", order: 1, status: "failed", currentRevision: null, conceptIds: ["c1"], criteriaIds: [], error: "content: x", dropped: false });
   await store.putRevision({ activityId: "act-4", revision: 1, state: "promoted", spec: { id: "act-4", title: "T", type: "blanks", language: "en", schemaVersion: 1, taskDescription: "d", passage: "Only the {{b1}} may remove it and it takes {{b2}} people.", blanks: [{ id: "b1", answers: ["worker"], provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1"], criteriaIds: ["PC2.1"] } }, { id: "b2", answers: ["two"], provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s2"], criteriaIds: [] } }], caseSensitive: false, provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1", "ev-s2"], criteriaIds: ["PC2.1"] } }, schemaVersion: 1, promptVersion: "p", modelConfig: { provider: "fake", models: {}, profiles: {} }, engineFingerprint: "f", note: null, buildKey: "k", attemptIds: [], createdAt: "t" });
   const rec = store.recorderFor("imp");
-  await rec.recordStart({ event: "start", attemptId: "a1", operationId: "imp:produce:act-4:r1", callKey: "produce:act-4", retryIndex: 0, retryReason: null, attempt: 1, purpose: "produce", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" });
+  await rec.recordStart({ event: "start", attemptId: "a1", operationId: "imp:produce:act-4:r1", callKey: "produce:act-4", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: 0, purpose: "produce", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" });
   await rec.recordOutcome({ event: "outcome", attemptId: "a1", operationId: "imp:produce:act-4:r1", providerRequestId: null, rawUsage: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, latencyMs: 1, pricingVersion: "v", costUsdMicro: 900, costStatus: "known", stopReason: "end_turn", status: "ok", error: null, reservationExceeded: false, completedAt: "t" });
   return store;
 }
@@ -5996,7 +6130,8 @@ rows = [json.loads(l) for l in open('/tmp/leap-demo/attempts.jsonl')]
 starts = {r['attemptId']: r for r in rows if r['event'] == 'start'}
 outs = [r for r in rows if r['event'] == 'outcome']
 print('costStatus:', sorted({o['costStatus'] for o in outs}))
-print('reservationExceeded:', sum(1 for o in outs if o['reservationExceeded']), 'overshoot µUSD:', sum(o['overshootUsdMicro'] or 0 for o in outs))
+print('reservationExceeded:', sum(1 for o in outs if o['reservationExceeded']), 'underestimate µUSD:', sum(o['underestimateUsdMicro'] or 0 for o in outs))
+print('spend over cap µUSD:', json.load(open('/tmp/leap-demo/cost.json'))['totals']['spendOverCapUsdMicro'])
 ratios = [(o['inputTokens'] + (o['cacheReadTokens'] or 0) + (o['cacheWriteTokens'] or 0)) / max(1, starts[o['attemptId']]['reservedInputTokens']) for o in outs if o['inputTokens'] is not None]
 print('max actual/reserved input ratio: %.3f' % max(ratios))
 print('retries:', sum(1 for s in starts.values() if s['retryIndex'] > 0), 'of', len(starts))
@@ -6004,7 +6139,7 @@ print('cache reads on produce:', [o['cacheReadTokens'] for o in outs if starts[o
 EOF
 test -d /tmp/leap-demo/lock && echo "LOCK LEFT BEHIND" || echo "lock released"
 ```
-Expected: one `.h5p` per promoted activity; `mapping.csv` rows with `PC…` ids and `suggested`; starts equal outcomes; `costStatus` all `known`; the `reservationExceeded` count, the max actual/reserved ratio and the total overshoot are **recorded as calibration data**, whatever they are (a non-zero overshoot is not a failure of the demo, it is the measurement the estimated cap exists to make visible; the doc states how far the cap was overshot in µUSD); cache reads visible on the later `produce` calls (the system + evidence prefix exceeds 1,024 tokens for Sonnet 5; if they are 0 everywhere, record that as a finding — the cached prefix was below the minimum or not identical between calls); no lock file left.
+Expected: one `.h5p` per promoted activity; `mapping.csv` rows with `PC…` ids and `suggested`; starts equal outcomes; `costStatus` all `known`; the `reservationExceeded` count, the max actual/reserved ratio and the total underestimate are **recorded as calibration data**, whatever they are (a non-zero underestimate is not a failure of the demo, it is the measurement the estimated cap exists to make visible); the doc also states the spend over the import's cap, expected 0 (the two are different measurements: an attempt can exceed its reservation while the import stays well under its cap); cache reads visible on the later `produce` calls (the system + evidence prefix exceeds 1,024 tokens for Sonnet 5; if they are 0 everywhere, record that as a finding — the cached prefix was below the minimum or not identical between calls); no lock file left.
 
 Then record one acceptance so the cost-per-accepted-activity measurement is exercised end to end:
 ```bash
@@ -6015,7 +6150,7 @@ This acceptance is a plumbing check by the person running the demo. It is **not*
 
 Open every built `.h5p` in the phase-1 smoke harness by copying them into a temporary site (`packages/engine/test/smoke/serve.ts` + `site/index.html`) or upload one by hand to h5p.com and record it in `docs/testing/platform-checklist.md` under a new "generated" row set — this is the owner's platform gate and stays separate from quality judgement.
 
-Write `docs/testing/phase-2-demo.md`: the exact commands, the run date, the model IDs, the request profiles and `PRICING.version`, the cost report table verbatim, the number of attempts and the retry share, the `reservationExceeded` count, the total overshoot in µUSD and the observed maximum actual/reserved input ratio (this is the calibration record for the estimated caps), the cache-read observation, the unsupported criteria list (`PC3.2` expected), the acceptance record with its "plumbing check" note, and any activity that failed with its reason. This is the "measured cost" deliverable; no quality claim is made.
+Write `docs/testing/phase-2-demo.md`: the exact commands, the run date, the model IDs, the request profiles and `PRICING.version`, the cost report table verbatim, the number of attempts and the retry share, the `reservationExceeded` count, the total reservation underestimate in µUSD, the spend over the cap in µUSD, and the observed maximum actual/reserved input ratio (this is the calibration record for the estimated caps), the cache-read observation, the unsupported criteria list (`PC3.2` expected), the acceptance record with its "plumbing check" note, and any activity that failed with its reason. This is the "measured cost" deliverable; no quality claim is made.
 
 - [ ] **Step 2: Replay test over the recorded fixtures**
 
@@ -6056,7 +6191,7 @@ describe("end to end over recorded responses", () => {
     expect(map?.alignment?.unsupportedCriteriaIds).toContain("PC3.2");
     const outcomes = (await store.listAttempts("leap-demo")).filter((e): e is AttemptOutcome => e.event === "outcome");
     expect(outcomes.every((o) => o.costStatus === "known")).toBe(true);
-    expect(outcomes.every((o) => typeof o.reservationExceeded === "boolean" && o.overshootUsdMicro !== null)).toBe(true); // recorded on every attempt; the demo doc reports the totals
+    expect(outcomes.every((o) => typeof o.reservationExceeded === "boolean" && o.underestimateUsdMicro !== null)).toBe(true); // recorded on every attempt; the demo doc reports the totals
   });
 });
 ```
@@ -6064,7 +6199,7 @@ The replay is byte-exact only if the prompts are identical to the recorded run: 
 
 - [ ] **Step 3: Spec and docs**
 
-`docs/superpowers/specs/2026-09-18-generator-service-design.md`: §3 `packages/generator` → `llm/`: append "Structured output is requested natively (`output_config.format`, JSON Schema projected from the model-output Zod schemas to the subset the API accepts, every property required); the full Zod schema validates the parsed response. Request settings (sampling, thinking) come from per-model profiles. SDK retries are off; the stage runner owns retries and every retry is a recorded, reserved attempt. Of the four budget limits, requests and elapsed time (per import, across runs) are hard; spend and tokens are estimated caps whose overshoot is recorded per attempt. Phase 2 stores imports as a directory of JSON and JSONL files through an `ImportStore` interface with an ownership-safe directory lock and an input fingerprint; phase 5 implements the same interface over Postgres." §4: after the `acceptance_decisions` row add "Both review tables are implemented from phase 2 as revision-bound records in the `ImportStore`, written by `leap review`; the web UI arrives in phase 5." §9 URL fetching: "Implemented as `safeFetch` in `packages/generator` (phase 2): addresses are classified after IPv6 normalisation and the connection is pinned to the validated address; used by every application-side fetch." `README.md`: a "Generate activities" section with the demo command, the output directory layout (including `lock/` and the four ledgers), the four budget flags with which two are hard and which two are estimates, `--provider replay|record`, `leap review`, and the exit codes.
+`docs/superpowers/specs/2026-09-18-generator-service-design.md`: §3 `packages/generator` → `llm/`: append "Structured output is requested natively (`output_config.format`, JSON Schema projected from the model-output Zod schemas to the subset the API accepts, every property required); the full Zod schema validates the parsed response. Request settings (sampling, thinking) come from per-model profiles. SDK retries are off; the stage runner owns retries and every retry is a recorded, reserved attempt. Of the four budget limits, requests and elapsed time (per import, across runs) are hard; spend and tokens are estimated caps; each attempt's reservation underestimate and the import's spend over its cap are recorded separately. Phase 2 stores imports as a directory of JSON and JSONL files through an `ImportStore` interface with an ownership-safe directory lock and an input fingerprint; phase 5 implements the same interface over Postgres." §4: after the `acceptance_decisions` row add "Both review tables are implemented from phase 2 as revision-bound records in the `ImportStore`, written by `leap review`; the web UI arrives in phase 5." §9 URL fetching: "Implemented as `safeFetch` in `packages/generator` (phase 2): addresses are classified after IPv6 normalisation and the connection is pinned to the validated address; used by every application-side fetch." `README.md`: a "Generate activities" section with the demo command, the output directory layout (including `lock/` and the four ledgers), the four budget flags with which two are hard and which two are estimates, `--provider replay|record`, `leap review`, and the exit codes.
 
 - [ ] **Step 4: Root verification and commit**
 
@@ -6085,9 +6220,10 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - **SSRF protection exists and is tested before any server-side fetching:** `safeFetch` classifies every address after IPv6 normalisation (mapped in both notations, compatible, NAT64, 6to4, multicast), pins the connection to the validated address, re-checks every redirect, applies one total deadline including DNS, caps size, and is the only fetch the CLI's image resolver uses (Task 6). Text and PDF ingestion never fetch.
 - **Requests are ones Sonnet 5 accepts:** no sampling parameter, thinking disabled, and the wire schema is the provider-compatible projection; contract tests pin both against the real model-output schemas (Tasks 4, 5, 7).
 - **Every retry is metered:** SDK retries are zero; a transient failure followed by success produces two starts, two outcomes and two reservations (Tasks 5, 7).
-- **The budget's four limits are described as what they are:** requests and elapsed time are hard (the count is exact; the per-import deadline is checked before every dispatch and every backoff and bounds the SDK timeout); spend and tokens are estimated caps reserved before dispatch for the whole request at the cache-write rate; every outcome records `reservationExceeded` and `overshootUsdMicro`, the report totals them, and the demo records them as calibration data (Tasks 2, 4, 5, 7, 15, 17).
+- **The budget's four limits are described as what they are:** requests and elapsed time are hard (the count is exact; the per-import deadline is checked before every dispatch and every backoff and bounds the SDK timeout); spend and tokens are estimated caps reserved before dispatch for the whole request at the cache-write rate; every outcome records `reservationExceeded` and `underestimateUsdMicro`, the report totals them, and the demo records them as calibration data (Tasks 2, 4, 5, 7, 15, 17).
 - **Recovery is proven by crash tests and one real kill:** a simulated failure before the concept map, plan, activity records, build or the final activity write is followed by a resume that repeats no finished model call; a candidate revision resumes at compilation; a changed input is refused under the lock; a second writer is refused; a SIGKILLed child process over `FileStore` leaves a held lock and an outcome-less start, and the next run reclaims the lock, reconciles and resumes (Tasks 14, 15).
-- **The lock is ownership-safe and the ledgers stay appendable:** atomic `mkdir`, token, heartbeat, rename-then-remove reclamation with a two-reclaimer test; a damaged JSONL tail is repaired before the next append (Task 15).
+- **The lock is ownership-safe and the ledgers stay appendable:** atomic `mkdir`, token, dead-local-owner-only reclamation through a tombstone named by the inspected owner's token, lost-ownership detection before every append, and a barrier test of the reviewed interleaving; a damaged JSONL tail is repaired before the next append inside a per-ledger queue, with a concurrent first-append test (Task 15).
+- **A killed run's time is never given back:** the run anchor is durable before the first dispatch, and a resume charges the interrupted run up to the latest durable timestamp or, for a call that never finished, up to the sooner of its deadline and the maximum attempt length; the real SIGKILL test checks the charge (Tasks 14, 15).
 - **Concurrency cannot violate the rules:** one serial lane per type, a shared stop consulted before every dispatch and every retry, in-flight work settled even when recording an outcome fails, the lock released only after every lane has finished, every undispatched activity given an explicit outcome and re-dispatched on resume, duplicate selected types canonicalised (Tasks 7, 14).
 - **Mappings do not overstate alignment:** item and activity provenance are derived from the cited evidence and the alignment; each blank's answer is checked against that blank's evidence; the alignment prompt sees evidence quotes (Tasks 8, 10–13).
 - **Retry share means retries:** every attempt carries a call key and a retry index; the report counts `retryIndex > 0` (Tasks 4, 7, 15).
@@ -6107,12 +6243,16 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 | SSRF guard tested and wired before any fetch | Task 6's commit precedes Task 15's CLI; `grep -rn "fetch(" apps/cli/src packages/generator/src` shows only `safe-fetch.ts`; the pinning test reaches `pinned.test` only through the injected lookup |
 | Review finding 1 (Sonnet 5 request shape, schema projection) | `test/anthropic-provider.test.ts` (no sampling key, `thinking: disabled`), `test/model-output.test.ts` (all eight real schemas) |
 | Review finding 2 (SDK retries) | `test/anthropic-provider.test.ts` asserts `maxRetries: 0`; `test/runner.test.ts` asserts two starts, two outcomes, two reservations |
-| Review finding 3 (four limits reserved before dispatch) | `test/cost.test.ts` (no split of the same totals costs more than the reservation for a given count), `test/budget.test.ts` (each limit refused by name); the caps' estimated nature is stated where they are defined and their overshoot is recorded (see the revision-2 rows below) |
+| Review finding 3 (four limits reserved before dispatch) | `test/cost.test.ts` (no split of the same totals costs more than the reservation for a given count), `test/budget.test.ts` (each limit refused by name); the caps' estimated nature is stated where they are defined and the per-attempt underestimate is recorded (see the revision-2 rows below) |
 | Review findings 4 and 5 (recovery, identity, lock) | `test/pipeline.test.ts` crash cases `imp-c1` … `imp-c6`, `imp-fp`, `imp-lock`; `apps/cli/test/file-store.test.ts` tail-repair cases |
-| Revision-2 finding 1 (budget honesty, elapsed deadline) | Decisions table and Global Constraints name the hard limits and the estimated caps; `test/budget.test.ts` deadline case; `test/call-model.test.ts` overshoot and deadline cases; `test/runner.test.ts` backoff-past-deadline case; `test/anthropic-provider.test.ts` bounded timeout; `test/pipeline.test.ts` `imp-e` |
+| Revision-2 finding 1 (budget honesty, elapsed deadline) | Decisions table and Global Constraints name the hard limits and the estimated caps; `test/budget.test.ts` deadline case; `test/call-model.test.ts` underestimate and deadline cases; `test/runner.test.ts` backoff-past-deadline case; `test/anthropic-provider.test.ts` bounded timeout; `test/pipeline.test.ts` `imp-e` |
 | Revision-2 finding 2 (DNS callback shape) | `test/safe-fetch.test.ts` `pinned.test` under the pinned Node 20, where automatic family selection uses the array form |
 | Revision-2 finding 3 (JSONL tail) | `apps/cli/test/file-store.test.ts` read → repair → append → reopen for a truncated record and for a record missing its newline |
-| Revision-2 finding 4 (lock races, read under lock, review lock) | `apps/cli/test/lock.test.ts` two-reclaimer and reclaimed-release cases; `runImport` reads the record after `lock()`; `review()` holds the lock |
+| Revision-2 finding 4 (lock races, read under lock, review lock) | `apps/cli/test/lock.test.ts`; `runImport` reads the record after `lock()`; `review()` holds the lock |
+| Revision-3 finding 1 (reclamation race, live owner) | `apps/cli/test/lock.test.ts` barrier replay of the reviewed interleaving, live-local-owner and other-host refusals, lost-ownership detection |
+| Revision-3 finding 2 (concurrent tail repair) | `apps/cli/test/file-store.test.ts` concurrent first appends to a damaged ledger; `LockLostError` before an append |
+| Revision-3 finding 3 (interrupted elapsed time) | `test/pipeline.test.ts` `imp-a` (anchor, bound by deadline and maximum attempt length); `apps/cli/test/interrupt.test.ts` asserts the charge after SIGKILL |
+| Revision-3 naming | `cost.json` reports `underestimateUsdMicro` (the estimate) and `spendOverCapUsdMicro` (the import) separately |
 | Revision-2 finding 5 (stop before every dispatch, settle on persistence failure, duplicate types) | `test/runner.test.ts` stop case; `test/pipeline.test.ts` `imp-s`, `imp-f`, `imp-t` |
 | Revision-2 finding 6 (added criteria) | `apps/cli/test/review.test.ts` add → reject → confirm, unknown criterion, no-unit import |
 | Revision-2 finding 7 (test clocks) | every budget in a test is created from the clock the runner uses; `test/call-model.test.ts` `CLOCK` |
@@ -6134,6 +6274,6 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - **Structured output:** native `output_config.format` instead of the tool-use projection described in §2.2; the JSON Schema is derived from Zod and projected to the API's subset, and the full Zod schema plus refinements are enforced in code as §2.2 requires.
 - **Model request settings:** phase 2 disables thinking on Sonnet 5 and sends no sampling parameter (the API rejects them); Haiku 4.5 runs at `temperature: 0`. Adaptive thinking with `effort` is a phase-3 experiment, recorded per revision in `modelConfig.profiles`.
 - **Undispatched activities:** an activity skipped by a stop is recorded as `failed` with `error: "skipped: …"` rather than a new status value, so the §4 status set is unchanged; `budget:`, `system:` and `skipped:` failures are re-dispatched on resume, `content:` failures are not.
-- **Budget semantics:** spec §4 lists four budget quantities without saying which can be enforced exactly. In phase 2 the request count and the elapsed time (per import, accumulated across runs) are hard limits; spend and tokens are estimated caps, because no local tokenizer for Sonnet 5 exists and the provider charges before the ledger can know the real count. The reservation uses 0.5 tokens per character plus a fixed overhead allowance as calibration constants; every attempt records its overshoot and the demo reports the totals. The `count_tokens` endpoint (one extra request per attempt) is the phase-5 route to exact reservations if the recorded overshoot is material.
+- **Budget semantics:** spec §4 lists four budget quantities without saying which can be enforced exactly. In phase 2 the request count and the elapsed time (per import, accumulated across runs) are hard limits; spend and tokens are estimated caps, because no local tokenizer for Sonnet 5 exists and the provider charges before the ledger can know the real count. The reservation uses 0.5 tokens per character plus a fixed overhead allowance as calibration constants; every attempt records its reservation underestimate, the report states spend over the cap as a separate figure, and the demo reports both. The `count_tokens` endpoint (one extra request per attempt) is the phase-5 route to exact reservations if the recorded overshoot is material.
 - **Review and acceptance:** the records exist from phase 2 and are written from the CLI; the review screen arrives in phase 5. `mapping.csv` says `suggested` until a review exists for the row. The demo's single acceptance is a plumbing check, not the phase-3 gate.
 - **Credential owner:** every attempt records `credentialOwner: "server"`; per-org keys (§9) arrive with accounts in phase 5.
