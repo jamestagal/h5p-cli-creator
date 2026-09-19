@@ -68,14 +68,42 @@ describe("anthropic adapter contract", () => {
     const create = vi.fn().mockResolvedValue({ model: "m", stop_reason: "end_turn", content: [{ type: "text", text: "{\"ok\":true}" }], usage: { input_tokens: 1, output_tokens: 1 }, _request_id: "req_1" });
     const provider = createAnthropicProvider({ client: { messages: { create } }, timeoutMs: 120_000 });
     const response = await provider.complete(sonnetRequest);
-    expect(create).toHaveBeenCalledWith(buildMessageParams(sonnetRequest), { maxRetries: 0, timeout: 120_000 });
+    expect(create).toHaveBeenCalledWith(buildMessageParams(sonnetRequest), { maxRetries: 0, timeout: 120_000, signal: expect.any(AbortSignal) });
     expect(response.providerRequestId).toBe("req_1");
     expect(provider.name).toBe("anthropic");
     await provider.complete(sonnetRequest, { deadlineMs: Date.now() + 5000 });
-    const bounded = (create.mock.calls[1] as [unknown, { maxRetries: number; timeout: number }])[1];
+    const bounded = (create.mock.calls[1] as [unknown, { maxRetries: number; timeout: number; signal: AbortSignal }])[1];
     expect(bounded.maxRetries).toBe(0);
     expect(bounded.timeout).toBeGreaterThan(0);
     expect(bounded.timeout).toBeLessThanOrEqual(5000);
+    expect(bounded.signal.aborted).toBe(false); // armed at the deadline, and cleared once the call returned
+  });
+
+  it("refuses a dispatch whose deadline has already passed, before the client is called, as a permanent error", async () => {
+    const create = vi.fn();
+    const provider = createAnthropicProvider({ client: { messages: { create } }, timeoutMs: 120_000 });
+    await expect(provider.complete(sonnetRequest, { deadlineMs: Date.now() - 1 })).rejects.toMatchObject({
+      name: "ProviderError", kind: "permanent", message: expect.stringMatching(/already passed at dispatch; no request was sent/)
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("aborts a call whose body outlives the deadline and reports it as transient, naming the deadline", async () => {
+    const seen: { aborted: boolean } = { aborted: false };
+    // fast headers, delayed body: the SDK's own timeout timer is cleared once the headers arrive, so only the signal can end this
+    const create = vi.fn((_params: Record<string, unknown>, requestOptions?: { signal?: AbortSignal }) => new Promise((resolve, reject) => {
+      const body = setTimeout(() => resolve({ model: "m", stop_reason: "end_turn", content: [{ type: "text", text: "{}" }] }), 200);
+      requestOptions?.signal?.addEventListener("abort", () => { seen.aborted = requestOptions.signal!.aborted; clearTimeout(body); reject(new Error("The operation was aborted.")); }, { once: true });
+    }));
+    const provider = createAnthropicProvider({ client: { messages: { create } }, timeoutMs: 120_000 });
+    const deadlineMs = Date.now() + 20;
+    const started = Date.now();
+    const error = await provider.complete(sonnetRequest, { deadlineMs }).then(() => null, (err: unknown) => err);
+    expect(error).toMatchObject({ name: "ProviderError", kind: "transient" });
+    expect((error as Error).message).toMatch(/aborted after \d+ ms, at the import's elapsed deadline at /);
+    expect((error as Error).message).toContain(new Date(deadlineMs).toISOString());
+    expect(Date.now() - started).toBeLessThan(180); // it ended at the deadline, not when the body finally arrived
+    expect(seen.aborted).toBe(true);
   });
 
   it("classifies SDK errors by status and carries the request id and retry-after", () => {

@@ -1,6 +1,6 @@
 import type { ModelRequest, ModelResponse } from "./types.js";
 
-/** Per-call limits the caller imposes; the adapter turns the deadline into its request timeout. */
+/** Per-call limits the caller imposes; the adapter turns the deadline into its request timeout and into the abort that bounds the whole response, body included. */
 export interface CallOptions { deadlineMs?: number; }
 
 export interface ModelProvider {

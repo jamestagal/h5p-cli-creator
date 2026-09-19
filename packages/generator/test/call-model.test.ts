@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 import { callModel, type CallContext } from "../src/llm/call-model.js";
+import { createAnthropicProvider } from "../src/llm/anthropic-provider.js";
 import { FakeProvider, fakeResponse } from "../src/llm/fake-provider.js";
 import { ProviderError } from "../src/llm/provider.js";
 import { createBudget, DEFAULT_BUDGET_LIMITS, reserve } from "../src/llm/budget.js";
@@ -96,6 +97,29 @@ describe("callModel", () => {
     expect(r).toMatchObject({ kind: "budget_refused", limit: "spend" });
     expect(recorder.events).toEqual([]);
     expect(provider.requests).toEqual([]);
+  });
+  it("records an attempt the adapter aborted at the deadline as a settled transient failure, timed by the injected clock", async () => {
+    const base = Date.now();
+    const deadlineMs = 150;
+    // the SDK's per-request timeout stops covering the call once the headers arrive, so this body would outlive the deadline
+    const create = (_params: Record<string, unknown>, requestOptions?: { signal?: AbortSignal }) => new Promise<unknown>((resolve, reject) => {
+      const body = setTimeout(() => resolve({ model: "m", stop_reason: "end_turn", content: [{ type: "text", text: "{\"ok\":true}" }] }), 2000);
+      requestOptions?.signal?.addEventListener("abort", () => { clearTimeout(body); reject(new Error("The operation was aborted.")); }, { once: true });
+    });
+    const provider = createAnthropicProvider({ client: { messages: { create } }, timeoutMs: 120_000 });
+    const recorder = new MemoryRecorder();
+    const budget = createBudget({ usdMicro: 1e9, elapsedMs: deadlineMs }, base);
+    const frozen = new Date(base);
+    const result = await callModel(req(), { provider, recorder, budget, operationId: "op-1", callKey: "produce:act-1", retryIndex: 0, retryReason: null, attempt: 1, clock: () => frozen, ids: () => "att-late" });
+    expect(result).toMatchObject({ kind: "transient_error", attemptId: "att-late" });
+    const outcome = outcomes(recorder)[0]!;
+    expect(outcome).toMatchObject({ status: "transient_error", costStatus: "unavailable", costUsdMicro: null, stopReason: null, completedAt: frozen.toISOString() });
+    expect(outcome.error).toMatch(/aborted after \d+ ms, at the import's elapsed deadline at /);
+    expect(outcome.latencyMs).toBeGreaterThanOrEqual(deadlineMs - 20); // the record is of a real attempt that ran to the deadline
+    expect(outcome.latencyMs).toBeLessThan(1000);
+    expect(budget.reservedUsdMicro).toBe(0); // settled: nothing stays reserved for an attempt that ended
+    expect(budget.spentUsdMicro).toBe((recorder.events[0] as AttemptStart).reservedUsdMicro); // a possibly billed attempt is spent at its reservation
+    expect(budget.requests).toBe(1);
   });
   it("accounts reservations across concurrent in-flight attempts", async () => {
     const provider = new FakeProvider([fakeResponse({ outputText: "{\"ok\":true}" }), fakeResponse({ outputText: "{\"ok\":true}" })]);

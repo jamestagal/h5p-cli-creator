@@ -5,7 +5,7 @@ import { ProviderError, type CallOptions, type ModelProvider } from "./provider.
 import type { ModelRequest, ModelResponse, StopReason } from "./types.js";
 
 export interface MessagesClient {
-  messages: { create(params: Record<string, unknown>, requestOptions?: { maxRetries?: number; timeout?: number }): Promise<unknown> };
+  messages: { create(params: Record<string, unknown>, requestOptions?: { maxRetries?: number; timeout?: number; signal?: AbortSignal }): Promise<unknown> };
 }
 
 const TRANSIENT_STATUSES = new Set([408, 409, 429]);
@@ -78,7 +78,27 @@ export function classifyProviderError(err: unknown): ProviderError {
   return new ProviderError(err instanceof Error ? err.message : String(err), "permanent");
 }
 
-/** The only place the Anthropic SDK is called. SDK retries are off (maxRetries 0): the stage runner retries, and every retry is its own recorded attempt. */
+function abortMessage(timeoutMs: number, deadlineMs: number | undefined, configuredTimeoutMs: number): string {
+  const bound = deadlineMs !== undefined && timeoutMs < configuredTimeoutMs
+    ? `the import's elapsed deadline at ${new Date(deadlineMs).toISOString()}`
+    : `the adapter timeout of ${configuredTimeoutMs} ms`;
+  return `the request was aborted after ${timeoutMs} ms, at ${bound}, before the response was complete`;
+}
+
+/**
+ * The only place the Anthropic SDK is called. SDK retries are off (maxRetries 0): the stage runner retries, and every
+ * retry is its own recorded attempt.
+ *
+ * The caller's deadline bounds the whole response, not just its headers:
+ * - A deadline that has already passed is refused before any client call, as a **permanent** ProviderError: retrying
+ *   cannot bring the deadline back, so the runner must stop on it rather than spend another metered attempt.
+ * - Otherwise one AbortController is armed at the earlier of the deadline and the configured timeout and its signal is
+ *   passed with the request. The SDK clears its own per-request `timeout` timer as soon as the headers arrive
+ *   (client.js `timedFetch`), so only the signal still covers a slow body: the caller-supplied signal is released only
+ *   once the body has settled (internal/parse.js), and aborting it rejects the awaited `create` promise.
+ * - An abort is reported as a **transient** ProviderError naming the deadline, so the runner's backoff-past-deadline
+ *   check refuses the next attempt instead of dispatching one that could not finish either.
+ */
 export function createAnthropicProvider(options: { apiKey?: string; client?: MessagesClient; timeoutMs?: number } = {}): ModelProvider {
   let client = options.client;
   if (!client) {
@@ -91,12 +111,21 @@ export function createAnthropicProvider(options: { apiKey?: string; client?: Mes
     name: "anthropic",
     async complete(request, callOptions: CallOptions = {}) {
       const started = Date.now();
-      const timeout = callOptions.deadlineMs === undefined ? configuredTimeout : Math.max(1, Math.min(configuredTimeout, callOptions.deadlineMs - started));
+      const deadlineMs = callOptions.deadlineMs;
+      if (deadlineMs !== undefined && started >= deadlineMs) throw new ProviderError(`the import's elapsed deadline at ${new Date(deadlineMs).toISOString()} had already passed at dispatch; no request was sent`, "permanent");
+
+      const timeout = deadlineMs === undefined ? configuredTimeout : Math.min(configuredTimeout, deadlineMs - started);
+      const controller = new AbortController();
+      const abortAtDeadline = setTimeout(() => controller.abort(), timeout);
       let message: unknown;
       try {
-        message = await client!.messages.create(buildMessageParams(request), { maxRetries: 0, timeout });
+        message = await client!.messages.create(buildMessageParams(request), { maxRetries: 0, timeout, signal: controller.signal });
       } catch (err) {
+        if (controller.signal.aborted) throw new ProviderError(abortMessage(timeout, deadlineMs, configuredTimeout), "transient");
+
         throw classifyProviderError(err);
+      } finally {
+        clearTimeout(abortAtDeadline);
       }
       return mapMessage(message, Date.now() - started);
     }
