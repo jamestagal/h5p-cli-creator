@@ -1,5 +1,7 @@
 # Phase 1: Engine Contract Implementation Plan
 
+> **Retention clarification (owner decision, 19 Sep 2026):** do not delete `apps/cli-legacy`. Preserve the existing YouTube/narrated audio-book workflow as a distinct composition mode under [design §6.2](../specs/2026-09-18-generator-service-design.md#62-narrated-audio-book-preservation). This supersedes the original phase-4 retirement schedule; parity alone does not authorize removal.
+
 > Steps use checkbox (`- [ ]`) syntax for tracking. The execution workflow is described below and needs no external tooling.
 
 **Goal:** A monorepo with a typed activity contract (`@leaplearn/shared`) and a deterministic, validating, network-free H5P engine (`@leaplearn/engine`) that compiles `multiChoice`, `blanks`, `flashcards`, a nested `questionSet` and an `interactiveBook` into byte-identical `.h5p` packages, proven by golden, validator and headless-player tests; the existing CLI kept working (manual `flashcards` on the new engine, everything else frozen in `apps/cli-legacy`); and the preview-sandbox question answered by a spike.
@@ -166,15 +168,15 @@ Create `apps/cli-legacy/README.md`:
 # cli-legacy (frozen)
 
 The h5p-cli-creator code as of phase 0, moved here unchanged. It is the compatibility path for
-the `ai-*` YAML content types and the bilingual mode until every type has a producer in
-`packages/generator` (design §2.1a). Rules:
+the `ai-*` YAML content types, bilingual mode and YouTube narrated audio-book workflow
+(design §2.1a and §6.2). Rules:
 
 - No refactoring and no new features here. Bug fixes only, with a test.
 - `tests/integration/multi-language-ai.test.ts` is the bilingual compatibility fixture and must
   keep passing.
 - Run from this directory (`pnpm --filter cli-legacy <script>`); the library cache is
   `./content-type-cache` and is resolved relative to the working directory.
-- Scheduled for deletion in phase 4.
+- Do not delete this folder. Any future removal requires a separate explicit instruction from Benjamin; phase completion and replacement producers do not authorize removal.
 ```
 
 - [ ] **Step 5: Install and run the legacy suite through pnpm**
@@ -3116,7 +3118,7 @@ In `apps/cli-legacy/package.json` add:
 and ensure `apps/cli-legacy/src/index.ts` begins with `#!/usr/bin/env node` (add it if absent). After `pnpm install`, `pnpm exec h5p-cli-creator --help` from the repo root must print the legacy command list. Append to `apps/cli-legacy/README.md`:
 ```markdown
 - The manual `flashcards` command has a replacement in `apps/cli` (`leap flashcards`). The legacy
-  command remains installed as `h5p-cli-creator` (this package's `bin`) until phase 4.
+  command remains installed as `h5p-cli-creator` (this package's `bin`); phase completion does not authorize its removal.
 ```
 
 - [ ] **Step 5: Commit**

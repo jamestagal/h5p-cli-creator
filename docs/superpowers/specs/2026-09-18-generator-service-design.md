@@ -15,7 +15,7 @@ Version 1 is used internally (Benjamin and the agency) but modelled for tenancy 
 | Question | Decision |
 |---|---|
 | Who uses v1 | Internal first, tenancy in the data model (org on every row, keys per org, usage per job) |
-| Output unit | One `ActivitySpec` per exportable `.h5p` package. Generation may return several specs of the same type for one import. Interactive Book is a versioned composition of other activities |
+| Output unit | One `ActivitySpec` per exportable `.h5p` package. Generation may return several specs of the same type for one import. Interactive Book has two distinct composition modes: activity collection and narrated audio book (§6) |
 | Editing in v1 | Preview, regenerate (optionally with a note), drop, restore. No field editing, no H5P editor |
 | Vocational | Unit of competency as a structured input; activities tagged to performance criteria; mapping table exported with suggested vs reviewed status. Revision, not assessment |
 | Sources | Pasted text, text files (txt, md, docx, PDF text layer), web page, audio/video upload, YouTube |
@@ -69,9 +69,10 @@ Because MultiChoice, TrueFalse and Essay hold one item each, the planner decides
 
 The existing YAML contract has page items (`text`, `image`, `audio`, `video`, `ai-text`) and activity items, some manual and some `ai-*`. How each survives:
 
-- **Manual page and activity items** map to the new specs through the shim from phase 1 onward and compile on the new engine. Page types are part of the Book contract above, so nothing manual is lost.
-- **`ai-*` items and `ai-text`** are generation, not compilation. Their replacements arrive in phases 2 and 4. Until then the existing AI path is kept **frozen** as `apps/cli-legacy`: the current code moved as-is (import paths only), no refactoring, no new features, deleted in phase 4 when every `ai-*` type has a producer. The bilingual fixture runs against the legacy path until phase 4 migrates language support into the generator.
-- The `interactivebook-ai` command therefore keeps working throughout; the manual commands switch to the new engine in phase 1.
+- **Manual page and activity items** move to the new engine only as their handlers and compatibility checks become available. Phase 1 migrated the standalone Flashcards command; other manual workflows remain available through `apps/cli-legacy` until their replacements demonstrate parity.
+- **`ai-*` items and `ai-text`** are generation, not compilation. Their replacements arrive incrementally in phases 2 and 4. The existing path remains in **`apps/cli-legacy`**, maintained for compatibility (bug fixes allowed; no unrelated refactoring or new features). The bilingual fixture continues to run against it while language support migrates.
+- **Owner decision, 19 Sep 2026: do not delete `apps/cli-legacy`.** No phase completion, equivalent new producer, passing parity test or cleanup task authorizes deletion. Keep the folder, its source, configurations, examples, tests, library cache and working `h5p-cli-creator` commands. Any future removal requires a separate explicit instruction from Benjamin.
+- Preserve `interactivebook-ai`, `youtube-extract`, `youtube-extract-transcript` and `youtube-validate-transcript`, including the narrated audio-book workflow in §6.2. A replacement is additive until parity is demonstrated; passing parity still does not authorize deleting the legacy folder.
 
 ### 2.2 Identity, provenance and versioning
 
@@ -100,7 +101,7 @@ Contract: `validate(spec) → ValidationResult`, `compile(spec, assets, output) 
 - **Determinism**, qualified: same spec, same asset manifest (by hash), same engine version, same lockfile and the same Node/zlib runtime (deflate output is implementation-defined) → identical bytes; a committed golden hash detects a runtime change.
 
 - **Libraries** are locked in `libraries.lock.json` by machine name, exact version, and SHA-256 checksum, including transitive dependencies. A script (`fetch-libraries`) resolves and downloads into the cache and updates the lock; it lives outside the engine and is the only code that talks to the Hub. The service image bakes the cache at build time; the engine opens it read-only and refuses to run if a checksum mismatches.
-- **Handlers**: one per content type, `(spec, ctx) → H5PParams`, declaring `requiredLibraries(): VersionedLibrary[]` resolved from the lockfile. Library version strings inside params are produced from the same source. The existing `embedded/*` handlers become these; the `ai/*` twins are deleted.
+- **Handlers**: one per content type, `(spec, ctx) → H5PParams`, declaring `requiredLibraries(): VersionedLibrary[]` resolved from the lockfile. Library version strings inside params are produced from the same source. The existing `embedded/*` handlers inform these generation-free handlers; the new engine does not include their AI wrappers. Original handlers remain preserved in `apps/cli-legacy` under §2.1a.
 - **Validation** (a rewrite of the current `SemanticValidator`, whose `library` branch only checks the property exists): recursive validation of nested params against each child library's `semantics.json`; enforcement of the `options` list on library fields; a dependency-closure check that every library referenced anywhere in params is in the package's dependency set; and media-reference checks that every `path` in image/audio/video fields points to a file the package will contain. Failures are structured `{ path, message }`.
 - **Determinism**: sub-content IDs are UUIDv5 derived from `(activityId, revision, path)` rather than `randomUUID()`; zip entries are written in sorted order with fixed timestamps; no directory entries. Two compiles of the same revision are byte-identical.
 - **Media** is streamed into the archive from the asset manifest, never held in arrays.
@@ -178,6 +179,17 @@ A worker job per import. Progress is persisted per activity and per extraction c
 
 ## 6. Interactive Book as a versioned composition
 
+Interactive Book is an H5P output type, not a single authoring workflow. Preserve two distinct composition modes:
+
+| Mode | Purpose | Composition unit | Delivery |
+|---|---|---|---|
+| **Activity collection** | Assemble generated revision activities into chapters | References to supported activity revisions, plus an introduction | New composition workflow in phase 4 |
+| **Narrated audio book** | Turn a source story/recording into ordered reading-and-listening pages | A page binds its text, matching audio segment, chosen image and optional translation | Existing legacy workflow retained; migration designed separately alongside media work |
+
+These are application-level modes over `H5P.InteractiveBook`, not new H5P library types. A future composition record should distinguish them explicitly (for example `activityCollection` and `narratedAudioBook`); no schema or runtime implementation of that discriminator is added to phase 2 by this decision.
+
+### 6.1 Activity collection
+
 A book activity stores an ordered list of `(activityId, revisionId)` references, not copies. The introduction page is generated once, during the import's produce step, and stored on the composition; recomposition never calls a model.
 
 Rules:
@@ -186,7 +198,28 @@ Rules:
 - **Book-only selection is disabled in v1**: the picker requires at least one constituent type, and the planner creates the constituents the book will contain.
 - Regenerating the book itself regenerates only the introduction.
 
+### 6.2 Narrated audio-book preservation
+
+**This is existing valuable functionality to preserve. It is not satisfied merely by adding generic audio/video page schemas or generating questions from a transcript.** The source implementation is `apps/cli-legacy/src/modules/youtube/youtube-extract-module.ts`, with `StoryConfig`, `InteractiveBookYamlGenerator`, `AudioSplitter`, `TranscriptMatcher`, `SegmentMatcher` and `StoryTranslator`. The existing generator creates a source-video introduction with transcript accordion, followed by story pages containing an image, matching audio segment, original-language text and, when present, a translation accordion.
+
+The migration contract must preserve:
+
+1. **Source and introduction:** the original YouTube URL/video introduction, title, language and transcript presentation. Preserve selected extraction start/end ranges and the relationship between original-video time and trimmed-audio time.
+2. **Page structure:** ordered chapters/pages, titles, author-selected or edited text-based page breaks, and the timestamp-based configuration path. Treat text, audio and image as a single page association; recomposition must not move one independently of the others.
+3. **Audio behaviour:** matching per-page audio segments, their order and source timing; playable packaged media and the existing navigation/playback behaviour. Verify the complete text/audio sequence, including page-boundary segments and repeated identical phrases, rather than merely checking that an audio file exists.
+4. **Images:** retain configured custom images, their association with pages, alt text and supported image-resolution settings. The existing use of supplied/placeholder images does not imply automatic illustration generation or frame extraction; inventory those behaviours from the implementation before promising them. New code must not silently replace missing required media with placeholders.
+5. **Language and translation:** preserve original-language text, characters and punctuation, optional translation, its actual rendered placement/visibility, and the skip-translation path. The current generated translation accordion is the baseline; do not infer behaviour from older comments that mention other presentation styles. Bilingual web UI remains outside v1 unless separately approved.
+6. **Author workflow and artefacts:** retain the legacy YAML/config inputs, edited-transcript workflow, path resolution, generated YAML and final `.h5p` build route. Existing user-provided source/media/configuration files must not be deleted during migration. Runtime cache files remain untracked; preservation does not mean restoring cache binaries to Git.
+
+The activity collection's requirement to select constituent quiz/activity types applies only to §6.1. An existing narrated audio book can consist of reading/listening pages without any generated quiz; the future narrated-mode migration must preserve that capability. Likewise, “regenerate the book” meaning “regenerate only the introduction” is a §6.1 rule, not a specification for rewriting narration, images or translations.
+
+**Parity gate before switching the narrated workflow to a replacement:** inventory its supported configuration paths; record representative fixtures for a source-video introduction, multiple ordered pages with custom images and audio, edited transcript/page boundaries, repeated phrases, trimmed-source timestamps, and translated/untranslated output. Use controlled local media/transcript fixtures for repeatable tests, plus an authorized representative YouTube run for source acquisition and a manual player check for the resulting book. Compare page order/text, media associations and timing, translation behaviour and playback/navigation; record differences and obtain Benjamin's acceptance. Functional parity is required; byte-identical legacy/new archives are not.
+
+**Retention is independent of parity:** even after a replacement passes, keep `apps/cli-legacy` and its documented command entry points. Phase 4 may implement collection composition and missing media handlers; phase 6 may implement new media ingestion and a dedicated narrated-book migration. Neither milestone is permission to remove the folder. Phase 2 continues its three-type, text/PDF generation work without implementing this migration.
+
 ## 7. The web app
+
+Visual reference: [Smart Import screenshots and proposed UI tokens](../plans/references/2026-09-19-smart-import-ui-reference.md). This reference guides later screen design; it does not change the approved scope or limits.
 
 Screens mirror H5P.com's Smart Import, which users already understand:
 
@@ -232,9 +265,9 @@ Each phase ends with something demonstrable. The detailed task plan follows from
 1. **Engine contract**: `packages/shared` schemas for all twelve types with the container rules of §2.1; `packages/engine` with the validator rewrite, lockfile with checksums and transitive deps, deterministic IDs and zip, stream output over an asset manifest, injectable config; golden tests for `multiChoice`, `blanks`, `flashcards` plus a **nested-container fixture** (a `questionSet` holding a `multiChoice`, hand-written, no producer) to exercise recursive validation; player smoke tests; the **preview spike** (§7); manual CLI commands on the new engine via the shim; `apps/cli-legacy` frozen for the `ai-*` path with the bilingual fixture. Demo: byte-identical rebuilds and a validator that rejects a nested bad param.
 2. **Three representative types end to end**: `callModel` with the two-event attempt recorder and budget reservation; text, file and **web-page** ingestion; concept extraction with verified evidence; thin unit parsing and alignment; plan; produce for `multiChoice` (scored, single item), `blanks` (passage-grounded) and `flashcards` (present content, multi-item); per-type quality checks; a script that runs a PDF plus a unit through all of it. Demo: **source → reviewed activity → playable `.h5p` → traceable mapping → measured cost**, on the command line.
 3. **Human quality gate** on the corpus, with the metrics of §10. Revise prompts, concept layer and model roles as the results dictate.
-4. **Remaining producers and the book**: the remaining nine activity producers, including `questionSet`, plus the book composition rules of §6; golden and smoke tests for all; language support migrated into the generator; `apps/cli-legacy` deleted.
+4. **Remaining producers and activity-collection books**: the remaining nine activity producers, including `questionSet`, plus §6.1 composition; golden and smoke tests for supported combinations; language support migrates incrementally. Retain `apps/cli-legacy`; no deletion is scheduled. Narrated audio-book migration follows the separate §6.2 parity contract.
 5. **Web workflow**: Postgres schema, worker, wizard, import detail with preview on the separate origin, regenerate, drop, restore, alignment review, export, usage page; isolation and crash-recovery tests.
-6. **Audio, video and YouTube ingestion**, with the transcription ledger, and a cost report across all source types.
+6. **Audio, video and YouTube ingestion**, with the transcription ledger and a cost report across all source types. Plan narrated audio-book migration explicitly against §6.2; generic media ingestion alone does not satisfy that contract. Keep `apps/cli-legacy` available throughout and afterward unless Benjamin separately instructs removal.
 
 ## 12. Risks
 
