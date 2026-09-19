@@ -29,7 +29,7 @@ export function estimateInputTokens(text: string): number {
 export const RESERVATION_TOKENS_PER_CHAR = 0.5;
 export const STRUCTURED_OUTPUT_OVERHEAD_TOKENS = 500;
 
-export interface ReservableRequest { system: string; cachedContext?: string; user: string; outputSchema: Record<string, unknown>; }
+export interface ReservableRequest { system: string; cachedContext?: string | undefined; user: string; outputSchema: Record<string, unknown>; }
 
 export function reserveInputTokens(request: ReservableRequest): number {
   const characters = request.system.length + (request.cachedContext?.length ?? 0) + request.user.length + JSON.stringify(request.outputSchema).length;

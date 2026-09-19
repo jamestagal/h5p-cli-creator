@@ -8,7 +8,7 @@ export interface ModelRequest {
   model: ModelId;
   system: string;
   /** Stable context that should be cached (concept map, unit); cached with a 5-minute breakpoint when present. */
-  cachedContext?: string;
+  cachedContext?: string | undefined;
   user: string;
   maxOutputTokens: number;
   /** Provider-compatible JSON Schema (from toProviderSchema) the response must satisfy; the provider enforces it natively. */

@@ -7,4 +7,5 @@ export * from "./llm/provider.js";
 export * from "./llm/replay-provider.js";
 export * from "./llm/budget.js";
 export * from "./llm/call-model.js";
+export * from "./llm/anthropic-provider.js";
 export * from "./ingest/index.js";
