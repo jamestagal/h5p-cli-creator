@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { createRegistry, type LibraryRegistry } from "@leaplearn/engine";
 import { MemoryStore } from "../src/store/memory-store.js";
 import { StoreLockedError } from "../src/store/types.js";
-import { runImport, SKIPPED_PREFIX, type RunImportDeps, type RunImportInput } from "../src/pipeline/run-import.js";
+import { DEFAULT_MAX_ATTEMPT_MS, runImport, SKIPPED_PREFIX, type RunImportDeps, type RunImportInput } from "../src/pipeline/run-import.js";
 import { IncompatibleResumeError, runFingerprint } from "../src/pipeline/fingerprint.js";
 import { FakeProvider, fakeResponse } from "../src/llm/fake-provider.js";
 import { DEFAULT_BUDGET_LIMITS } from "../src/llm/budget.js";
@@ -12,8 +12,9 @@ import { DEFAULT_PROMPT_CONFIG } from "../src/prompts/system.js";
 import type { AttemptStart, ModelResponse } from "../src/llm/types.js";
 import type { PlanRules } from "../src/plan/planner.js";
 import { ProviderError } from "../src/llm/provider.js";
+import { ANTHROPIC_TIMEOUT_MS } from "../src/llm/anthropic-provider.js";
 import { conceptResponses, syntheticDoc, syntheticUnitText, unitOut, planOutFor, SYNTHETIC_CHUNK_TOKENS, sid } from "./helpers/synthetic.js";
-import { crashBefore, CrashError, failOnce } from "./helpers/crashing-store.js";
+import { crashBefore, CrashError, failOnce, failOutcomeOnce } from "./helpers/crashing-store.js";
 import { RoutedProvider } from "./helpers/routed-provider.js";
 
 const root = resolve(import.meta.dirname, "../../..");
@@ -47,6 +48,12 @@ const callsThroughPlan = (doc: Doc) => 1 + chunkSentences(doc.sentences, SYNTHET
 const input = async (importId: string, overrides: Partial<RunImportInput> = {}): Promise<RunImportInput> => ({ importId, name: "Synthetic import", source: await syntheticDoc(), unitText: await syntheticUnitText(), selectedTypes: ["multiChoice", "blanks", "flashcards"] as const, budget: { usdMicro: 5_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null, ...overrides });
 const deps = (store: RunImportDeps["store"], provider: RunImportDeps["provider"], overrides: Partial<RunImportDeps> = {}): RunImportDeps => ({ store, provider, registry, engineFingerprint: "engine@0.1.0+lock:test", concurrency: 1, chunkTokens: SYNTHETIC_CHUNK_TOKENS, rules, sleep: async () => undefined, ...overrides });
 const purposes = (p: { requests: Array<{ purpose: string }> }) => p.requests.map((x) => x.purpose);
+
+describe("pipeline defaults", () => {
+  it("charges a killed run's unobservable tail at the adapter's request timeout, not at its own constant", () => {
+    expect(DEFAULT_MAX_ATTEMPT_MS).toBe(ANTHROPIC_TIMEOUT_MS);
+  });
+});
 
 describe("runImport", () => {
   it("runs source → unit → concepts → plan → three activities → built packages, recording every attempt, its call key and cost", async () => {
@@ -414,5 +421,25 @@ describe("runImport", () => {
     const resumed = await runImport(await input("imp-f"), deps(store, resume));
     expect(resumed.status).toBe("ready");
     expect(resume.requests).toHaveLength(0); // every activity had persisted its candidate or promotion before the failure
+  });
+
+  it("a storage failure while recording an attempt outcome stops dispatch, lets every lane settle, releases the lock, and is recoverable", async () => {
+    const store = new MemoryStore();
+    const doc = await syntheticDoc();
+    const provider = new FakeProvider(await fullScript(doc));
+    const flaky = failOutcomeOnce(store, (o) => o.operationId.includes(":produce:")); // the ledger write of the first produce attempt's outcome
+    await expect(runImport(await input("imp-f2"), deps(flaky, provider))).rejects.toMatchObject({ name: "InfrastructureFailure" });
+    expect(provider.requests.filter((q) => q.purpose === "produce")).toHaveLength(1); // nothing was dispatched after the failing outcome
+    expect(provider.requests).toHaveLength(callsThroughPlan(doc) + 1);
+    const byId = new Map((await store.listActivities("imp-f2")).map((a) => [a.activityId, a]));
+    expect(byId.get("act-1")).toMatchObject({ status: "failed", error: expect.stringMatching(/^system: .*recording attempt outcome failed: .*storage failure/) });
+    expect(byId.get("act-2")).toMatchObject({ status: "failed", error: expect.stringMatching(new RegExp(`^${SKIPPED_PREFIX}system:`)) });
+    expect(byId.get("act-3")).toMatchObject({ status: "failed", error: expect.stringMatching(new RegExp(`^${SKIPPED_PREFIX}system:`)) });
+    expect(await store.getImport("imp-f2")).toMatchObject({ status: "failed", error: expect.stringMatching(/^system: .*storage failure/) });
+    const held = await store.lock("imp-f2"); await held.release(); // the lock was released only after every lane settled
+    const { mc, bl, fc } = produceResponses(doc);
+    const resumed = await runImport(await input("imp-f2"), deps(store, new FakeProvider([r(mc), r(bl), r(fc)])));
+    expect(resumed.status).toBe("ready");
+    expect((await store.listActivities("imp-f2")).map((a) => a.status)).toEqual(["promoted", "promoted", "promoted"]);
   });
 });

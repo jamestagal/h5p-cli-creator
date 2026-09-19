@@ -3,6 +3,7 @@ import { assertGeneratedProvenance, SCHEMA_VERSION, type ConceptMap, type Import
 import { parseUnit } from "../competency/parse-unit.js";
 import { extractConceptMap, type ChunkConcept } from "../concepts/index.js";
 import type { SourceDocument } from "../ingest/source-document.js";
+import { ANTHROPIC_TIMEOUT_MS } from "../llm/anthropic-provider.js";
 import { budgetSnapshot, DEFAULT_BUDGET_LIMITS, type BudgetLimits } from "../llm/budget.js";
 import { MODEL_ROLES, REQUEST_PROFILES } from "../llm/models.js";
 import type { ModelProvider } from "../llm/provider.js";
@@ -25,7 +26,8 @@ export interface RunImportDeps {
   /** The longest one provider call can take (the adapter's request timeout); bounds what an interrupted attempt is charged. */
   maxAttemptMs?: number;
 }
-export const DEFAULT_MAX_ATTEMPT_MS = 10 * 60 * 1000;
+/** The adapter's request timeout is the bound on one call, so it is also the tail a killed run is charged; taken from the adapter so the two cannot drift. */
+export const DEFAULT_MAX_ATTEMPT_MS = ANTHROPIC_TIMEOUT_MS;
 
 export const SKIPPED_PREFIX = "skipped: ";
 const RETRIABLE_PREFIXES = [SKIPPED_PREFIX, "budget: ", "system: "];

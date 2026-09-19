@@ -1,3 +1,4 @@
+import type { AttemptOutcome, AttemptRecorder } from "../../src/llm/types.js";
 import type { ImportStore } from "../../src/store/types.js";
 
 export class CrashError extends Error { constructor(method: string, nth: number) { super(`simulated crash before ${method} call ${nth}`); this.name = "CrashError"; } }
@@ -37,6 +38,35 @@ export function failOnce<K extends Method>(inner: ImportStore, method: K, matche
       return (...args: unknown[]) => {
         if (!failed && prop === method && matches(args as Parameters<ImportStore[K]>)) { failed = true; throw new StorageError(String(prop)); }
         return fn.apply(target, args);
+      };
+    }
+  });
+}
+
+/**
+ * Wraps a store so the first attempt outcome matching `matches` fails to record while the process stays
+ * alive: a transient storage failure on the ledger write itself, not a crash. Only `recorderFor` is
+ * intercepted; every other method, and every attempt start, is the inner store's.
+ */
+export function failOutcomeOnce(inner: ImportStore, matches: (outcome: AttemptOutcome) => boolean = () => true): ImportStore {
+  let failed = false;
+  return new Proxy(inner, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver) as unknown;
+      if (typeof value !== "function") return value;
+      const fn = value as (...args: unknown[]) => unknown;
+      if (prop !== "recorderFor") return (...args: unknown[]) => fn.apply(target, args);
+
+      return (...args: unknown[]): AttemptRecorder => {
+        const recorder = fn.apply(target, args) as AttemptRecorder;
+        return {
+          recordStart: (start) => recorder.recordStart(start),
+          recordOutcome: async (outcome) => {
+            if (!failed && matches(outcome)) { failed = true; throw new StorageError("recordOutcome"); }
+
+            await recorder.recordOutcome(outcome);
+          }
+        };
       };
     }
   });
