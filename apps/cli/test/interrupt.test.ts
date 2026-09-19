@@ -34,36 +34,44 @@ describe("abrupt termination", () => {
     for (const p of [engineDist, generatorDist, fileStoreDist]) expect(existsSync(p), `${p} must be built before this test`).toBe(true);
     const dir = await mkdtemp(join(tmpdir(), "leap-kill-"));
     const child = spawn(process.execPath, ["--input-type=module", "-e", childScript], { env: { ...process.env, LEAP_TEST_DIR: dir }, stdio: ["ignore", "pipe", "inherit"] });
-    await new Promise<void>((dispatched, reject) => {
-      child.stdout.on("data", (chunk: Buffer) => { if (chunk.toString().includes("dispatched")) dispatched(); });
-      child.on("exit", (code) => reject(new Error(`child exited before dispatching (code ${code})`)));
-    });
-    child.kill("SIGKILL");
-    await new Promise<void>((exited) => child.on("exit", () => exited()));
-    expect((await stat(join(dir, "lock"))).isDirectory()).toBe(true); // no finally ran
-    expect((await readJsonl<AttemptStart>(join(dir, "attempts.jsonl"))).records.map((e) => e.event)).toEqual(["start"]);
-    const killed = (await new FileStore(dir).getImport("child"))!;
-    expect(killed.currentRun).not.toBeNull(); // the anchor was written before the dispatch
-    expect(killed.budgetUsed.elapsedMs).toBe(0); // no snapshot ever ran: without the anchor this time would be given back
-    const childRunStartedMs = Date.parse(killed.currentRun!.startedAt);
+    // The child sleeps 60 s inside its dispatch, so every exit path has to kill it: a child that never prints
+    // "dispatched", or an assertion that throws mid-test, must not leave it running after the test ends.
+    const exited = new Promise<void>((hasExited) => { child.on("exit", () => hasExited()); });
+    try {
+      await Promise.race([
+        new Promise<void>((dispatched) => { child.stdout.on("data", (chunk: Buffer) => { if (chunk.toString().includes("dispatched")) dispatched(); }); }),
+        exited.then(() => { throw new Error(`child exited before dispatching (code ${child.exitCode}, signal ${child.signalCode})`); })
+      ]);
+      child.kill("SIGKILL");
+      await exited;
+      expect((await stat(join(dir, "lock"))).isDirectory()).toBe(true); // no finally ran
+      expect((await readJsonl<AttemptStart>(join(dir, "attempts.jsonl"))).records.map((e) => e.event)).toEqual(["start"]);
+      const killed = (await new FileStore(dir).getImport("child"))!;
+      expect(killed.currentRun).not.toBeNull(); // the anchor was written before the dispatch
+      expect(killed.budgetUsed.elapsedMs).toBe(0); // no snapshot ever ran: without the anchor this time would be given back
+      const childRunStartedMs = Date.parse(killed.currentRun!.startedAt);
 
-    const registry = await createRegistry({ lockPath, cacheDir });
-    const empty: ModelProvider = { name: "fake", async complete() { throw new Error("no scripted response"); } };
-    const store = new FileStore(dir);
-    const source = await ingestText(SOURCE, { sourceId: "src-child" });
-    // reconcileElapsed never charges more than the time that has really passed, so the tail is only reachable on a
-    // clock offset by one maximum attempt length — the same injection the pipeline's own resume tests use.
-    const clock = (): Date => new Date(Date.now() + MAX_ATTEMPT_MS);
-    await runImport(importInput(source), { store, provider: empty, registry, engineFingerprint: "child", maxAttemptMs: MAX_ATTEMPT_MS, clock }).catch(() => undefined);
-    expect((await store.listOperations("child")).find((o) => o.operationId === "child:parseUnit")).toMatchObject({ status: "failed", billingUncertain: true });
-    const starts = (await store.listAttempts("child")).filter((e): e is AttemptStart => e.event === "start" && e.callKey === "parseUnit");
-    expect(starts.map((s) => [s.retryIndex, s.retryReason])).toEqual([[0, null], [1, "resume"]]);
-    const resumed = (await store.getImport("child"))!;
-    const offsetRealElapsedMs = Date.now() + MAX_ATTEMPT_MS - childRunStartedMs;
-    expect(resumed.budgetUsed.elapsedMs, `charged ${resumed.budgetUsed.elapsedMs} ms`).toBeGreaterThanOrEqual(MAX_ATTEMPT_MS); // the killed call was charged up to the maximum attempt length
-    expect(resumed.budgetUsed.elapsedMs, `charged ${resumed.budgetUsed.elapsedMs} ms of ${offsetRealElapsedMs} ms`).toBeLessThanOrEqual(offsetRealElapsedMs); // never more than the time that really passed on the offset clock
-    expect(resumed.budgetUsed.elapsedMs).toBeLessThanOrEqual(resumed.budget.elapsedMs); // never more than the import's elapsed limit
-    expect(resumed.currentRun).toBeNull(); // the resumed run folded its own anchor
-    expect(existsSync(join(dir, "lock"))).toBe(false); // the second run reclaimed the dead holder's lock and released it
+      const registry = await createRegistry({ lockPath, cacheDir });
+      const empty: ModelProvider = { name: "fake", async complete() { throw new Error("no scripted response"); } };
+      const store = new FileStore(dir);
+      const source = await ingestText(SOURCE, { sourceId: "src-child" });
+      // reconcileElapsed never charges more than the time that has really passed, so the tail is only reachable on a
+      // clock offset by one maximum attempt length — the same injection the pipeline's own resume tests use.
+      const clock = (): Date => new Date(Date.now() + MAX_ATTEMPT_MS);
+      await runImport(importInput(source), { store, provider: empty, registry, engineFingerprint: "child", maxAttemptMs: MAX_ATTEMPT_MS, clock }).catch(() => undefined);
+      expect((await store.listOperations("child")).find((o) => o.operationId === "child:parseUnit")).toMatchObject({ status: "failed", billingUncertain: true });
+      const starts = (await store.listAttempts("child")).filter((e): e is AttemptStart => e.event === "start" && e.callKey === "parseUnit");
+      expect(starts.map((s) => [s.retryIndex, s.retryReason])).toEqual([[0, null], [1, "resume"]]);
+      const resumed = (await store.getImport("child"))!;
+      const offsetRealElapsedMs = Date.now() + MAX_ATTEMPT_MS - childRunStartedMs;
+      expect(resumed.budgetUsed.elapsedMs, `charged ${resumed.budgetUsed.elapsedMs} ms`).toBeGreaterThanOrEqual(MAX_ATTEMPT_MS); // the killed call was charged up to the maximum attempt length
+      expect(resumed.budgetUsed.elapsedMs, `charged ${resumed.budgetUsed.elapsedMs} ms of ${offsetRealElapsedMs} ms`).toBeLessThanOrEqual(offsetRealElapsedMs); // never more than the time that really passed on the offset clock
+      expect(resumed.budgetUsed.elapsedMs).toBeLessThanOrEqual(resumed.budget.elapsedMs); // never more than the import's elapsed limit
+      expect(resumed.currentRun).toBeNull(); // the resumed run folded its own anchor
+      expect(existsSync(join(dir, "lock"))).toBe(false); // the second run reclaimed the dead holder's lock and released it
+    } finally {
+      child.kill("SIGKILL"); // a no-op once it has exited
+      await exited;
+    }
   }, 30_000);
 });

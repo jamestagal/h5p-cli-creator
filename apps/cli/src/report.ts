@@ -5,7 +5,12 @@ import { PRICING, type AttemptOutcome, type AttemptStart, type ImportStore, type
 
 export interface CostReport {
   pricingVersion: string;
-  /** underestimateUsdMicro sums each attempt's cost beyond its reservation (a property of the estimate); spendOverCapUsdMicro is the import's spend beyond its cap (a property of the import), zero when the cap held. */
+  /**
+   * underestimateUsdMicro sums each attempt's cost beyond its reservation (a property of the estimate).
+   * spendOverCapUsdMicro is the import's spend beyond its cap (a property of the import), zero when the cap held. It is
+   * taken from the ledger's budgetUsed.spentUsdMicro rather than from the sum of known attempt costs: an attempt whose
+   * cost the provider never reported is counted there at its reservation, and summing known costs would hide it.
+   */
   totals: { attempts: number; costUsdMicro: number; costStatusCounts: Record<CostStatus, number>; reservationExceeded: number; underestimateUsdMicro: number; spendOverCapUsdMicro: number };
   shared: number; direct: number;
   byPurpose: Record<string, { attempts: number; costUsdMicro: number }>;
@@ -56,8 +61,9 @@ export async function costReport(store: ImportStore, importId: string): Promise<
     return { activityId: a.activityId, type: a.type, status: a.status, attempts: pa.attempts, costUsdMicro: pa.costUsdMicro };
   });
   const accepted = (await acceptedActivityIds(store, importId)).size;
+  const spendOverCapUsdMicro = importRecord ? Math.max(0, importRecord.budgetUsed.spentUsdMicro - importRecord.budget.usdMicro) : 0;
   return {
-    pricingVersion: PRICING.version, totals: { attempts: starts.length, costUsdMicro: total, costStatusCounts, reservationExceeded, underestimateUsdMicro: underestimate, spendOverCapUsdMicro: importRecord ? Math.max(0, total - importRecord.budget.usdMicro) : 0 }, shared, direct, byPurpose, byType, perActivity,
+    pricingVersion: PRICING.version, totals: { attempts: starts.length, costUsdMicro: total, costStatusCounts, reservationExceeded, underestimateUsdMicro: underestimate, spendOverCapUsdMicro }, shared, direct, byPurpose, byType, perActivity,
     retryShare: starts.length === 0 ? 0 : retries / starts.length,
     accepted, costPerAcceptedActivityUsdMicro: accepted === 0 ? null : Math.round(total / accepted)
   };
@@ -67,7 +73,7 @@ const usd = (micro: number): string => `$${(micro / 1_000_000).toFixed(4)}`;
 
 export function formatCostReport(r: CostReport): string {
   const lines = [
-    `Cost (pricing ${r.pricingVersion}): ${usd(r.totals.costUsdMicro)} over ${r.totals.attempts} attempts (known ${r.totals.costStatusCounts.known}, estimated ${r.totals.costStatusCounts.estimated}, unavailable ${r.totals.costStatusCounts.unavailable} — excluded from the sums; the ledger's budget spend counts them at their reservation); shared ${usd(r.shared)}, direct ${usd(r.direct)}; retry share ${(r.retryShare * 100).toFixed(0)}%; reservations under-estimated on ${r.totals.reservationExceeded} attempt(s) by ${usd(r.totals.underestimateUsdMicro)} in total; spend over the import's cap: ${usd(r.totals.spendOverCapUsdMicro)}`,
+    `Cost (pricing ${r.pricingVersion}): ${usd(r.totals.costUsdMicro)} over ${r.totals.attempts} attempts (known ${r.totals.costStatusCounts.known}, estimated ${r.totals.costStatusCounts.estimated}, unavailable ${r.totals.costStatusCounts.unavailable} — excluded from the sums; the ledger's budget spend counts them at their reservation); shared ${usd(r.shared)}, direct ${usd(r.direct)}; retry share ${(r.retryShare * 100).toFixed(0)}%; reservations under-estimated on ${r.totals.reservationExceeded} attempt(s) by ${usd(r.totals.underestimateUsdMicro)} in total; spend over the import's cap, from the ledger's spent figure (which counts unknown-cost attempts at their reservation): ${usd(r.totals.spendOverCapUsdMicro)}`,
     `Accepted activities: ${r.accepted}; cost per accepted activity: ${r.costPerAcceptedActivityUsdMicro === null ? "n/a (none accepted yet; record decisions with leap review)" : usd(r.costPerAcceptedActivityUsdMicro)}`,
     "", "| purpose | attempts | cost |", "|---|---|---|"
   ];

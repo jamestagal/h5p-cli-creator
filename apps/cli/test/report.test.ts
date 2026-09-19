@@ -39,6 +39,20 @@ describe("reports", () => {
     await store.putAcceptance({ importId: "imp", activityId: "act-1", revision: 2, decision: "accepted", reviewer: "owner", notes: null, decidedAt: "t" }); // a decision on another revision does not count
     expect((await costReport(store, "imp")).accepted).toBe(1);
   });
+  it("takes spend over the cap from the ledger, so an attempt with no reported cost cannot hide an overspend", async () => {
+    const store = new MemoryStore();
+    const rec = store.recorderFor("imp");
+    const start = (id: string, reservedUsdMicro: number) => rec.recordStart({ event: "start", attemptId: id, operationId: "imp:produce:act-1:r1", callKey: `produce:${id}`, retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: 0, purpose: "produce", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro, startedAt: "t" });
+    const outcome = (id: string, cost: number | null) => rec.recordOutcome({ event: "outcome", attemptId: id, operationId: "imp:produce:act-1:r1", providerRequestId: null, rawUsage: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, latencyMs: 1, pricingVersion: "v", costUsdMicro: cost, costStatus: cost === null ? "unavailable" : "known", stopReason: "end_turn", status: "ok", error: null, reservationExceeded: false, underestimateUsdMicro: cost === null ? null : 0, completedAt: "t" });
+    await start("a1", 1_000_000); await outcome("a1", 1_900_000); // the only cost the provider reported
+    await start("a2", 500_000); await outcome("a2", null); // dispatched and possibly billed, but no cost came back: the ledger spent it at its reservation
+    await store.putImport({ importId: "imp", orgId: "local", name: "n", sourceType: "markdown", status: "ready", customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice"], fingerprint: "f".repeat(64), budget: { usdMicro: 2_000_000, requests: 200, tokens: 2_000_000, elapsedMs: 1_800_000 }, budgetUsed: { spentUsdMicro: 2_400_000, reservedUsdMicro: 0, spentTokens: 4, requests: 2, elapsedMs: 10 }, currentRun: null, error: null, idempotencyKey: "imp", createdAt: "t", updatedAt: "t" });
+
+    const report = await costReport(store, "imp");
+    expect(report.totals.costUsdMicro).toBe(1_900_000); // the sum of known costs alone stays under the cap
+    expect(report.totals.spendOverCapUsdMicro).toBe(400_000); // the ledger's spent figure does not, and that is what is reported
+    expect(formatCostReport(report)).toContain("from the ledger's spent figure");
+  });
   it("reports a zero retry share when every call is a first attempt", async () => {
     const store = new MemoryStore();
     const rec = store.recorderFor("imp");

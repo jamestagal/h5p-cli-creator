@@ -40,7 +40,7 @@ export async function readJsonl<T>(path: string): Promise<{ records: T[]; trunca
   return { records, truncatedTail };
 }
 
-/** Directory-backed ImportStore: JSON files written atomically, JSONL ledgers repaired then appended through one queue per ledger, one directory lock. Ledger appends assume the caller holds the lock and verify it. */
+/** Directory-backed ImportStore: JSON files written atomically, JSONL ledgers repaired then appended through one queue per ledger, one directory lock. Every write assumes the caller holds the lock and verifies it before touching the filesystem. */
 export class FileStore implements ImportStore {
   private readonly repaired = new Set<string>();
   private readonly queues = new Map<string, Promise<unknown>>();
@@ -54,6 +54,19 @@ export class FileStore implements ImportStore {
     return { release: async () => { this.held = null; await held.release(); } };
   }
 
+  /**
+   * Runs before every write, ledger or JSON or build: while this store holds the lock, a lock that no longer carries
+   * our token stops the write before it touches the filesystem, so a holder whose lock was removed by hand cannot keep
+   * writing next to the process that has since taken a fresh one. Unlocked stores stay writable for readers and tools.
+   */
+  private async assertWritable(): Promise<void> {
+    if (this.held) await this.held.assertHeld();
+  }
+  private async writeJson(path: string, value: unknown): Promise<void> {
+    await this.assertWritable();
+    await writeJsonAtomic(path, value);
+  }
+
   /** A complete final record that lost its newline gets one; a truncated fragment is cut off. Earlier records are untouched; corruption elsewhere still throws on read. Runs inside the ledger's queue, and the ledger counts as repaired only once this has succeeded. */
   private async repairTail(path: string): Promise<void> {
     let text: string;
@@ -65,16 +78,16 @@ export class FileStore implements ImportStore {
     catch { await truncate(path, Buffer.byteLength(text.slice(0, cut))); }
   }
   getImport(importId: string) { return readJson<ImportRecord>(this.p("import.json")).then((r) => (r && r.importId === importId ? r : null)); }
-  putImport(record: ImportRecord) { return writeJsonAtomic(this.p("import.json"), record); }
+  putImport(record: ImportRecord) { return this.writeJson(this.p("import.json"), record); }
   getArtifact<T>(_importId: string, name: ArtifactName) { return readJson<T>(this.p("artifacts", `${name}.json`)); }
-  putArtifact(_importId: string, name: ArtifactName, value: unknown) { return writeJsonAtomic(this.p("artifacts", `${name}.json`), value); }
+  putArtifact(_importId: string, name: ArtifactName, value: unknown) { return this.writeJson(this.p("artifacts", `${name}.json`), value); }
   async listActivities(importId: string) {
     const dir = this.p("activities");
     const names = await readdir(dir).catch(() => [] as string[]);
     const all = await Promise.all(names.filter((n) => n.endsWith(".json")).map((n) => readJson<ActivityRecord>(join(dir, n))));
     return all.filter((a): a is ActivityRecord => a !== null && a.importId === importId).sort((a, b) => a.order - b.order);
   }
-  putActivity(record: ActivityRecord) { return writeJsonAtomic(this.p("activities", `${record.activityId}.json`), record); }
+  putActivity(record: ActivityRecord) { return this.writeJson(this.p("activities", `${record.activityId}.json`), record); }
   getRevision(activityId: string, revision: number) { return readJson<RevisionRecord>(this.p("revisions", activityId, `r${revision}.json`)); }
   async listRevisions(activityId: string) {
     const dir = this.p("revisions", activityId);
@@ -82,7 +95,7 @@ export class FileStore implements ImportStore {
     const all = await Promise.all(names.filter((n) => /^r\d+\.json$/.test(n)).map((n) => readJson<RevisionRecord>(join(dir, n))));
     return all.filter((r): r is RevisionRecord => r !== null).sort((a, b) => a.revision - b.revision);
   }
-  putRevision(record: RevisionRecord) { return writeJsonAtomic(this.p("revisions", record.activityId, `r${record.revision}.json`), record); }
+  putRevision(record: RevisionRecord) { return this.writeJson(this.p("revisions", record.activityId, `r${record.revision}.json`), record); }
   /** Repair, corruption check and append run strictly one at a time per ledger: a lane can never truncate to a snapshot taken before another lane's append. */
   private append(file: string, value: unknown): Promise<void> {
     const path = this.p(file);
@@ -92,7 +105,7 @@ export class FileStore implements ImportStore {
     return task;
   }
   private async appendNow(path: string, value: unknown): Promise<void> {
-    if (this.held) await this.held.assertHeld();
+    await this.assertWritable();
     await mkdir(this.dir, { recursive: true });
     if (!this.repaired.has(path)) { await this.repairTail(path); this.repaired.add(path); }
     await readJsonl(path); // a malformed line elsewhere is corruption: refuse to append to it
@@ -111,6 +124,7 @@ export class FileStore implements ImportStore {
   async listAttempts(_importId: string) { return (await readJsonl<AttemptEvent>(this.p("attempts.jsonl"))).records; }
   async putBuild(_importId: string, activityId: string, revision: number, bytes: Buffer) {
     const key = `builds/${activityId}-r${revision}.h5p`;
+    await this.assertWritable();
     await mkdir(this.p("builds"), { recursive: true });
     const tmp = this.p(`${key}.tmp-${randomBytes(4).toString("hex")}`);
     await writeFile(tmp, bytes); await rename(tmp, this.p(key));
