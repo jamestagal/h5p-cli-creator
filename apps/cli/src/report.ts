@@ -125,10 +125,25 @@ export async function writeMappingCsv(store: ImportStore, importId: string, path
   return rows.length;
 }
 
-/** Rewrites mapping.csv and cost.json for an import; used after generation and after every review. */
+/** Rewrites mapping.csv and cost.json for an import; used after generation and after every review. The caller must hold the import's directory lock for the whole snapshot and write. */
 export async function writeReports(store: ImportStore, importId: string, outDir: string): Promise<{ rows: number; report: CostReport }> {
   const rows = await writeMappingCsv(store, importId, resolve(outDir, "mapping.csv"));
   const report = await costReport(store, importId);
   await writeFile(resolve(outDir, "cost.json"), JSON.stringify(report, null, 2) + "\n");
   return { rows, report };
+}
+
+/**
+ * Takes the import's directory lock for the whole snapshot and write, for callers that do not already hold one.
+ * Reports are derived state: a writer that reads the store outside the lock can overwrite a concurrent `leap review`'s
+ * decisions with a snapshot taken before them. Throws StoreLockedError when another process holds the lock, leaving the
+ * reports on disk as that process left them.
+ */
+export async function writeReportsLocked(store: ImportStore, importId: string, outDir: string): Promise<{ rows: number; report: CostReport }> {
+  const lock = await store.lock(importId);
+  try {
+    return await writeReports(store, importId, outDir);
+  } finally {
+    await lock.release();
+  }
 }

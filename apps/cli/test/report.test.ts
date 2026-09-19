@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { MemoryStore, type AttemptStart } from "@leaplearn/generator";
-import { costReport, formatCostReport, mappingRows } from "../src/report.js";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { hostname, tmpdir } from "node:os";
+import { join } from "node:path";
+import { MemoryStore, StoreLockedError, type AttemptStart } from "@leaplearn/generator";
+import { FileStore } from "../src/file-store.js";
+import { recordReview } from "../src/review.js";
+import { costReport, formatCostReport, mappingRows, writeReports, writeReportsLocked } from "../src/report.js";
 
 describe("reports", () => {
   it("splits shared and direct cost, counts retries by retryIndex, computes cost per accepted activity, and lists mapping rows with review-aware status", async () => {
@@ -60,5 +65,48 @@ describe("reports", () => {
       await rec.recordStart({ event: "start", attemptId: id, operationId: "imp:concepts", callKey: key, retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: 0, purpose: "extract", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" });
     }
     expect((await costReport(store, "imp")).retryShare).toBe(0);
+  });
+});
+
+/** A store seeded with one promoted activity whose provenance suggests PC2.1, ready for a review decision. */
+async function seededDir(): Promise<{ dir: string; store: FileStore }> {
+  const dir = await mkdtemp(join(tmpdir(), "leap-report-lock-"));
+  const store = new FileStore(dir);
+  await store.putImport({ importId: "imp", orgId: "local", name: "n", sourceType: "markdown", status: "ready", customisation: null, language: "en", unitTextHash: "u".repeat(64), selectedTypes: ["multiChoice"], fingerprint: "f".repeat(64), budget: { usdMicro: 1, requests: 1, tokens: 1, elapsedMs: 1 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: "imp", createdAt: "t", updatedAt: "t" });
+  await store.putArtifact("imp", "unit", { code: "SYNELE001", title: "Isolate and test electrical equipment", textHash: "u".repeat(64), knowledgeEvidence: [], performanceEvidence: [], elements: [{ id: "E2", number: "2", text: "Isolate and secure equipment", performanceCriteria: [{ id: "PC2.1", number: "2.1", text: "Apply lockout devices and tags" }] }] });
+  await store.putActivity({ activityId: "act-1", importId: "imp", type: "multiChoice", order: 0, status: "promoted", currentRevision: 1, conceptIds: ["c1"], criteriaIds: ["PC2.1"], error: null, dropped: false });
+  await store.putRevision({ activityId: "act-1", revision: 1, state: "promoted", spec: { id: "act-1", title: "T", type: "multiChoice", language: "en", schemaVersion: 1, question: "<p>q</p>", answers: [{ text: "a", correct: true }, { text: "b", correct: false }], randomAnswers: true, provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1"], criteriaIds: ["PC2.1"] } }, schemaVersion: 1, promptVersion: "p", modelConfig: { provider: "fake", models: {}, profiles: {} }, engineFingerprint: "f", note: null, buildKey: "k", attemptIds: [], createdAt: "t" });
+  return { dir, store };
+}
+
+describe("reports are written under the import's directory lock", () => {
+  it("refuses to rewrite the reports while another process holds the lock, and leaves the ones on disk alone", async () => {
+    const { dir, store } = await seededDir();
+    const heldByReview = "activityId,type,title,revision,itemId,criterionId,status,conceptIds,evidenceIds,firstQuote\nact-1,multiChoice,T,1,,PC2.1,confirmed,c1,ev-s1,\n";
+    await writeFile(join(dir, "mapping.csv"), heldByReview);
+    await mkdir(join(dir, "lock"));
+    await writeFile(join(dir, "lock", "owner.json"), JSON.stringify({ importId: "imp", token: "review", pid: process.pid, hostname: hostname(), startedAt: new Date().toISOString() })); // a live local pid: never reclaimed
+    await expect(writeReportsLocked(store, "imp", dir)).rejects.toBeInstanceOf(StoreLockedError);
+    expect(await readFile(join(dir, "mapping.csv"), "utf8")).toBe(heldByReview);
+  });
+
+  it("closes the generate/review overlap: a review's confirmed mapping survives a generate report write that arrives during it", async () => {
+    const { dir } = await seededDir();
+    const generateStore = new FileStore(dir); // the generate process, which has released the import's lock
+    await writeReportsLocked(generateStore, "imp", dir);
+    expect(await readFile(join(dir, "mapping.csv"), "utf8")).toContain("PC2.1,suggested");
+
+    const reviewStore = new FileStore(dir);
+    const reviewLock = await reviewStore.lock("imp"); // leap review takes the lock and records a decision
+    await recordReview(reviewStore, "imp", { kind: "alignment", activityId: "act-1", reviewer: "owner", criterionId: "PC2.1", decision: "confirmed", itemId: null });
+    const reviewWrite = writeReports(reviewStore, "imp", dir);
+    await expect(writeReportsLocked(generateStore, "imp", dir)).rejects.toBeInstanceOf(StoreLockedError); // generate's report step, arriving mid-review
+    await reviewWrite;
+    await reviewLock.release();
+    expect(await readFile(join(dir, "mapping.csv"), "utf8")).toContain("PC2.1,confirmed");
+
+    await writeReportsLocked(generateStore, "imp", dir); // and once the lock is free the snapshot is taken inside it, so it carries the decision too
+    expect(await readFile(join(dir, "mapping.csv"), "utf8")).toContain("PC2.1,confirmed");
+    expect(await readFile(join(dir, "mapping.csv"), "utf8")).not.toContain("PC2.1,suggested");
   });
 });

@@ -4,7 +4,7 @@ import { basename, extname, resolve } from "node:path";
 import { createRegistry } from "@leaplearn/engine";
 import { ANTHROPIC_TIMEOUT_MS, createAnthropicProvider, IncompatibleResumeError, ingestMarkdown, ingestPdf, ingestText, ReplayProvider, RecordingProvider, runImport, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ImportRecord, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
 import { FileStore } from "./file-store.js";
-import { formatCostReport, writeReports } from "./report.js";
+import { formatCostReport, writeReportsLocked } from "./report.js";
 
 export interface GenerateArgs {
   source: string; out: string; unit?: string; types: string; budgetUsd: number; maxRequests: number; maxTokens: number; maxSeconds: number;
@@ -68,8 +68,15 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
   const activities = await store.listActivities(importId);
   io.out(`import ${importId}: ${record.status}${record.error ? ` — ${record.error}` : ""}\n`);
   for (const a of activities) io.out(`  ${a.activityId}  ${a.type.padEnd(12)}  ${a.status}${a.currentRevision ? `  builds/${a.activityId}-r${a.currentRevision}.h5p` : ""}${a.error ? `  ${a.error}` : ""}\n`);
-  const { rows, report } = await writeReports(store, importId, outDir);
-  io.out(`mapping: ${rows} rows → ${resolve(outDir, "mapping.csv")}\n`);
-  io.out(formatCostReport(report) + "\n");
+  let reports: Awaited<ReturnType<typeof writeReportsLocked>>;
+  try {
+    reports = await writeReportsLocked(store, importId, outDir);
+  } catch (err) {
+    if (err instanceof StoreLockedError) { io.err(`leap: ${err.message}\n`); return 1; } // the import is persisted; a process holding the lock owns the reports
+
+    throw err;
+  }
+  io.out(`mapping: ${reports.rows} rows → ${resolve(outDir, "mapping.csv")}\n`);
+  io.out(formatCostReport(reports.report) + "\n");
   return record.status === "ready" ? 0 : record.status === "ready_with_failures" ? 2 : 1;
 }
