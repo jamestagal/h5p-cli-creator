@@ -16,6 +16,7 @@
     "@leaplearn/engine": "workspace:*",
     "@leaplearn/shared": "workspace:*",
     "pdf-parse": "^2.4.5",
+    "undici": "^6.21.0",
     "zod": "^4.1.0"
   },
   "devDependencies": {

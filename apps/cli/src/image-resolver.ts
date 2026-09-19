@@ -3,6 +3,7 @@ import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, isAbsolute, join } from "node:path";
 import { Readable } from "node:stream";
+import { safeFetch, SafeFetchError } from "@leaplearn/generator";
 import type { AssetEntry } from "@leaplearn/shared";
 
 const MIME: Record<string, string> = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp" };
@@ -22,10 +23,13 @@ export const localImageResolver: ImageResolver = async (ref, baseDir) => {
 /** Application-side network access; the engine never fetches. */
 export const networkImageResolver: ImageResolver = async (ref, baseDir) => {
   if (!isUrl(ref)) return localImageResolver(ref, baseDir);
-  const res = await fetch(ref);
-  if (!res.ok) throw new Error(`image ${ref}: HTTP ${res.status}`);
-  const mimeType = (res.headers.get("content-type") ?? "").split(";")[0]!.trim();
-  if (!Object.values(MIME).includes(mimeType)) throw new Error(`image ${ref}: unsupported content-type ${mimeType || "(none)"}`);
-  const bytes = Buffer.from(await res.arrayBuffer());
-  return { assetId: "", sha256: createHash("sha256").update(bytes).digest("hex"), byteLength: bytes.length, mimeType, open: () => Readable.from([bytes]) };
+  let fetched;
+  try {
+    fetched = await safeFetch(ref, { allowedContentTypes: Object.values(MIME), maxBytes: 20 * 1024 * 1024, timeoutMs: 20_000 });
+  } catch (err) {
+    if (err instanceof SafeFetchError) throw new Error(`image ${ref}: ${err.message} (${err.reason})`);
+    throw err;
+  }
+  const bytes = fetched.body;
+  return { assetId: "", sha256: createHash("sha256").update(bytes).digest("hex"), byteLength: bytes.length, mimeType: fetched.contentType!, open: () => Readable.from([bytes]) };
 };
