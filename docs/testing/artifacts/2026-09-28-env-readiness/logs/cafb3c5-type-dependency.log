@@ -1,0 +1,25 @@
+# cafb3c5 does not build @leaplearn/shared from a clean install (same TS2307 as 0682f46); the same type-only devDependency is added locally so the recording commit can be compiled. It changes no emitted JavaScript.
+$ pnpm --filter @leaplearn/shared add -D @types/node@20.19.43
+Progress: resolved 1, reused 0, downloaded 0, added 0
+packages/shared                          |  WARN  deprecated eslint@9.39.5
+apps/cli-legacy                          |  WARN  deprecated fluent-ffmpeg@2.1.3
+Progress: resolved 280, reused 0, downloaded 0, added 0
+Progress: resolved 430, reused 0, downloaded 0, added 0
+ WARN  2 deprecated subdependencies found: glob@10.5.0, node-domexception@1.0.0
+Progress: resolved 601, reused 0, downloaded 0, added 0
+Progress: resolved 601, reused 0, downloaded 0, added 0, done
+ WARN  Failed to create bin at /tmp/claude-0/-home-user-h5p-cli-creator/224989ce-5991-5e09-8301-ee1aefff8b76/scratchpad/wt-cafb3c5/node_modules/.bin/h5p-cli-creator. ENOENT: no such file or directory, open '/tmp/claude-0/-home-user-h5p-cli-creator/224989ce-5991-5e09-8301-ee1aefff8b76/scratchpad/wt-cafb3c5/apps/cli-legacy/dist/index.js'
+ WARN  Failed to create bin at /tmp/claude-0/-home-user-h5p-cli-creator/224989ce-5991-5e09-8301-ee1aefff8b76/scratchpad/wt-cafb3c5/node_modules/.bin/h5p-cli-creator. ENOENT: no such file or directory, open '/tmp/claude-0/-home-user-h5p-cli-creator/224989ce-5991-5e09-8301-ee1aefff8b76/scratchpad/wt-cafb3c5/node_modules/cli-legacy/dist/index.js'
+╭ Warning ─────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│   Ignored build scripts: @parcel/watcher@2.6.0, esbuild@0.28.2,              │
+│   h5p-standalone@3.8.2, unrs-resolver@1.12.2.                                │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed     │
+│   to run scripts.                                                            │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Done in 4.4s using pnpm v10.33.2
+exit=0
+ packages/shared/package.json | 20 +++++++++++++++++---
+ pnpm-lock.yaml               |  3 +++
+ 2 files changed, 20 insertions(+), 3 deletions(-)

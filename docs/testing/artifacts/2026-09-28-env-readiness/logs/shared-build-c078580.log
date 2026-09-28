@@ -1,0 +1,6 @@
+$ pnpm --filter @leaplearn/shared build
+
+> @leaplearn/shared@0.1.0 build /tmp/claude-0/-home-user-h5p-cli-creator/224989ce-5991-5e09-8301-ee1aefff8b76/scratchpad/wt-c078580/packages/shared
+> tsc -p tsconfig.json
+
+exit=0

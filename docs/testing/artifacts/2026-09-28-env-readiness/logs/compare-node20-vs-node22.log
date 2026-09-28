@@ -1,0 +1,6 @@
+A: {"node":"20.20.2","zlib":"1.3.1-e00f703","platform":"linux","arch":"x64","osRelease":"6.18.44-fc-v37","tz":null} c07858058764066c64ea70f65a1878893d626d85
+B: {"node":"22.22.2","zlib":"1.3.1-e00f703","platform":"linux","arch":"x64","osRelease":"6.18.44-fc-v37","tz":null} c07858058764066c64ea70f65a1878893d626d85
+package sha256: same (5be1d3918b8e / 5be1d3918b8e); bytes 648087 / 648087
+content sha256: same (eafdf494d6ad / eafdf494d6ad)
+entry order: same
+all 91 shared entries identical in every recorded field

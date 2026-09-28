@@ -1,9 +1,12 @@
 # Phase-3 environment readiness pilot (cloud container, 28 Sep 2026)
 
-A bounded check of whether this environment can run the phase-3 offline tasks, done before Task 1 was
-committed. It records what was compared and keeps demonstrated facts apart from hypotheses. The engine's
+A bounded check of whether this environment can run the phase-3 offline tasks, started before Task 1 was
+committed and revised on 28 Sep after the owner's review and the owner-machine comparison. It records what was compared and keeps demonstrated facts apart from hypotheses. The engine's
 golden hash (`packages/engine/test/fixtures/golden-hashes.json`) is **unchanged**, and nothing here
 re-records it.
+
+**Evidence:** every log and generated package cited here is saved, with checksums, in
+[`artifacts/2026-09-28-env-readiness/`](artifacts/2026-09-28-env-readiness/README.md) (`SHA256SUMS` covers each file).
 
 ## Environment
 
@@ -41,7 +44,18 @@ The golden test compiles the `flashcards@1` fixture with `compileToBuffer` and c
 
 Package structure here: all 91 entries deflated (level 6, yazl's default), 634,665 compressed bytes from 1,249,871; every entry has host system 3, mode `0o100644` and DOS time 2000-01-01 00:00:00.
 
-## Demonstrated
+## Owner-machine result (reported by the owner, 28 Sep)
+
+The comparison below was run on the machine that recorded the golden, at `c078580`, and reported as aggregate hashes; no artifact from that machine is stored yet.
+
+| Machine | Runtime | Package sha256 (compressed) | Content sha256 (uncompressed) |
+|---|---|---|---|
+| Owner | Node 20.20.1, zlib 1.2.12, macOS (`darwin`), `arm64` | `071bceccffd5869068a717a726835c69f7bf3aa6b1751c723be847a0a328f55a` (equals the golden) | `eafdf494d6ade7525d7fa3a32059a707d71a7ba9cb16a7733c6b39dac11bc85b` |
+| This container | Node 20.20.2, zlib 1.3.1-e00f703, Linux, `x64` | `5be1d3918b8eaaedaeb5538ea54bb304484aed7f605a39ac02706421071e3eb1` | `eafdf494d6ade7525d7fa3a32059a707d71a7ba9cb16a7733c6b39dac11bc85b` |
+
+**What that shows, taking the reported hashes as given:** both machines compile the same uncompressed content for all 91 entries, and the owner's machine still reproduces the golden today. The compressed packages differ, so the difference lies in the compressed streams or in ZIP metadata, or both. Which of those, and which runtime property causes it (zlib version, architecture, platform or Node build), is **not** established: the two runtimes differ in all four at once, and the aggregate hashes do not separate compressed streams from metadata. The per-entry diagnostic below does.
+
+## Demonstrated in this container
 
 1. The mismatch reproduces **at the golden's own recording commit** in this environment. So the code changes between `cafb3c5` and `c078580` (27 files) are not what makes the golden fail here: both revisions produce the same bytes.
 2. The build is deterministic here: identical bytes across two Node versions and across repeated runs.
@@ -51,37 +65,47 @@ Package structure here: all 91 entries deflated (level 6, yazl's default), 634,6
 
 ## Not established (hypotheses)
 
-- **Why the recording environment produced `071bcec…`.** Its uncompressed content hash was never recorded, so it cannot be said whether the difference lies in compressed streams, in the uncompressed content, or in zip metadata. Candidate explanations, none tested: CPU architecture or CPU-feature-dependent deflate paths (point 4 tested only zlib *version*, on one architecture); a different Node or zlib build on the recording machine; a working tree that differed from the commit when the hash was recorded.
-- It is therefore **not** claimed that the mismatch is caused by architecture, or that it is unrelated to code in the recording environment.
+- **Which runtime property changes the compressed bytes.** The owner's result narrows the difference to compressed streams or ZIP metadata (see above), but the candidate properties (zlib 1.2.12 vs 1.3.1, `arm64` vs `x64`, macOS vs Linux, Node 20.20.1 vs 20.20.2) all differ at once. Point 4 tested zlib versions on one architecture only; it does not show that zlib is irrelevant on another architecture.
+- It is therefore **not** claimed that the mismatch is caused by architecture or by zlib specifically.
 
-## The discriminating comparison still needed
+## The next owner-machine diagnostic
 
-On the machine that recorded the golden, at `c078580`, run from `packages/engine` after `pnpm -r build`:
+`docs/testing/diagnostics/diagnose-package.mjs` saves the actual `.h5p`, a hash of every entry's uncompressed and compressed bytes, and every ZIP header field (central directory, local header, data descriptor), with a `SHA256SUMS`. `compare-diagnoses.mjs` compares two such reports field by field and says only which fields differ, in which entries.
+
+On the owner's machine, at `c078580`, after `pnpm install --frozen-lockfile && pnpm -r build`:
 
 ```bash
-node --input-type=module -e '
-import { resolve } from "node:path"; import { createHash } from "node:crypto"; import { readFileSync, createReadStream, statSync } from "node:fs";
-import JSZip from "jszip"; import { ActivitySpec } from "@leaplearn/shared"; import { compileToBuffer, createRegistry } from "./dist/index.js";
-const root = resolve("../.."); const fx = resolve("test/fixtures");
-const registry = await createRegistry({ lockPath: resolve(root, "libraries/libraries.lock.json"), cacheDir: resolve(root, "libraries/cache") });
-const p = resolve(fx, "assets/card.jpg");
-const card = { assetId: "card", sha256: createHash("sha256").update(readFileSync(p)).digest("hex"), byteLength: statSync(p).size, mimeType: "image/jpeg", open: () => createReadStream(p) };
-const buf = await compileToBuffer(ActivitySpec.parse(JSON.parse(readFileSync(resolve(fx, "specs/flashcards.json"), "utf8"))), new Map([["card", card]]), { registry, revision: 1 });
-const zip = await JSZip.loadAsync(buf); const lines = [];
-for (const n of Object.keys(zip.files).sort()) lines.push(n + " " + createHash("sha256").update(await zip.files[n].async("nodebuffer")).digest("hex"));
-console.log(JSON.stringify({ node: process.versions.node, zlib: process.versions.zlib, arch: process.arch, platform: process.platform, package: createHash("sha256").update(buf).digest("hex"), content: createHash("sha256").update(lines.join("\n")).digest("hex"), entries: lines.length }));'
+node docs/testing/diagnostics/diagnose-package.mjs --out ~/leap-diagnostics/darwin-arm64-c078580
+# if an original golden package from 19 Sep still exists, examine it as it is, without compiling:
+node docs/testing/diagnostics/diagnose-package.mjs --from <original-golden.h5p> --out ~/leap-diagnostics/original-golden
+node docs/testing/diagnostics/compare-diagnoses.mjs docs/testing/artifacts/2026-09-28-env-readiness/linux-x64-node20-c078580/diagnosis.json ~/leap-diagnostics/darwin-arm64-c078580/diagnosis.json
 ```
 
-- If `content` is `eafdf494…11bc85b` and `package` is `071bcec…`, the uncompressed content matches and the difference is in compression or zip metadata between the two runtimes.
-- If `content` differs, the two environments compile different content, and that is a code or input question, not a runtime one.
-- If `package` is not `071bcec…`, the golden was not produced from the committed state on that machine either.
+How to read the result, without over-reading it:
+
+- **Only `compressedSha256`, compressed sizes and the related header fields differ, and the uncompressed hashes and CRCs match:** the difference lies in the deflate output. That identifies the layer, not the runtime property that causes it.
+- **Other header fields differ** (flags, versions, attributes, times, extra fields): the difference is at least partly ZIP metadata written differently by the two runtimes or builds.
+- **Uncompressed hashes differ:** the two machines compiled different content. This does not by itself exclude runtime-dependent behaviour, because the engine or a dependency could produce different content under different runtimes. It would open a content investigation, not decide one.
+- **An original 19 Sep package, examined with `--from`, differing from today's owner-machine build:** the owner's environment or the inputs have changed since the recording. It would not show that the golden was never produced from the committed state.
+- **Today's owner-machine build not reproducing `071bcec…`:** that would not prove the golden was never produced there, because the environment may have changed since 19 Sep.
+
+Copying `~/leap-diagnostics/` back (it contains only the synthetic fixture package and its report) lets both reports be kept side by side with checksums.
 
 ## Other environment findings
 
-- **Player smoke tests:** `@playwright/test` 1.63 expects `chromium_headless_shell-1243`, which is not installed here. Pointed at the preinstalled `/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell` through an uncommitted local config, all 10 pass. With the full Chromium binary, 6 fail on a console `404` that the headless shell does not produce (not investigated further).
+- **Player smoke tests, declared environment:** `@playwright/test` 1.63 expects `chromium_headless_shell-1243`, which is not installed here, so `test:smoke` fails before any test runs (`logs/smoke-pinned-browser-missing.log`).
+- **Installing the pinned browser is blocked:** `pnpm exec playwright install chromium-headless-shell` failed five times with `Download failed: server returned code 403 body 'request blocked: no rule or allowlist entry allows host "cdn.playwright.dev"'` for `https://cdn.playwright.dev/builds/cft/153.0.8010.12/linux64/chrome-headless-shell-linux64.zip`; nothing was written to `/opt/pw-browsers` (`logs/playwright-install-default-path.log`). The host must be allowed in the environment's network settings before the declared environment can be qualified here.
+- **Diagnostic only, not qualification:** pointed at the preinstalled, older `chromium_headless_shell-1194` through an uncommitted override, all 10 smoke tests pass; with the full Chromium 1194 binary, 6 fail on a console `404` (not investigated). This shows the tests can run in principle. It does not qualify the declared Playwright environment, and the override is not adopted.
 - **Baseline at `c078580`, apart from the golden:** `pnpm -r build`, `typecheck` and `lint` exit 0; shared 5, generator 20 and cli 9 test files pass; cli-legacy 68 suites pass (17 tests skipped by their own markers).
 
 ## Readiness verdict
 
-- **Ready** for Task 1's named verification (generator and cli tests, typecheck, lint). None of it depends on the golden or the browser.
-- **Blocked** for any verification that runs `pnpm verify` or the engine suite: Task 2 (`pnpm --filter @leaplearn/engine test`), Task 3 and Checkpoint A. In this environment the golden fails, and `test:smoke` fails without the local browser override. Resolving it needs the owner's decision on the golden's guarantee, informed by the comparison above, and on how smoke tests find a browser in environments that do not have Playwright's pinned build.
+- **Accepted by the owner for Task 1's named checks only** (generator and cli tests, typecheck, lint). This is not general environment readiness.
+- **Unresolved, and blocking Task 2, Task 3 and Checkpoint A:**
+  - the engine golden: its guarantee and the proposed test correction await the owner's review. The golden is not regenerated. The prepared correction (uncommitted at the time of writing) keeps the compressed-bytes golden with the runtime it reproduces on and runs it only there. On every runtime it adds a portable uncompressed-content golden, structural ZIP-metadata assertions, and a check that every stored stream equals the runtime's own level-6 deflate. The repeated-build and cross-timezone byte-equality tests are unchanged.
+  - browser qualification: the pinned browser cannot be installed until `cdn.playwright.dev` is allowed. The substitute browser is not adopted.
+
+## Task 1, reported separately from baseline readiness
+
+- The baseline at `c078580` lint-passes. Task 1's first verification run was **lint-red** because of two unused variables introduced by Task 1's own new tests (`_dropped` in `packages/generator/test/pipeline.test.ts`, `_v` in `apps/cli/test/review.test.ts`), not because of the baseline.
+- They were fixed and Task 1 was committed as `2174e06` after its named checks passed (build, generator 132 tests, cli 33 tests, typecheck, lint). That commit was pushed in response to a stop hook, before the owner's review. It is **not** accepted as Task 1 completion until the owner reviews it.

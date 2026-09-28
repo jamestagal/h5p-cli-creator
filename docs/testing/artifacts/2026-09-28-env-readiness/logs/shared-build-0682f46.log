@@ -1,0 +1,10 @@
+$ pnpm --filter @leaplearn/shared build
+
+> @leaplearn/shared@0.1.0 build /tmp/claude-0/-home-user-h5p-cli-creator/224989ce-5991-5e09-8301-ee1aefff8b76/scratchpad/wt-0682f46/packages/shared
+> tsc -p tsconfig.json
+
+src/assets.ts(1,31): error TS2307: Cannot find module 'node:stream' or its corresponding type declarations.
+/tmp/claude-0/-home-user-h5p-cli-creator/224989ce-5991-5e09-8301-ee1aefff8b76/scratchpad/wt-0682f46/packages/shared:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @leaplearn/shared@0.1.0 build: `tsc -p tsconfig.json`
+Exit status 2
+exit=2

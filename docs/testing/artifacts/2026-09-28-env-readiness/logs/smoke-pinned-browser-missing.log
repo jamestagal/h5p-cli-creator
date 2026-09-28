@@ -1,0 +1,193 @@
+
+> @leaplearn/engine@0.1.0 test:smoke /home/user/h5p-cli-creator/packages/engine
+> playwright test -c test/smoke/playwright.config.ts
+
+
+Running 10 tests using 1 worker
+
+  ✘   1 test/smoke/player.spec.ts:68:3 › renders multi-choice without console errors (3ms)
+  ✘   2 test/smoke/player.spec.ts:68:3 › renders blanks without console errors (2ms)
+  ✘   3 test/smoke/player.spec.ts:68:3 › renders flashcards without console errors (1ms)
+  ✘   4 test/smoke/player.spec.ts:68:3 › renders question-set-nested without console errors (2ms)
+  ✘   5 test/smoke/player.spec.ts:68:3 › renders interactive-book without console errors (1ms)
+  ✘   6 test/smoke/player.spec.ts:68:3 › renders interactive-book-nested without console errors (2ms)
+  ✘   7 test/smoke/player.spec.ts:92:1 › multi-choice: wrong answer scores 0 of 1, then retry and correct answer scores 1 of 1 (2ms)
+  ✘   8 test/smoke/player.spec.ts:105:1 › blanks: one wrong scores 1 of 2, then retry and both correct scores 2 of 2 (1ms)
+  ✘   9 test/smoke/player.spec.ts:129:1 › nested question set: all correct reports 2 of 2 (1ms)
+  ✘  10 test/smoke/player.spec.ts:135:1 › nested question set: all wrong reports 0 of 2 (1ms)
+
+
+  1) test/smoke/player.spec.ts:68:3 › renders multi-choice without console errors ──────────────────
+
+    Error: browserType.launch: Executable doesn't exist at /opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+    ╔════════════════════════════════════════════════════════════╗
+    ║ Looks like Playwright was just installed or updated.       ║
+    ║ Please run the following command to download new browsers: ║
+    ║                                                            ║
+    ║     pnpm exec playwright install                           ║
+    ║                                                            ║
+    ║ <3 Playwright Team                                         ║
+    ╚════════════════════════════════════════════════════════════╝
+
+    Error Context: test-results/player-renders-multi-choice-without-console-errors/error-context.md
+
+    Error Context: test-results/player-renders-multi-choice-without-console-errors/error-context.md
+
+  2) test/smoke/player.spec.ts:68:3 › renders blanks without console errors ────────────────────────
+
+    Error: browserType.launch: Executable doesn't exist at /opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+    ╔════════════════════════════════════════════════════════════╗
+    ║ Looks like Playwright was just installed or updated.       ║
+    ║ Please run the following command to download new browsers: ║
+    ║                                                            ║
+    ║     pnpm exec playwright install                           ║
+    ║                                                            ║
+    ║ <3 Playwright Team                                         ║
+    ╚════════════════════════════════════════════════════════════╝
+
+    Error Context: test-results/player-renders-blanks-without-console-errors/error-context.md
+
+    Error Context: test-results/player-renders-blanks-without-console-errors/error-context.md
+
+  3) test/smoke/player.spec.ts:68:3 › renders flashcards without console errors ────────────────────
+
+    Error: browserType.launch: Executable doesn't exist at /opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+    ╔════════════════════════════════════════════════════════════╗
+    ║ Looks like Playwright was just installed or updated.       ║
+    ║ Please run the following command to download new browsers: ║
+    ║                                                            ║
+    ║     pnpm exec playwright install                           ║
+    ║                                                            ║
+    ║ <3 Playwright Team                                         ║
+    ╚════════════════════════════════════════════════════════════╝
+
+    Error Context: test-results/player-renders-flashcards-without-console-errors/error-context.md
+
+    Error Context: test-results/player-renders-flashcards-without-console-errors/error-context.md
+
+  4) test/smoke/player.spec.ts:68:3 › renders question-set-nested without console errors ───────────
+
+    Error: browserType.launch: Executable doesn't exist at /opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+    ╔════════════════════════════════════════════════════════════╗
+    ║ Looks like Playwright was just installed or updated.       ║
+    ║ Please run the following command to download new browsers: ║
+    ║                                                            ║
+    ║     pnpm exec playwright install                           ║
+    ║                                                            ║
+    ║ <3 Playwright Team                                         ║
+    ╚════════════════════════════════════════════════════════════╝
+
+    Error Context: test-results/player-renders-question-set-nested-without-console-errors/error-context.md
+
+    Error Context: test-results/player-renders-question-set-nested-without-console-errors/error-context.md
+
+  5) test/smoke/player.spec.ts:68:3 › renders interactive-book without console errors ──────────────
+
+    Error: browserType.launch: Executable doesn't exist at /opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+    ╔════════════════════════════════════════════════════════════╗
+    ║ Looks like Playwright was just installed or updated.       ║
+    ║ Please run the following command to download new browsers: ║
+    ║                                                            ║
+    ║     pnpm exec playwright install                           ║
+    ║                                                            ║
+    ║ <3 Playwright Team                                         ║
+    ╚════════════════════════════════════════════════════════════╝
+
+    Error Context: test-results/player-renders-interactive-book-without-console-errors/error-context.md
+
+    Error Context: test-results/player-renders-interactive-book-without-console-errors/error-context.md
+
+  6) test/smoke/player.spec.ts:68:3 › renders interactive-book-nested without console errors ───────
+
+    Error: browserType.launch: Executable doesn't exist at /opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+    ╔════════════════════════════════════════════════════════════╗
+    ║ Looks like Playwright was just installed or updated.       ║
+    ║ Please run the following command to download new browsers: ║
+    ║                                                            ║
+    ║     pnpm exec playwright install                           ║
+    ║                                                            ║
+    ║ <3 Playwright Team                                         ║
+    ╚════════════════════════════════════════════════════════════╝
+
+    Error Context: test-results/player-renders-interactive-bbeda-sted-without-console-errors/error-context.md
+
+    Error Context: test-results/player-renders-interactive-bbeda-sted-without-console-errors/error-context.md
+
+  7) test/smoke/player.spec.ts:92:1 › multi-choice: wrong answer scores 0 of 1, then retry and correct answer scores 1 of 1 
+
+    Error: browserType.launch: Executable doesn't exist at /opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+    ╔════════════════════════════════════════════════════════════╗
+    ║ Looks like Playwright was just installed or updated.       ║
+    ║ Please run the following command to download new browsers: ║
+    ║                                                            ║
+    ║     pnpm exec playwright install                           ║
+    ║                                                            ║
+    ║ <3 Playwright Team                                         ║
+    ╚════════════════════════════════════════════════════════════╝
+
+    Error Context: test-results/player-multi-choice-wrong--374d6-orrect-answer-scores-1-of-1/error-context.md
+
+    Error Context: test-results/player-multi-choice-wrong--374d6-orrect-answer-scores-1-of-1/error-context.md
+
+  8) test/smoke/player.spec.ts:105:1 › blanks: one wrong scores 1 of 2, then retry and both correct scores 2 of 2 
+
+    Error: browserType.launch: Executable doesn't exist at /opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+    ╔════════════════════════════════════════════════════════════╗
+    ║ Looks like Playwright was just installed or updated.       ║
+    ║ Please run the following command to download new browsers: ║
+    ║                                                            ║
+    ║     pnpm exec playwright install                           ║
+    ║                                                            ║
+    ║ <3 Playwright Team                                         ║
+    ╚════════════════════════════════════════════════════════════╝
+
+    Error Context: test-results/player-blanks-one-wrong-sc-8d4bd--both-correct-scores-2-of-2/error-context.md
+
+    Error Context: test-results/player-blanks-one-wrong-sc-8d4bd--both-correct-scores-2-of-2/error-context.md
+
+  9) test/smoke/player.spec.ts:129:1 › nested question set: all correct reports 2 of 2 ─────────────
+
+    Error: browserType.launch: Executable doesn't exist at /opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+    ╔════════════════════════════════════════════════════════════╗
+    ║ Looks like Playwright was just installed or updated.       ║
+    ║ Please run the following command to download new browsers: ║
+    ║                                                            ║
+    ║     pnpm exec playwright install                           ║
+    ║                                                            ║
+    ║ <3 Playwright Team                                         ║
+    ╚════════════════════════════════════════════════════════════╝
+
+    Error Context: test-results/player-nested-question-set-all-correct-reports-2-of-2/error-context.md
+
+    Error Context: test-results/player-nested-question-set-all-correct-reports-2-of-2/error-context.md
+
+  10) test/smoke/player.spec.ts:135:1 › nested question set: all wrong reports 0 of 2 ──────────────
+
+    Error: browserType.launch: Executable doesn't exist at /opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+    ╔════════════════════════════════════════════════════════════╗
+    ║ Looks like Playwright was just installed or updated.       ║
+    ║ Please run the following command to download new browsers: ║
+    ║                                                            ║
+    ║     pnpm exec playwright install                           ║
+    ║                                                            ║
+    ║ <3 Playwright Team                                         ║
+    ╚════════════════════════════════════════════════════════════╝
+
+    Error Context: test-results/player-nested-question-set-all-wrong-reports-0-of-2/error-context.md
+
+    Error Context: test-results/player-nested-question-set-all-wrong-reports-0-of-2/error-context.md
+
+  10 failed
+    test/smoke/player.spec.ts:68:3 › renders multi-choice without console errors ───────────────────
+    test/smoke/player.spec.ts:68:3 › renders blanks without console errors ─────────────────────────
+    test/smoke/player.spec.ts:68:3 › renders flashcards without console errors ─────────────────────
+    test/smoke/player.spec.ts:68:3 › renders question-set-nested without console errors ────────────
+    test/smoke/player.spec.ts:68:3 › renders interactive-book without console errors ───────────────
+    test/smoke/player.spec.ts:68:3 › renders interactive-book-nested without console errors ────────
+    test/smoke/player.spec.ts:92:1 › multi-choice: wrong answer scores 0 of 1, then retry and correct answer scores 1 of 1 
+    test/smoke/player.spec.ts:105:1 › blanks: one wrong scores 1 of 2, then retry and both correct scores 2 of 2 
+    test/smoke/player.spec.ts:129:1 › nested question set: all correct reports 2 of 2 ──────────────
+    test/smoke/player.spec.ts:135:1 › nested question set: all wrong reports 0 of 2 ────────────────
+/home/user/h5p-cli-creator/packages/engine:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @leaplearn/engine@0.1.0 test:smoke: `playwright test -c test/smoke/playwright.config.ts`
+Exit status 1

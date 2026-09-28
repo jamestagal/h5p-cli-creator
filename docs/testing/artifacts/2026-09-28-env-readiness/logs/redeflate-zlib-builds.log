@@ -1,0 +1,5 @@
+# re-deflate each entry's uncompressed bytes (level 6, yazl's default) and compare with the package's compressed streams
+node 20.20.2 zlib 1.3.1-e00f703: 91 entries identical to the package's compressed streams, 0 different; re-deflated streams sha256 765b1f953ed85c3f
+node 22.22.2 zlib 1.3.1-e00f703: 91 entries identical to the package's compressed streams, 0 different; re-deflated streams sha256 765b1f953ed85c3f
+node 21.7.3 zlib 1.3.0.1-motley-40e35a7: 91 entries identical to the package's compressed streams, 0 different; re-deflated streams sha256 765b1f953ed85c3f
+re-deflate entries/ came from these same package bytes

@@ -1,0 +1,15 @@
+
+Running 10 tests using 1 worker
+
+  ✓   1 test/smoke/player.spec.ts:68:3 › renders multi-choice without console errors (685ms)
+  ✓   2 test/smoke/player.spec.ts:68:3 › renders blanks without console errors (1.1s)
+  ✓   3 test/smoke/player.spec.ts:68:3 › renders flashcards without console errors (358ms)
+  ✓   4 test/smoke/player.spec.ts:68:3 › renders question-set-nested without console errors (1.1s)
+  ✓   5 test/smoke/player.spec.ts:68:3 › renders interactive-book without console errors (389ms)
+  ✓   6 test/smoke/player.spec.ts:68:3 › renders interactive-book-nested without console errors (462ms)
+  ✓   7 test/smoke/player.spec.ts:92:1 › multi-choice: wrong answer scores 0 of 1, then retry and correct answer scores 1 of 1 (873ms)
+  ✓   8 test/smoke/player.spec.ts:105:1 › blanks: one wrong scores 1 of 2, then retry and both correct scores 2 of 2 (1.2s)
+  ✓   9 test/smoke/player.spec.ts:129:1 › nested question set: all correct reports 2 of 2 (1.6s)
+  ✓  10 test/smoke/player.spec.ts:135:1 › nested question set: all wrong reports 0 of 2 (1.4s)
+
+  10 passed (12.8s)

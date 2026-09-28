@@ -1,0 +1,31 @@
+$ git rev-parse HEAD
+c07858058764066c64ea70f65a1878893d626d85
+$ sha256sum pnpm-lock.yaml
+fdf559da63799571cc1a772ec28ab10870d9394c6b14d46ccb10e9598f6022ef  pnpm-lock.yaml
+$ node -v; pnpm -v
+v20.20.2
+10.33.2
+$ pnpm install --frozen-lockfile
+Scope: all 8 workspace projects
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +528
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 528, reused 528, downloaded 0, added 528, done
+ WARN  Failed to create bin at /tmp/claude-0/-home-user-h5p-cli-creator/224989ce-5991-5e09-8301-ee1aefff8b76/scratchpad/wt-c078580/node_modules/.bin/h5p-cli-creator. ENOENT: no such file or directory, open '/tmp/claude-0/-home-user-h5p-cli-creator/224989ce-5991-5e09-8301-ee1aefff8b76/scratchpad/wt-c078580/apps/cli-legacy/dist/index.js'
+
+devDependencies:
++ cli-legacy 0.4.0 <- apps/cli-legacy
++ typescript 5.9.3
+
+ WARN  Failed to create bin at /tmp/claude-0/-home-user-h5p-cli-creator/224989ce-5991-5e09-8301-ee1aefff8b76/scratchpad/wt-c078580/node_modules/.bin/h5p-cli-creator. ENOENT: no such file or directory, open '/tmp/claude-0/-home-user-h5p-cli-creator/224989ce-5991-5e09-8301-ee1aefff8b76/scratchpad/wt-c078580/node_modules/cli-legacy/dist/index.js'
+╭ Warning ─────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│   Ignored build scripts: @parcel/watcher@2.6.0, esbuild@0.28.2,              │
+│   h5p-standalone@3.8.2, unrs-resolver@1.12.2.                                │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed     │
+│   to run scripts.                                                            │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Done in 2s using pnpm v10.33.2
+exit=0

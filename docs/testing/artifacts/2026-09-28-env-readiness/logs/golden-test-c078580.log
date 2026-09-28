@@ -1,0 +1,48 @@
+$ pnpm --filter @leaplearn/shared --filter @leaplearn/engine build
+Scope: 2 of 8 workspace projects
+packages/shared build$ tsc -p tsconfig.json
+packages/shared build: Done
+packages/engine build$ tsc -p tsconfig.json
+packages/engine build: Done
+exit=0
+$ vitest run test/determinism.test.ts -t golden (in packages/engine)
+
+ RUN  v3.2.7 /tmp/claude-0/-home-user-h5p-cli-creator/224989ce-5991-5e09-8301-ee1aefff8b76/scratchpad/wt-c078580/packages/engine
+
+ ↓ test/determinism.test.ts > compile > produces byte-identical packages for identical inputs
+ ↓ test/determinism.test.ts > compile > writes h5p.json, content/content.json, media and every closure library, with no directory entries and sorted names
+ ↓ test/determinism.test.ts > compile > rejects when an asset's bytes do not match its declared hash
+ ↓ test/determinism.test.ts > compile > rejects when an asset's length does not match its declared byteLength
+ ↓ test/determinism.test.ts > compile > rejects when an asset source stream errors
+ ↓ test/determinism.test.ts > compile > rejects when the destination errors, and compileToFile leaves no partial output
+ ↓ test/determinism.test.ts > compile > validate accepts an image-bearing spec when the manifest has the asset, and reports the missing asset otherwise
+ ↓ test/determinism.test.ts > compile > changes bytes when the revision changes (sub-content ids differ)
+ ↓ test/determinism.test.ts > compile > encodes a fixed DOS-only timestamp for every zip entry, with no timezone-dependent extra field
+ ↓ test/determinism.test.ts > compile > produces identical bytes under different timezones
+ ↓ test/determinism.test.ts > compile > destroys open asset streams when the destination errors
+ × test/determinism.test.ts > compile > matches the committed golden hash for flashcards@1 (a mismatch means the toolchain, yazl, a handler or a library changed and the hash must be re-recorded deliberately) 184ms
+   → compiled bytes for flashcards@1 no longer match packages/engine/test/fixtures/golden-hashes.json: the Node/zlib toolchain, yazl, a handler or a library changed. Re-record the hash deliberately if the change was intended.: expected '5be1d3918b8eaaedaeb5538ea54bb304484ae…' to be '071bceccffd5869068a717a726835c69f7bf3…' // Object.is equality
+ ↓ test/determinism.test.ts > compile > calls the injected logger with a compiled summary after a successful write
+ ↓ test/determinism.test.ts > compile > rejects a flashcards spec whose two cards share an id, so the engine can no longer overwrite one card's image mapping with the other's
+ ↓ test/determinism.test.ts > compile > validate returns coded schema issues with a path instead of throwing
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/determinism.test.ts > compile > matches the committed golden hash for flashcards@1 (a mismatch means the toolchain, yazl, a handler or a library changed and the hash must be re-recorded deliberately)
+AssertionError: compiled bytes for flashcards@1 no longer match packages/engine/test/fixtures/golden-hashes.json: the Node/zlib toolchain, yazl, a handler or a library changed. Re-record the hash deliberately if the change was intended.: expected '5be1d3918b8eaaedaeb5538ea54bb304484ae…' to be '071bceccffd5869068a717a726835c69f7bf3…' // Object.is equality
+
+Expected: "071bceccffd5869068a717a726835c69f7bf3aa6b1751c723be847a0a328f55a"
+Received: "5be1d3918b8eaaedaeb5538ea54bb304484aed7f605a39ac02706421071e3eb1"
+
+ ❯ test/determinism.test.ts:162:242
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 14 skipped (15)
+   Start at  14:04:11
+   Duration  1.28s (transform 322ms, setup 0ms, collect 750ms, tests 192ms, environment 0ms, prepare 84ms)
+
+exit=1
