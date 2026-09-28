@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
 import { createRegistry } from "@leaplearn/engine";
-import { ANTHROPIC_TIMEOUT_MS, createAnthropicProvider, IncompatibleResumeError, ingestMarkdown, ingestPdf, ingestText, ReplayProvider, RecordingProvider, runImport, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ImportRecord, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
+import { ANTHROPIC_TIMEOUT_MS, assertWritableStoreVersion, createAnthropicProvider, IncompatibleResumeError, LegacyStoreError, UnsupportedStoreVersionError, ingestMarkdown, ingestPdf, ingestText, ReplayProvider, RecordingProvider, runImport, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ImportRecord, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
 import { FileStore } from "./file-store.js";
 import { formatCostReport, writeReportsLocked } from "./report.js";
 
@@ -40,6 +40,12 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
 
   if (!(TONE_IDS as readonly string[]).includes(args.tone)) throw new Error(`unknown tone ${args.tone}`);
 
+  const outDir = resolve(args.out);
+  // Refuse a phase-2 directory before any work, and before the lock: a version-1 import never becomes writable, so this read cannot go stale. runImport checks again under the lock.
+  const existingVersion = await FileStore.storeVersionAt(outDir);
+  if (existingVersion !== null) {
+    try { assertWritableStoreVersion({ storeVersion: existingVersion }, outDir); } catch (err) { if (err instanceof LegacyStoreError || err instanceof UnsupportedStoreVersionError) { io.err(`leap: ${err.message}\n`); return 1; } throw err; }
+  }
   const sourcePath = resolve(args.source);
   const sourceId = `src-${basename(sourcePath)}`;
   const ext = extname(sourcePath).toLowerCase();
@@ -48,7 +54,6 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
     : await ingestText(await readFile(sourcePath, "utf8"), { sourceId, fileName: basename(sourcePath) });
   const unitText = args.unit ? await readFile(resolve(args.unit), "utf8") : null;
   const registry = await createRegistry({ lockPath: resolve(args.libraries, "libraries.lock.json"), cacheDir: resolve(args.libraries, "cache") });
-  const outDir = resolve(args.out);
   const store = new FileStore(outDir);
   const importId = importIdFor(outDir);
   const promptConfig = { readingLevel: args.readingLevel as ReadingLevel, tone: args.tone as Tone, language: args.language, ...(args.customisation ? { customisation: args.customisation } : {}) };
@@ -61,7 +66,7 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
       { store, provider: providerFor(args), registry, engineFingerprint: fingerprint, concurrency: args.concurrency, maxAttemptMs: ANTHROPIC_TIMEOUT_MS, onProgress: (e) => io.err(`${e.kind === "status" ? `status: ${e.status}` : e.kind === "activity" ? `${e.activityId}: ${e.status}${e.error ? ` (${e.error})` : ""}` : `${e.purpose}: ${e.status}${e.costUsdMicro === null ? "" : ` ($${(e.costUsdMicro / 1_000_000).toFixed(4)})`}`}\n`) }
     );
   } catch (err) {
-    if (err instanceof IncompatibleResumeError || err instanceof StoreLockedError) { io.err(`leap: ${err.message}\n`); return 1; }
+    if (err instanceof IncompatibleResumeError || err instanceof StoreLockedError || err instanceof LegacyStoreError || err instanceof UnsupportedStoreVersionError) { io.err(`leap: ${err.message}\n`); return 1; }
 
     throw err;
   }

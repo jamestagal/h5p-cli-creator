@@ -1,0 +1,2 @@
+activityId,type,title,revision,itemId,criterionId,status,conceptIds,evidenceIds,firstQuote
+act-1,multiChoice,Lockout,1,,PC2.1,confirmed,c1,ev-s1,Only the worker who applied a lock may remove it.

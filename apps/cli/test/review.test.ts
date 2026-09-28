@@ -5,16 +5,29 @@ import { costReport, mappingRows } from "../src/report.js";
 
 async function seeded(): Promise<MemoryStore> {
   const store = new MemoryStore();
-  await store.putImport({ importId: "imp", orgId: "local", name: "n", sourceType: "markdown", status: "ready", customisation: null, language: "en", unitTextHash: "u".repeat(64), selectedTypes: ["blanks"], fingerprint: "f".repeat(64), budget: { usdMicro: 1, requests: 1, tokens: 1, elapsedMs: 1 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: "imp", createdAt: "t", updatedAt: "t" });
+  await store.putImport({ storeVersion: 2, importId: "imp", orgId: "local", name: "n", sourceType: "markdown", status: "ready", customisation: null, language: "en", unitTextHash: "u".repeat(64), selectedTypes: ["blanks"], fingerprint: "f".repeat(64), budget: { usdMicro: 1, requests: 1, tokens: 1, elapsedMs: 1 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: "imp", createdAt: "t", updatedAt: "t" });
   await store.putArtifact("imp", "unit", { code: "SYNELE001", title: "Isolate and test electrical equipment", textHash: "u".repeat(64), knowledgeEvidence: [], performanceEvidence: [], elements: [{ id: "E2", number: "2", text: "Isolate and secure equipment", performanceCriteria: [{ id: "PC2.1", number: "2.1", text: "Apply lockout devices and tags" }, { id: "PC2.2", number: "2.2", text: "Test for dead" }] }] });
   await store.putActivity({ activityId: "act-4", importId: "imp", type: "blanks", order: 0, status: "promoted", currentRevision: 1, conceptIds: ["c1"], criteriaIds: ["PC2.1"], error: null, dropped: false });
   await store.putActivity({ activityId: "act-5", importId: "imp", type: "blanks", order: 1, status: "failed", currentRevision: null, conceptIds: ["c1"], criteriaIds: [], error: "content: x", dropped: false });
-  await store.putRevision({ activityId: "act-4", revision: 1, state: "promoted", spec: { id: "act-4", title: "T", type: "blanks", language: "en", schemaVersion: 1, taskDescription: "d", passage: "Only the {{b1}} may remove it and it takes {{b2}} people.", blanks: [{ id: "b1", answers: ["worker"], provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1"], criteriaIds: ["PC2.1"] } }, { id: "b2", answers: ["two"], provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s2"], criteriaIds: [] } }], caseSensitive: false, provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1", "ev-s2"], criteriaIds: ["PC2.1"] } }, schemaVersion: 1, promptVersion: "p", modelConfig: { provider: "fake", models: {}, profiles: {} }, engineFingerprint: "f", note: null, buildKey: "k", attemptIds: [], createdAt: "t" });
+  await store.putRevision({ activityId: "act-4", revision: 1, state: "promoted", spec: { id: "act-4", title: "T", type: "blanks", language: "en", schemaVersion: 1, taskDescription: "d", passage: "Only the {{b1}} may remove it and it takes {{b2}} people.", blanks: [{ id: "b1", answers: ["worker"], provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1"], criteriaIds: ["PC2.1"] } }, { id: "b2", answers: ["two"], provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s2"], criteriaIds: [] } }], caseSensitive: false, provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1", "ev-s2"], criteriaIds: ["PC2.1"] } }, schemaVersion: 1, promptVersion: "p", origin: "generate" as const, requestId: null, modelConfig: { provider: "fake", models: {}, profiles: {} }, engineFingerprint: "f", note: null, buildKey: "k", attemptIds: [], createdAt: "t" });
   const rec = store.recorderFor("imp");
   await rec.recordStart({ event: "start", attemptId: "a1", operationId: "imp:produce:act-4:r1", callKey: "produce:act-4", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: 0, purpose: "produce", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" });
   await rec.recordOutcome({ event: "outcome", attemptId: "a1", operationId: "imp:produce:act-4:r1", providerRequestId: null, rawUsage: null, inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, latencyMs: 1, pricingVersion: "v", costUsdMicro: 900, costStatus: "known", stopReason: "end_turn", status: "ok", error: null, reservationExceeded: false, underestimateUsdMicro: 899, completedAt: "t" });
   return store;
 }
+
+describe("leap review on a phase-2 import", () => {
+  it("refuses both kinds of decision on a version-1 import record and writes nothing", async () => {
+    const store = await seeded();
+    const legacy = { ...(await store.getImport("imp"))! };
+    delete legacy.storeVersion;
+    await store.putImport(legacy);
+    await expect(recordReview(store, "imp", { kind: "acceptance", activityId: "act-4", reviewer: "o", decision: "accepted", notes: null })).rejects.toMatchObject({ name: "LegacyStoreError", message: expect.stringMatching(/import imp was created by phase 2/) });
+    await expect(recordReview(store, "imp", { kind: "alignment", activityId: "act-4", reviewer: "o", criterionId: "PC2.1", decision: "confirmed", itemId: null })).rejects.toMatchObject({ name: "LegacyStoreError" });
+    expect(await store.listAcceptances("imp")).toEqual([]);
+    expect(await store.listAlignmentReviews("imp")).toEqual([]);
+  });
+});
 
 describe("leap review", () => {
   it("records an acceptance bound to the promoted revision and changes cost per accepted activity", async () => {

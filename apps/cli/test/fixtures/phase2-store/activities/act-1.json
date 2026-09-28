@@ -1,0 +1,12 @@
+{
+  "activityId": "act-1",
+  "importId": "phase2-store",
+  "type": "multiChoice",
+  "order": 0,
+  "status": "promoted",
+  "currentRevision": 1,
+  "conceptIds": ["c1"],
+  "criteriaIds": ["PC2.1"],
+  "error": null,
+  "dropped": false
+}

@@ -11,7 +11,7 @@ import { BudgetRefused, ContentFailure, RunStopped } from "../llm/runner.js";
 import { planActivities, DEFAULT_PLAN_RULES, type ActivityPlan, type PlannedType, type PlanRules } from "../plan/planner.js";
 import { createProducers } from "../produce/index.js";
 import { PROMPT_VERSION, type PromptConfig } from "../prompts/system.js";
-import type { ActivityRecord, ImportRecord, ImportStore, RevisionRecord } from "../store/types.js";
+import { assertWritableStoreVersion, STORE_VERSION, type ActivityRecord, type ImportRecord, type ImportStore, type RevisionRecord } from "../store/types.js";
 import { DEFAULT_CHUNK_TOKENS, IncompatibleResumeError, runFingerprint } from "./fingerprint.js";
 import { attemptsByKey, budgetFromLedger, reconcile, reconcileElapsed, runLanes, runOperation, type OperationContext } from "./operations.js";
 
@@ -63,6 +63,7 @@ export async function runImport(rawInput: RunImportInput, deps: RunImportDeps): 
   const lock = await deps.store.lock(input.importId);
   try {
     const existing = await deps.store.getImport(input.importId); // read under the lock: a pre-lock read could be stale
+    if (existing) assertWritableStoreVersion(existing, `import ${input.importId}`); // before any write, and before the fingerprint: a phase-2 import is refused as such
     if (existing && existing.fingerprint !== fingerprint) throw new IncompatibleResumeError(input.importId, existing.fingerprint, fingerprint);
 
     return await runLocked(input, deps, existing, fingerprint, chunkTokens, rules);
@@ -80,7 +81,7 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
 
   let record: ImportRecord = existing
     ? { ...existing, budget: limits, updatedAt: now() }
-    : { importId: input.importId, orgId: input.orgId ?? "local", name: input.name, sourceType: input.source.kind, status: "queued", customisation: input.customisation, language: input.language, unitTextHash: null, selectedTypes: [...input.selectedTypes], fingerprint, budget: limits, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: input.importId, createdAt: now(), updatedAt: now() };
+    : { storeVersion: STORE_VERSION, importId: input.importId, orgId: input.orgId ?? "local", name: input.name, sourceType: input.source.kind, status: "queued", customisation: input.customisation, language: input.language, unitTextHash: null, selectedTypes: [...input.selectedTypes], fingerprint, budget: limits, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: input.importId, createdAt: now(), updatedAt: now() };
   await store.putImport(record);
   if (record.status === "ready") return record;
 
@@ -188,7 +189,7 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
           const priorTexts = existingTexts(await promotedOfType(activity.type));
           const result = await producer.produce({ plan: entry, map, unit, promptConfig: input.promptConfig, language: input.language, existing: priorTexts, rules }, runner, { registry: deps.registry });
           assertGeneratedProvenance(result.spec);
-          return { activityId: activity.activityId, revision, state: "candidate", spec: result.spec, schemaVersion: SCHEMA_VERSION, promptVersion: PROMPT_VERSION, modelConfig: { provider: deps.provider.name, models: { ...MODEL_ROLES }, profiles: { ...REQUEST_PROFILES } }, engineFingerprint: deps.engineFingerprint, note: null, buildKey: null, attemptIds: result.attemptIds, createdAt: now() };
+          return { activityId: activity.activityId, revision, state: "candidate", spec: result.spec, schemaVersion: SCHEMA_VERSION, promptVersion: PROMPT_VERSION, origin: "generate", requestId: null, modelConfig: { provider: deps.provider.name, models: { ...MODEL_ROLES }, profiles: { ...REQUEST_PROFILES } }, engineFingerprint: deps.engineFingerprint, note: null, buildKey: null, attemptIds: result.attemptIds, createdAt: now() };
         },
         persist: (rev) => store.putRevision(rev)
       });

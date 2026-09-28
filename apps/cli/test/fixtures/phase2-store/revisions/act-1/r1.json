@@ -1,0 +1,14 @@
+{
+  "activityId": "act-1",
+  "revision": 1,
+  "state": "promoted",
+  "spec": { "id": "act-1", "title": "Lockout", "type": "multiChoice", "language": "en", "schemaVersion": 1, "question": "<p>Who may remove a lockout device?</p>", "answers": [{ "text": "The worker who applied it", "correct": true }, { "text": "Any supervisor", "correct": false }], "randomAnswers": true, "provenance": { "conceptIds": ["c1"], "evidenceIds": ["ev-s1"], "criteriaIds": ["PC2.1"] } },
+  "schemaVersion": 1,
+  "promptVersion": "2026-09-19.2",
+  "modelConfig": { "provider": "anthropic", "models": { "produce": "claude-sonnet-5" }, "profiles": {} },
+  "engineFingerprint": "engine@0.1.0+lock:3f2a9c1b7d4e",
+  "note": null,
+  "buildKey": "builds/act-1-r1.h5p",
+  "attemptIds": ["a1"],
+  "createdAt": "2026-09-19T01:04:00.000Z"
+}

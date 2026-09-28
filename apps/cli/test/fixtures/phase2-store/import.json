@@ -1,0 +1,19 @@
+{
+  "importId": "phase2-store",
+  "orgId": "local",
+  "name": "source-electrical-safety.md",
+  "sourceType": "markdown",
+  "status": "ready",
+  "customisation": null,
+  "language": "en",
+  "unitTextHash": "5e0f4c1ad1b1a0a6f0b8c9d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7",
+  "selectedTypes": ["multiChoice"],
+  "fingerprint": "9c1e2d3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d",
+  "budget": { "usdMicro": 2000000, "requests": 200, "tokens": 2000000, "elapsedMs": 1800000 },
+  "budgetUsed": { "spentUsdMicro": 900, "reservedUsdMicro": 0, "spentTokens": 1200, "requests": 1, "elapsedMs": 4200 },
+  "currentRun": null,
+  "error": null,
+  "idempotencyKey": "phase2-store",
+  "createdAt": "2026-09-19T01:00:00.000Z",
+  "updatedAt": "2026-09-19T01:05:00.000Z"
+}

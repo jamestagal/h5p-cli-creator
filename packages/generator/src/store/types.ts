@@ -5,7 +5,12 @@ import type { RequestProfile } from "../llm/models.js";
 import type { AttemptEvent, AttemptRecorder, Purpose } from "../llm/types.js";
 import type { PlannedType } from "../plan/planner.js";
 
+/** Store layout version written by this code. Version 1 (phase 2) wrote no `storeVersion`; its directories are read-only from phase 3 on. */
+export const STORE_VERSION = 2;
+
 export interface ImportRecord {
+  /** Absent on phase-2 (version 1) imports; `storeVersionOf` reads it. */
+  storeVersion?: number;
   importId: string; orgId: string; name: string; sourceType: SourceKind; status: ImportStatus;
   customisation: string | null; language: string; unitTextHash: string | null; selectedTypes: PlannedType[];
   /** Identity of the inputs and configuration the import was created with (fingerprint.ts); a rerun must match it. Budget limits are not part of it. */
@@ -20,8 +25,11 @@ export interface ActivityRecord {
   activityId: string; importId: string; type: PlannedType; order: number; status: ActivityStatus;
   currentRevision: number | null; conceptIds: string[]; criteriaIds: string[]; error: string | null; dropped: boolean;
 }
+/** Which command produced a revision: the first pass (`generate`) or a reviewer-requested regeneration. */
+export type RevisionOrigin = "generate" | "regenerate";
 export interface RevisionRecord {
   activityId: string; revision: number; state: RevisionState; spec: ActivitySpec; schemaVersion: number; promptVersion: string;
+  origin: RevisionOrigin; requestId: string | null;
   modelConfig: { provider: string; models: Record<string, string>; profiles: Record<string, RequestProfile> }; engineFingerprint: string; note: string | null; buildKey: string | null; attemptIds: string[]; createdAt: string;
 }
 export interface OperationRecord {
@@ -33,6 +41,27 @@ export interface AcceptanceRecord { importId: string; activityId: string; revisi
 /** Spec §4 alignment_reviews, bound to the exact revision (and item). A new revision starts with no reviews. */
 export interface AlignmentReviewRecord { importId: string; activityId: string; revision: number; itemId: string | null; unitTextHash: string | null; criterionId: string; decision: AlignmentDecision; reviewer: string; decidedAt: string; }
 export type ArtifactName = "source" | "unit" | "conceptMap" | "plan" | `chunk-${number}`;
+
+export function storeVersionOf(record: Pick<ImportRecord, "storeVersion">): number {
+  return record.storeVersion ?? 1;
+}
+
+/** A phase-2 import directory: kept exactly as it is, never written by phase-3 commands. */
+export class LegacyStoreError extends Error {
+  constructor(where: string) {
+    super(`${where} was created by phase 2 (store version 1). It is kept unchanged and is read-only. Use a new output directory for phase-3 commands.`);
+    this.name = "LegacyStoreError";
+  }
+}
+export class UnsupportedStoreVersionError extends Error {
+  constructor(where: string, version: number) { super(`${where} has store version ${version}, which this build does not know (it writes version ${STORE_VERSION}); use a matching build of leap`); this.name = "UnsupportedStoreVersionError"; }
+}
+/** Refuses any write to an import that is not at the current store version. Callers run it under the import's lock, before their first write. */
+export function assertWritableStoreVersion(record: Pick<ImportRecord, "storeVersion">, where: string): void {
+  const version = storeVersionOf(record);
+  if (version < STORE_VERSION) throw new LegacyStoreError(where);
+  if (version > STORE_VERSION) throw new UnsupportedStoreVersionError(where, version);
+}
 
 export interface StoreLock { release(): Promise<void>; }
 export class StoreLockedError extends Error {

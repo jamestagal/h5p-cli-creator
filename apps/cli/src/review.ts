@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { criteriaOf, type AcceptanceDecision, type AlignmentDecision, type UnitOfCompetency } from "@leaplearn/shared";
-import { StoreLockedError, type AcceptanceRecord, type AlignmentReviewRecord, type ImportStore } from "@leaplearn/generator";
+import { assertWritableStoreVersion, LegacyStoreError, StoreLockedError, UnsupportedStoreVersionError, type AcceptanceRecord, type AlignmentReviewRecord, type ImportStore } from "@leaplearn/generator";
 import { FileStore } from "./file-store.js";
 import { importIdFor } from "./generate.js";
 import { formatCostReport, writeReports } from "./report.js";
@@ -23,6 +23,7 @@ function itemProvenance(spec: { type: string; blanks?: Array<{ id: string; prove
 export async function recordReview(store: ImportStore, importId: string, input: ReviewInput, clock: () => Date = () => new Date()): Promise<AcceptanceRecord | AlignmentReviewRecord> {
   const importRecord = await store.getImport(importId);
   if (!importRecord) throw new ReviewError(`import ${importId} is not in this directory`);
+  assertWritableStoreVersion(importRecord, `import ${importId}`);
   const activity = (await store.listActivities(importId)).find((a) => a.activityId === input.activityId);
   if (!activity) throw new ReviewError(`activity ${input.activityId} is not in import ${importId}`);
   if (activity.currentRevision === null) throw new ReviewError(`activity ${input.activityId} has no promoted revision (status ${activity.status}); only promoted activities can be reviewed`);
@@ -51,6 +52,10 @@ export interface ReviewArgs { out: string; activity: string; reviewer: string; d
 
 export async function review(args: ReviewArgs, io: { out: (s: string) => void; err: (s: string) => void }): Promise<number> {
   const outDir = resolve(args.out);
+  const existingVersion = await FileStore.storeVersionAt(outDir);
+  if (existingVersion !== null) {
+    try { assertWritableStoreVersion({ storeVersion: existingVersion }, outDir); } catch (err) { if (err instanceof LegacyStoreError || err instanceof UnsupportedStoreVersionError) { io.err(`leap: ${err.message}\n`); return 1; } throw err; }
+  }
   const store = new FileStore(outDir);
   const importId = importIdFor(outDir);
   const base = { activityId: args.activity, reviewer: args.reviewer };
@@ -69,7 +74,7 @@ export async function review(args: ReviewArgs, io: { out: (s: string) => void; e
     io.out(formatCostReport(report) + "\n");
     return 0;
   } catch (err) {
-    if (err instanceof ReviewError) { io.err(`leap: ${err.message}\n`); return 1; }
+    if (err instanceof ReviewError || err instanceof LegacyStoreError || err instanceof UnsupportedStoreVersionError) { io.err(`leap: ${err.message}\n`); return 1; }
     throw err;
   } finally {
     await lock.release();
