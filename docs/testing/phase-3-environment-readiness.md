@@ -55,6 +55,15 @@ The comparison below was run on the machine that recorded the golden, at `c07858
 
 **What that shows, taking the reported hashes as given:** both machines compile the same uncompressed content for all 91 entries, and the owner's machine still reproduces the golden today. The compressed packages differ, so the difference lies in the compressed streams or in ZIP metadata, or both. Which of those, and which runtime property causes it (zlib version, architecture, platform or Node build), is **not** established: the two runtimes differ in all four at once, and the aggregate hashes do not separate compressed streams from metadata. The per-entry diagnostic below does.
 
+### Owner-machine diagnostic and suite run (reported by the owner, 29 Sep)
+
+The owner ran `diagnose-package.mjs` and the corrected engine suite at `febbc08` on the macOS arm64 machine. The report is at a path on that machine (`/tmp/leap-mac-readiness-2026-09-29/diagnosis.json`) and is not stored in this repository.
+
+- **Engine suite:** 51 of 51 passed, none skipped. That includes the compressed-bytes golden on its recorded runtime, the ZIP-metadata assertions and the level-6 compression check.
+- **Diagnostic compared with this container's:** all 91 compressed streams differ. Uncompressed content, entry order and the fixed metadata match. Size-dependent fields (compressed sizes, local-header and central-directory offsets) differ accordingly.
+- **What this settles:** the golden mismatch is in the deflate output alone. Which runtime property produces the different deflate output is still not isolated, because zlib version, architecture, platform and Node build all differ between the two machines.
+- **Decision:** the golden-test correction (`9f36c5e`) is approved. Skipping only the runtime-specific compressed golden elsewhere is accepted.
+
 ## Demonstrated in this container
 
 1. The mismatch reproduces **at the golden's own recording commit** in this environment. So the code changes between `cafb3c5` and `c078580` (27 files) are not what makes the golden fail here: both revisions produce the same bytes.
@@ -94,16 +103,17 @@ Copying `~/leap-diagnostics/` back (it contains only the synthetic fixture packa
 ## Other environment findings
 
 - **Player smoke tests, declared environment:** `@playwright/test` 1.63 expects `chromium_headless_shell-1243`, which is not installed here, so `test:smoke` fails before any test runs (`logs/smoke-pinned-browser-missing.log`).
-- **Installing the pinned browser is blocked:** `pnpm exec playwright install chromium-headless-shell` failed five times with `Download failed: server returned code 403 body 'request blocked: no rule or allowlist entry allows host "cdn.playwright.dev"'` for `https://cdn.playwright.dev/builds/cft/153.0.8010.12/linux64/chrome-headless-shell-linux64.zip`; nothing was written to `/opt/pw-browsers` (`logs/playwright-install-default-path.log`). The host must be allowed in the environment's network settings before the declared environment can be qualified here.
+- **Installing the pinned browser is blocked** (retried 28 Sep 22:48 UTC with the same result): `pnpm exec playwright install chromium-headless-shell` failed five times with `Download failed: server returned code 403 body 'request blocked: no rule or allowlist entry allows host "cdn.playwright.dev"'` for `https://cdn.playwright.dev/builds/cft/153.0.8010.12/linux64/chrome-headless-shell-linux64.zip`; nothing was written to `/opt/pw-browsers` (`logs/playwright-install-default-path.log`). The host must be allowed in the environment's network settings before the declared environment can be qualified here.
 - **Diagnostic only, not qualification:** pointed at the preinstalled, older `chromium_headless_shell-1194` through an uncommitted override, all 10 smoke tests pass; with the full Chromium 1194 binary, 6 fail on a console `404` (not investigated). This shows the tests can run in principle. It does not qualify the declared Playwright environment, and the override is not adopted.
 - **Baseline at `c078580`, apart from the golden:** `pnpm -r build`, `typecheck` and `lint` exit 0; shared 5, generator 20 and cli 9 test files pass; cli-legacy 68 suites pass (17 tests skipped by their own markers).
 
 ## Readiness verdict
 
 - **Accepted by the owner for Task 1's named checks only** (generator and cli tests, typecheck, lint). This is not general environment readiness.
-- **Unresolved, and blocking Task 2, Task 3 and Checkpoint A:**
-  - the engine golden: its guarantee and the proposed test correction await the owner's review. The golden is not regenerated. The prepared correction (uncommitted at the time of writing) keeps the compressed-bytes golden with the runtime it reproduces on and runs it only there. On every runtime it adds a portable uncompressed-content golden, structural ZIP-metadata assertions, and a check that every stored stream equals the runtime's own level-6 deflate. The repeated-build and cross-timezone byte-equality tests are unchanged.
-  - browser qualification: the pinned browser cannot be installed until `cdn.playwright.dev` is allowed. The substitute browser is not adopted.
+- **Blocking Task 2, Task 3 and Checkpoint A:**
+  - the engine golden: **resolved.** The correction in `9f36c5e` is approved after the owner's 51-of-51 run on the recorded runtime. On every runtime it adds a portable uncompressed-content golden, structural ZIP-metadata assertions and a level-6 compression check; the compressed-bytes golden, unchanged, runs only on its recorded runtime. The repeated-build and cross-timezone byte-equality tests are unchanged.
+  - browser qualification (**unresolved**): the pinned browser cannot be installed until `cdn.playwright.dev` is allowed in the cloud environment's network settings. The substitute browser is not adopted.
+  - Task 1 review: the owner's review of `2174e06` asked for two fixes (malformed store versions, suppressed filesystem errors), made in the following commit and awaiting review.
 
 ## Task 1, reported separately from baseline readiness
 
