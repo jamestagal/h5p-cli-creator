@@ -116,7 +116,7 @@ Execute tasks in order. Each task writes its failing tests first, runs them and 
 
 | Checkpoint | After task | Who | What |
 |---|---|---|---|
-| **A: engine and build identity** | 3 | Reviewer | Whole-diff review of Tasks 1–3; `pnpm verify` green |
+| **A: engine and build identity** | 3 and follow-up F1 | Reviewer | Whole-diff review of Tasks 1–3 and F1; `pnpm verify` green |
 | **B: extraction inspection** | 8 | Benjamin, zero cost | `leap extract` on the BSBAUD412 packet; compare at least five representative tables with the original (design §4.2). Any mismatch goes back to Tasks 5–7 before anything else proceeds |
 | **C: authorise S1** | 10, offline part | Benjamin | Task 10's offline work is complete and green on its task branch, apart from the expected replay misses (see Task 10). Benjamin writes the S1 ledger entry; S1 runs only after that. The phase branch waits here, and Tasks 11–16 depend on Task 10 |
 | **D: tooling complete** | 16 | Reviewer | Whole-branch review; `pnpm verify` green; the pilot runbook reviewed |
@@ -250,6 +250,22 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 **Verification:** `set -o pipefail; pnpm verify; echo "exit=$?"` → `exit=0`.
 
 **Commit:** `feat(pipeline): immutable build records stamped with the engine that built them`
+
+### Follow-up F1: stop `FileStore` hiding directory-read errors (due before Checkpoint A)
+
+**Origin:** the owner's review of Task 1 (`2174e06`, fixed in `fa28c18`) found `readLegacyImport` turning every `readdir` failure into an empty list. The same pattern exists in phase-2 code, outside Task 1's scope: `FileStore.listActivities` and `FileStore.listRevisions` in `apps/cli/src/file-store.ts` both call `readdir(dir).catch(() => [] as string[])`. A permission error, or a file where the `activities` or `revisions/<id>` directory belongs, therefore reads as "no activities" or "no revisions". A resume or report can then act on an import that looks empty.
+
+**Scope (bounded):** those two calls only. Treat `ENOENT` as empty, because a new import has no `activities` directory yet and an activity may have no revisions. Propagate every other error. Reuse the `listIfPresent` pattern from `apps/cli/src/legacy-store.ts`, moving it to one shared helper that both files use. No other behaviour changes.
+
+**Tests (write first):**
+- [ ] `activities` present as a file: `listActivities` rejects with `ENOTDIR`, and `leap generate` resuming that directory exits non-zero without writing.
+- [ ] `revisions/<id>` present as a file: `listRevisions` rejects with `ENOTDIR`.
+- [ ] `EACCES` on each directory, injected at the `node:fs/promises` boundary as in `apps/cli/test/legacy-store-errors.test.ts` (tests run as root in the cloud container, so `chmod` cannot deny access).
+- [ ] A missing `activities` or `revisions/<id>` directory still reads as empty, and every existing FileStore, pipeline and CLI test passes unchanged.
+
+**Verification:** `pnpm verify` → `exit=0`, in an environment where the pinned Playwright browser is installed.
+
+**Commit:** `fix(cli): FileStore propagates directory-read errors other than ENOENT`
 
 **→ Checkpoint A.**
 
