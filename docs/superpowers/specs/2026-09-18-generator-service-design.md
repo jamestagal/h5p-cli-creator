@@ -296,9 +296,10 @@ Each phase ends with something demonstrable. The detailed task plan follows from
 
 ## 14. Open questions
 
-- Which five source-and-unit pairs form the phase-3 corpus, and who reviews them besides Benjamin.
 - The pasted-text minimum: the 28 Sep ruling gives both 550 and 500 characters. This spec uses 500 for every text source until that is confirmed.
 - Which phase brings the 28 Sep ruling into code. Phase 2 ingests text, markdown and PDF, with a 300,000-character ceiling and no minimum or page limit. It has no DOCX, ODT, web page or Wikipedia adapter (web was deferred to phase 5), and its alignment maps concepts to performance criteria only: Knowledge Evidence is parsed but not aligned. The phase-3 design proposes the order.
 - The production preview hostname and TLS arrangement on the demo VPS.
 
 Closed: `singleChoiceSet` stays in its native multi-question form (§2.1).
+
+Closed (28 Sep 2026): phase 3 starts with one source-and-unit pair, BSBAUD412, and the corpus grows toward the five pairs across trades as material arrives. Benjamin is the only reviewer, so the rubric has no checks for agreement between reviewers. Real material lives in `docs/uoc/`, which git ignores.

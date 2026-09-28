@@ -14,6 +14,9 @@ examples/*.h5p
 
 # SDD scratch workspace
 .superpowers/
+# Real source material and units of competency (private, never committed)
+docs/uoc/
+
 # Runtime caches (never committed)
 .youtube-cache/
 
