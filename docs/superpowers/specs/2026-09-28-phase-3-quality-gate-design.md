@@ -1,6 +1,6 @@
 # Phase 3: human quality gate, design
 
-Date: 28 Sep 2026, revision 2, after Benjamin's review of revision 1 (`1171a8b`). Status: **accepted for planning** (28 Sep 2026). The contract clarifications from that review (C1–C7, R1–R6) are in `docs/superpowers/plans/2026-09-28-phase-3-quality-gate.md` and take precedence where they differ from this document. Parent: `2026-09-18-generator-service-design.md` (§1 claims, §10 human quality gate, §11 phase 3, §13 rulings of 28 Sep). Starting point: `main` at 0682f46, phase 2 approved 19 Sep.
+Date: 28 Sep 2026, revision 2, after Benjamin's review of revision 1 (`1171a8b`). Status: **accepted for planning** (28 Sep 2026). The contract clarifications from the two plan reviews (C1–C7, R1–R14) are in `docs/superpowers/plans/2026-09-28-phase-3-quality-gate.md` and take precedence where they differ from this document. Parent: `2026-09-18-generator-service-design.md` (§1 claims, §10 human quality gate, §11 phase 3, §13 rulings of 28 Sep). Starting point: `main` at 0682f46, phase 2 approved 19 Sep.
 
 ## 1. What phase 3 is for
 

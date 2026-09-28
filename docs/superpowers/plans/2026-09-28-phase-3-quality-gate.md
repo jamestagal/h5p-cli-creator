@@ -11,6 +11,8 @@
 - a gate report keeps first-pass results, after-revision results and every denominator apart;
 - every paid run is authorised and capped in a pilot ledger.
 
+**Revision 2 (28 Sep 2026):** Benjamin's review of `4200646` found six contract defects: pilot-total enforcement read derived reports and did not reserve centrally; score import contradicted itself on stale rows and had no deterministic recovery order; regeneration checked eligibility before recovering a running request; the gate report could not count failures that never produced a revision; structural offsets were created before normalisation; and the S1 recording did not match its replay consumers. This revision fixes each (R7–R12 below) and adds two conditions on recorded deviations (R13, R14).
+
 **Design:** `docs/superpowers/specs/2026-09-28-phase-3-quality-gate-design.md`, revision 2 (`76cd223`), accepted for planning on 28 Sep 2026 with the contract clarifications below. Parent spec: `docs/superpowers/specs/2026-09-18-generator-service-design.md` (§1 claims, §5 regenerate, §10 quality gate, §13 rulings).
 
 **Architecture:** No new package.
@@ -47,11 +49,21 @@ These rules override the design where the two differ.
 | R3 | Acceptance denominators | Report planned, not attempted, generation-failed, promoted, reviewed, unreviewed and accepted counts. The first generated revision is marked `origin: "generate"`. Acceptance is reported among reviewed outputs and end to end among planned outputs. The gate status is `incomplete` while any required review is missing, and an incomplete gate cannot pass | 3, 14 |
 | R4 | Table header rows | A first row becomes a header **only when the format marks it**: DOCX `w:tblHeader`, ODT `table:table-header-rows`. Otherwise the row is preserved as data and cells are labelled `Column 1`, `Column 2`, and so on. Fixtures include a two-column key/value table. An atomic row larger than the chunk budget is preserved whole and the run is refused before any model call, naming the table, row and size | 5, 6, 7 |
 | R5 | Existing phase-2 imports | Store version 1 directories are **read-only**. Every write command refuses them, with instructions to use a new directory. Their packages, revisions, acceptances and alignment reviews are never modified or migrated. No build record or engine fingerprint is reconstructed for them; their recorded `engineFingerprint` string is shown as recorded at production, with phase-2 semantics. The gate report lists them as not eligible. New fingerprints include the dist bytes of workspace dependencies and the resolved identities (name, version, integrity) of the transitive runtime dependency closure | 1, 2 |
-| R6 | Experiment budget | Every paid run needs an entry in a pilot ledger that Benjamin writes. The ledger gives a per-run cap and a pilot total. `generate` and `regenerate` refuse to dispatch without an authorising entry, or when the cap or total would be exceeded. **Approving this plan authorises no live run** | 9, and "Paid runs and authorisation" |
+| R6 | Experiment budget | Every paid run needs an entry in a pilot ledger that Benjamin writes. The ledger gives a per-run cap and a pilot total. `generate` and `regenerate` refuse to dispatch without an authorising entry. **Approving this plan authorises no live run** | 9, and "Paid runs and authorisation" |
+| R7 | Pilot-total enforcement (review of `4200646`) | **Static allocation.** The sum of all listed run caps must not exceed the pilot total; each cap stays reserved until Benjamin edits the ledger. No central spend reservation is needed, because a run can only spend against its own cap. Actual spend is read from each run's **attempt records**, never from `cost.json`. Caps are **estimated**, as in phase 2: an in-flight attempt whose real usage exceeds its reservation can exceed a run cap, and so the total, by that underestimate | 9 |
+| R8 | Stale rows and recovery order | Import is **all-or-nothing**: any error or stale row means zero writes. Batches get a **sequence number** under the lock at commit. "Latest wins" is decided by `(sequence, row index)`, never by file enumeration or ledger append order, so replayed records cannot reorder history | 12 |
+| R9 | Regeneration recovery before eligibility | A `running` request is inspected and reconciled **first**. If its target revision was already produced, built or promoted, the same request is finished without a model call. The reviewed-decision and two-request checks apply only when creating a new request | 13 |
+| R10 | Failures without revisions | First-pass vs regeneration is recorded on the **operation and attempt-start records before dispatch**. Outcome counts and costs derive from the saved plan, activity records, operations and attempts, even when no revision exists. The reported categories **partition** the planned activities, and a test asserts the sum | 3, 13, 14 |
+| R11 | Normalise before offsets | **Invariant:** structural segments and sentence offsets are built against the final stored normalised text, and nothing transforms that text afterwards without rebuilding its offsets. Adapters normalise block text before linearizing; `finaliseDocument` asserts the text is a fixed point of `normaliseSourceText` and never transforms it | 4, 5, 6, 7 |
+| R12 | S1 matches every replay consumer | S1 records one named fixture pair (the PDF path) with pinned settings in a shared `S1_SETTINGS` constant, which both replay consumers import. DOCX and ODT pipeline paths run on FakeProvider. Tasks 1–9 keep every existing replay request byte-identical (heading context is emitted only when a chunk has headings, and PDF and text sources have none); Task 10 is the first task that changes requests | 5, 10, 15 |
+| R13 | Simplified DOCX numbering | Acceptable only with a warning. `leap extract` lists every list that uses a non-decimal, non-bullet format, and every text reference that looks like a list label (for example "item b)", "(ii)"). Checkpoint B confirms those references still make sense; if not, the adapter renders the real formats before P1 | 6, 8 |
+| R14 | Oversize ordinary sentences | They may stay whole, but the complete provider request that carries them must fit the model's input limit. Otherwise the run is refused before dispatch, naming the sentence and the sizes | 5 |
 
 ## Paid runs and authorisation
 
-**Approving this plan authorises no paid run.** Tasks 1–9 and 11–16 make no model calls. Task 10 needs one small paid run on synthetic material, and the pilot needs paid runs on BSBAUD412. Each requires Benjamin's ledger entry beforehand.
+**Approving this plan authorises no paid run.** Tasks 1–9, the offline part of Task 10, and Tasks 11–16 make no model calls. Task 10 ends with one small paid run on synthetic material (S1), and the pilot needs paid runs on BSBAUD412. Each requires Benjamin's ledger entry beforehand.
+
+**Allocations approved on 28 Sep 2026** as provisional: S1 $1, P1 $3, each experiment $3, total $20. An approved allocation is not an authorised run: a run is authorised only by its ledger entry.
 
 **The ledger** is `docs/uoc/pilot-ledger.json`, ignored by git and written by Benjamin:
 
@@ -64,20 +76,25 @@ These rules override the design where the two differ.
 }
 ```
 
-**Proposed caps, for Benjamin to set.** Real-material costs are unmeasured. The phase-2 figure came from a short synthetic source.
-
-| Run | Purpose | Proposed cap |
+| Run | Purpose | Allocation |
 |---|---|---|
-| S1 | Re-record synthetic replay fixtures (Task 10) | $1 |
+| S1 | Re-record the synthetic PDF replay fixtures (Task 10) | $1 |
 | P1 | BSBAUD412 baseline, including its regenerations | $3 |
-| E1… | One experiment each (§9 step 6 of the design), each a new import, including its regenerations | $3 each |
+| E1… | One experiment each (design §9 step 6), each a new import including its regenerations | $3 each |
 | **Total** | Everything in phase 3, S1 included | **$20** |
+
+With these allocations, at most five experiments fit (1 + 3 + 5 × 3 = 19). Listing more requires Benjamin to change a cap or the total.
 
 **Enforcement (Task 9):**
 - `generate` and `regenerate` take `--ledger <file> --run <runId>`.
-- They refuse when the run is not listed, when `--out` differs from the entry, when `--budget-usd` exceeds the entry's cap, or when the ledger's spent total plus this run's remaining cap would exceed `totalCapUsd`. The spent total is summed from the `cost.json` of every listed run directory. Unavailable-cost attempts count at their reservation.
-- The ledger is read and nothing is written to it. A new experiment is a new entry, written by Benjamin.
+- **Static allocation:** if the sum of all listed caps exceeds `totalCapUsd`, every paid run is refused until Benjamin edits the ledger. A cap stays allocated to its run whether or not the run has started. Two runs cannot contend for the same money, so concurrent starts need no shared reservation.
+- **Per run:** the command refuses when the run is not listed, when `--out` differs from the entry, when another entry names the same `outDir`, or when `--budget-usd` exceeds the entry's cap. The import's own per-import budget, which is cumulative across resumes, is set to at most the cap, so a resumed run is bounded by what it has already spent.
+- **Spend is read from attempt records** (`attempts.jsonl`): known and estimated costs, plus every attempt start without an outcome at its reservation. It is never read from `cost.json`, which is derived and may be missing or stale after a crash.
+- Spend and token caps are **estimated**, exactly as in phase 2. Dispatch is refused when spent plus the new reservation would cross the cap, but an attempt whose real usage exceeds its reservation can take a run over its cap, and so the pilot over its total, by that underestimate. Every outcome records the underestimate, and the gate report totals it.
+- The ledger is only read. A new experiment is a new entry, written by Benjamin.
 - `--provider replay` and `--provider fake` need no ledger. `--provider anthropic` and `--provider record` always do.
+
+**If a paid run fails**, its directory and records are kept as evidence, the failure is written into `docs/testing/phase-3-pilot.md` (numbers and error categories only for real material), and work stops. Another attempt is a new ledger entry (for example `S1b`) that Benjamin writes. Nothing assumes authorisation for a retry.
 
 ## Global constraints
 
@@ -88,6 +105,9 @@ Phase 2's global constraints continue to apply, unchanged: the engine boundary, 
 - **Store version 1 is read-only**, as in R5.
 - **The decision is derived in code** (`deriveDecision`) and nowhere else. No command accepts a decision as input except to check it against the derived one.
 - **Offsets vs counts**, as in C7. Every function that takes or returns an offset says so in its doc comment.
+- **Normalise before offsets** (R11). Offsets are only ever computed on the final stored text, and no function transforms stored text after offsets exist.
+- **Replay wire compatibility** (R12). Until Task 10, every change keeps existing replay requests byte-identical; the unchanged phase-2 replay test passing at each commit is the check.
+- **Every planned activity is accounted for** (R10). Any report that counts activities partitions the plan, and its tests assert the sum.
 - **Claims:** unreviewed output is described as "source citations" and "suggested alignment". "Verified" and "reviewed" are used only for a revision whose current build has a counted, accepted scored review. Nothing claims competency or satisfaction of an RTO's assessment requirements.
 
 ## Execution workflow and checkpoints
@@ -98,7 +118,7 @@ Execute tasks in order. Each task writes its failing tests first, runs them and 
 |---|---|---|---|
 | **A: engine and build identity** | 3 | Reviewer | Whole-diff review of Tasks 1–3; `pnpm verify` green |
 | **B: extraction inspection** | 8 | Benjamin, zero cost | `leap extract` on the BSBAUD412 packet; compare at least five representative tables with the original (design §4.2). Any mismatch goes back to Tasks 5–7 before anything else proceeds |
-| **C: authorise S1** | 9 | Benjamin | Ledger entry for S1. Task 10 does not start without it |
+| **C: authorise S1** | 10, offline part | Benjamin | Task 10's offline work is complete and green on its task branch, apart from the expected replay misses (see Task 10). Benjamin writes the S1 ledger entry; S1 runs only after that. The phase branch waits here, and Tasks 11–16 depend on Task 10 |
 | **D: tooling complete** | 16 | Reviewer | Whole-branch review; `pnpm verify` green; the pilot runbook reviewed |
 | **E: authorise P1** | D | Benjamin | Ledger entry for P1. This is the first paid BSBAUD412 run; it comes after A and B by construction |
 
@@ -128,6 +148,7 @@ packages/generator/src/
     import.ts                        parseScores, validateRows, rowKey, batchId
   report/gate.ts                     gateReport(imports) → GateReport; allocateShared
   pilot/ledger.ts                    readLedger, authoriseRun
+  llm/spend.ts                       spendFromAttempts (never reads cost.json)
   pipeline/regenerate.ts             regenerateActivity with RegenerationRequest
   store/types.ts                     BuildRecord, SheetManifest, ReviewBatch, ScoreRecord, RegenerationRequest; ImportStore additions; STORE_VERSION = 2
 apps/cli/src/
@@ -143,9 +164,9 @@ import.json                  + storeVersion: 2
 builds/<activity>-r<n>-<fp12>.h5p      immutable
 builds/records/<buildId>.json          BuildRecord, immutable
 reviews/sheets/<sheetId>.json          SheetManifest, immutable
-reviews/batches/<batchId>.json         ReviewBatch, immutable; the commit point
+reviews/batches/<seq6>-<batchId>.json  ReviewBatch, immutable; the commit point; seq orders history
 scores.jsonl                           ScoreRecord, append-only, derived from batches
-acceptances.jsonl                      AcceptanceRecord (+ batchId, + scoreRowKey), append-only
+acceptances.jsonl                      AcceptanceRecord (+ batchId, sequence, rowIndex, scoreRowKey), append-only
 regenerations.jsonl                    RegenerationRequest events, append-only, latest per requestId wins
 ```
 
@@ -206,7 +227,7 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 ### Task 3: Immutable build records, stamped at build time
 
-**Answers:** design §3.3–3.4, R3 (first generated revision), R5.
+**Answers:** design §3.3–3.4, R3 (first generated revision), R5, R10 (origin before dispatch).
 
 **Files:** `packages/generator/src/store/types.ts`, `memory-store.ts`, `pipeline/run-import.ts`, `apps/cli/src/file-store.ts`, `apps/cli/src/report.ts` (mapping and cost read builds), tests.
 
@@ -216,13 +237,15 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 - `putBuild(key, bytes)`: if the key exists with identical bytes, it is a no-op; with different bytes it throws `BuildIntegrityError` naming the key and both hashes. It never overwrites.
 - `runImport` stamps the engine identity from `deps.engineIdentity` when it **builds**, never when it produces. Resuming a saved candidate under a new engine builds under the new engine and records that. A promoted revision's `currentBuildId` names the build that was made.
 - `RunImportDeps.engineFingerprint: string` is replaced by `engineIdentity: EngineIdentity`. The test constant becomes a fixed identity object.
+- **Origin before dispatch (R10):** `OperationRecord` gains `origin: "generate" | "regenerate" | "shared"` and `requestId: string | null`, written when the operation starts. Every attempt-start record gains the same two fields, written before dispatch; `callModel` takes them from the stage runner's operation context and never infers them. Operations for parseUnit, extract, merge, align and plan are `shared`. The fields are local metadata: they are not part of the model request, so replay keys do not change.
 
 **Tests (write first):**
 - [ ] **Candidate under A, built under B:** a FakeProvider run stops after the produce operation persists the candidate (a fault injected at build). The resume uses identity B. The promoted revision's current build names B, the stored bytes' sha256 equals the build record's, and the resume makes zero provider calls.
 - [ ] **Lockfile only:** the same case with only `librariesLockSha256` differing.
 - [ ] **No rewriting history:** a revision promoted under A is built again under B through the store API directly (no command does this in phase 3). Two build records exist, A's bytes and record are unchanged, and `currentBuildId` names B. The corresponding review-side assertions come with score records: a review naming A's build is stale for current acceptance (Task 12) and historical in first-pass results (Task 14).
 - [ ] **Overwrite refused:** `putBuild` with different bytes for an existing key throws `BuildIntegrityError`; with identical bytes it succeeds and writes nothing (the file mtime is unchanged).
-- [ ] The phase-2 replay test still passes. Build keys change, and its assertions on build paths are updated to read them from build records.
+- [ ] A produce operation that exhausts its content attempts, with no revision ever persisted, leaves operation and attempt-start records carrying `origin: "generate"`.
+- [ ] The phase-2 replay test still passes with its requests unchanged. Build keys change, and its assertions on build paths are updated to read them from build records.
 
 **Verification:** `set -o pipefail; pnpm verify; echo "exit=$?"` → `exit=0`.
 
@@ -239,7 +262,7 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 **Files:** `packages/generator/src/ingest/admit.ts`, `source-document.ts`, `text.ts`, `pdf.ts`, `pipeline/fingerprint.ts`, tests; test fixtures under 500 characters are lengthened.
 
 **Contract:**
-- `normaliseSourceText(raw)`: CRLF → LF, trailing spaces before a newline removed, trim, then **NFC**. It is pure, enforces no limit, and is used by every adapter.
+- `normaliseSourceText(raw)`: CRLF → LF, trailing spaces before a newline removed, trim, then **NFC**. It is pure, enforces no limit, is idempotent (`normalise(normalise(x)) === normalise(x)`), and is used by every adapter. Plain-text, markdown and PDF paths normalise first and only then segment (R11).
 - `countCodePoints(text) = [...text].length`.
 - `admitSource(text)`: throws `EmptySourceError` for 0, `SourceTooSmallError(count)` for 1–499, and `SourceTooLargeError(count)` above 400,000; 500 and 400,000 are admitted. Messages name the count and the limit. `MIN_SOURCE_CODE_POINTS = 500`, `MAX_SOURCE_CODE_POINTS = 400_000`; `MAX_SOURCE_CHARACTERS` is removed.
 - `buildDocument` no longer enforces limits. The `ingest*` entry points call `admitSource` exactly once, on the final normalised text. There is no bypass flag.
@@ -254,6 +277,7 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 - [ ] PDF: a 101-page synthetic PDF (generated in the test with `pdf-lib`) is rejected before text extraction, and the text extraction is spied to be uncalled. A 100-page PDF is admitted on page count.
 - [ ] The limit applies only to the submitted source: `segmentSentences`, `chunkSentences` and `parseUnit` accept inputs under 500 (tested directly).
 - [ ] The fingerprint changes when `EXTRACTION_VERSION` changes.
+- [ ] `normaliseSourceText` is idempotent on a corpus of edge cases: NFD input, CRLF, trailing spaces, leading and trailing blank lines, and astral characters.
 
 **Verification:** `pnpm verify` → `exit=0`.
 
@@ -263,20 +287,24 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 ### Task 5: Structured blocks, the linearizer and atomic segments
 
-**Answers:** design §4.2, R4 (header rows, oversize rows).
+**Answers:** design §4.2, R4 (header rows, oversize rows), R11 (normalise before offsets), R12 (wire compatibility), R14 (oversize ordinary sentences).
 
-**Files:** `packages/generator/src/ingest/structure/blocks.ts`, `structure/linearize.ts`, `source-document.ts` (segmentation honours atomic ranges; `Sentence.headingPath`), `concepts/chunk.ts`, `concepts/extract.ts` (heading path shown as context), tests.
+**Files:** `packages/generator/src/ingest/structure/blocks.ts`, `structure/linearize.ts`, `source-document.ts` (`finaliseDocument`; segmentation honours atomic ranges; `Sentence.headingPath`), `concepts/chunk.ts`, `concepts/extract.ts` (heading context), `llm/models.ts` (`MAX_INPUT_TOKENS` per model), tests.
 
 **Contract:**
 - `Block = { kind: "heading"; level: 1..6; text } | { kind: "paragraph"; text } | { kind: "listItem"; depth; label; text } | { kind: "table"; index; headerRows: number; rows: Cell[][] } | { kind: "note"; n; text }`, where `Cell = { text; colSpan; rowSpan; blocks?: Block[] }` (a nested table sits in `blocks`).
+- **Normalise before offsets (R11).** `normaliseBlockText(t)` applies NFC, turns internal newlines into spaces, collapses runs of spaces and tabs to one space, and trims. Adapters apply it to every block and cell text **before** linearizing. `linearize` builds the text so that it has no trailing spaces, no leading or trailing blank lines and no CR, making it a fixed point of `normaliseSourceText`.
 - `linearize(blocks) → { text, segments: { charStart; charEnd; atomic: boolean; headingPath: string[] }[] }`. Offsets are UTF-16 code units into `text`.
   - Headings: their own line; they update the heading path.
   - List items: `"  ".repeat(depth) + label + " " + text`.
   - Tables: spans are expanded first, repeating the value in every grid position it covers. If `headerRows > 0`, the last header row supplies labels (earlier header rows are joined per column with " / "). If `headerRows === 0`, **no row is consumed**, labels are `Column 1…n`, and row numbering starts at 1 with the first row. Each data row becomes one line: `[Table <index>, row <r>] <label>: <cell>; <label>: <cell>`. Empty cells are written `<label>: —`. A nested table is written inline as `[Table <index>.<k> …]` in the cell's place. Each row line is an **atomic** segment.
   - Notes: `[Note n] text`, placed after the block that cites them.
-- `segmentSentences(text, segments?)`: without segments it behaves as in phase 2. With segments, atomic ranges are one sentence each and are never split; non-atomic ranges are split by the phase-2 rules. Each sentence carries the `headingPath` of its range.
-- `chunkSentences`: an **atomic** sentence whose estimate exceeds the budget throws `OversizeAtomicSegmentError { sentenceId, headingPath, label, estimatedTokens, budgetTokens }`, with a message naming the table and row, its size and the budget, and suggesting `--chunk-tokens` or splitting the table in the source. `runImport` performs chunking before any dispatch, so the import fails with no model call. A non-atomic oversize sentence keeps phase-2 behaviour (its own chunk).
-- The extraction prompt shows each chunk's heading paths as unquotable context lines, not numbered evidence.
+- `finaliseDocument(kind, text, segments, opts, extra)` throws `NormalisationInvariantError` if `normaliseSourceText(text) !== text`, then segments, then calls `admitSource`, then builds the `SourceDocument`. It never transforms `text`. `buildDocument` (plain paths) normalises and then calls `finaliseDocument` with no segments.
+- `segmentSentences(text, segments?)`: without segments it behaves as in phase 2. With segments, atomic ranges are one sentence each and are never split; non-atomic ranges are split by the phase-2 rules. Each sentence carries the `headingPath` of its range (empty for plain paths).
+- **Wire compatibility (R12):** the extraction prompt adds a heading-context block only when at least one sentence in the chunk has a non-empty heading path. PDF, text and markdown sources have none, so their requests are byte-identical to phase 2.
+- **Oversize atomic rows (R4):** `chunkSentences` throws `OversizeAtomicSegmentError { sentenceId, headingPath, label, estimatedTokens, budgetTokens }` for an **atomic** sentence whose estimate exceeds the chunk budget. The message names the table and row, its size and the budget, and suggests `--chunk-tokens` or splitting the table in the source.
+- **Oversize ordinary sentences (R14):** a non-atomic sentence larger than the budget still becomes its own chunk, as in phase 2. `MAX_INPUT_TOKENS` is added to `models.ts`, keyed by model ID, with the limits confirmed by the phase-2 preflight (`claude-haiku-4-5-20251001`: 200,000; `claude-sonnet-5`: 1,000,000). Before dispatch, every chunk's complete extraction request (system, context, user, serialised output schema, overhead allowance), estimated as the budget reservation estimates it, plus `maxOutputTokens`, must fit the extract model's limit. Otherwise `RequestTooLargeError { sentenceId, estimatedInputTokens, maxOutputTokens, limit }` is thrown.
+- `runImport` performs chunking and both size checks before any dispatch, so either error fails the import with zero model calls.
 
 **Tests (write first):**
 - [ ] Two-column key/value table with `headerRows: 0`: row 1 is preserved as `[Table 1, row 1] Column 1: Audit scope; Column 2: …`.
@@ -286,12 +314,15 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 - [ ] A nested table is written inline.
 - [ ] A row containing `". "` stays one sentence, and the `[Table …]` prefix is inside it.
 - [ ] Heading paths: a sentence under H1 › H2 carries both, and a new H2 replaces the old one.
-- [ ] Oversize atomic row: with a budget of 50 tokens, `runImport` with FakeProvider fails with `OversizeAtomicSegmentError` and FakeProvider records zero calls.
-- [ ] Offsets: for every segment, `text.slice(charStart, charEnd)` is the emitted line.
+- [ ] **Normalisation invariant:** blocks containing NFD Vietnamese before and inside a table, cell text with leading and trailing spaces and internal newlines, and a document with leading and trailing blank paragraphs. `normaliseSourceText(text) === text`; for every segment and every sentence, `text.slice(charStart, charEnd)` is exactly its text; and the stored text contains only NFC forms.
+- [ ] `finaliseDocument` given a non-normalised text throws `NormalisationInvariantError`.
+- [ ] Oversize atomic row: with a budget of 50 tokens, `runImport` with FakeProvider fails with `OversizeAtomicSegmentError`, and FakeProvider records zero calls.
+- [ ] Oversize ordinary sentence: with `MAX_INPUT_TOKENS` overridden to a small value for the test, a long non-atomic sentence gives `RequestTooLargeError` with zero calls, and at the real limit the same sentence is accepted.
+- [ ] **Wire compatibility:** for the phase-2 synthetic PDF, the extraction requests' `requestKey`s equal those of the recorded phase-2 fixtures (the replay test passes unchanged).
 
 **Verification:** `pnpm verify` → `exit=0`.
 
-**Commit:** `feat(ingest): structured blocks, a table-preserving linearizer, atomic row segments and heading paths`
+**Commit:** `feat(ingest): structured blocks, a table-preserving linearizer on normalised text, atomic rows and request-size checks`
 
 ---
 
@@ -308,15 +339,18 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
   - `table` → table: `thead`/`th` rows are counted as `headerRows` only when they come from `w:tblHeader`; `colspan`/`rowspan` are kept;
   - footnote and endnote references → note blocks placed after the citing block.
 - The task first checks mammoth's behaviour against the fixture: `th` for `w:tblHeader` rows, `colspan` for `gridSpan`, `rowspan` for `vMerge`, deletions dropped, insertions kept. Wherever mammoth does not deliver one of these, the adapter reads that property from `word/document.xml` (via jszip and xmldom) for the affected tables. The commit message records which path each property uses.
-- Custom numbering formats (`a)`, `i.`) are rendered as decimal or bullet labels. This is recorded as a known limitation in the adapter's doc comment and shown by `leap extract`.
+- Custom numbering formats (`a)`, `i.`) are rendered as decimal or bullet labels (R13). The adapter reads `word/numbering.xml` and the paragraphs' `w:numPr` from `word/document.xml`, and returns `warnings.listNumberingSimplified: { listIndex, headingPath, originalFormats: string[] }[]` for every list that uses a format other than `decimal` or `bullet`. It also returns `warnings.labelLikeReferences`: every sentence containing a pattern that looks like a list-label reference (`item [a-z]\)`, `\([a-z]\)`, `\([ivx]+\)`, `[a-z]\) above/below`), with its sentence ID.
+- Block texts go through `normaliseBlockText` before linearizing (R11).
 - The result goes through `linearize`, then `buildDocument("docx", …)` with segments, then `admitSource`. The metadata records `originalSha256`, `extractor: "docx"` and `extractionVersion`.
 
-**Fixture contents (synthetic):** H1 › H2 headings; a nested numbered list; a two-column key/value table without a header row; a table with a marked header row, a horizontal and a vertical merge, and a list inside a cell; a nested table; a footnote; a tracked insertion and a tracked deletion; more than 500 code points in total.
+**Fixture contents (synthetic):** H1 › H2 headings; a nested numbered list; a list numbered `a)`, `b)`, and a later sentence "see item b) above"; a two-column key/value table without a header row; a table with a marked header row, a horizontal and a vertical merge, and a list inside a cell; a nested table; a footnote; a tracked insertion and a tracked deletion; **NFD Vietnamese text in a paragraph before a table and inside a table cell; cells and paragraphs with leading and trailing spaces; leading and trailing empty paragraphs**; more than 500 code points in total.
 
 **Tests (write first):**
 - [ ] A golden linearized text for the fixture, compared exactly.
 - [ ] The tracked deletion's text is absent and the insertion's text is present.
 - [ ] The metadata fields are set, and `originalSha256` equals the sha256 of the input bytes.
+- [ ] **Citations slice back:** `normaliseSourceText(text) === text`, and for every sentence `text.slice(charStart, charEnd) === sentence.text`. The Vietnamese passages are NFC.
+- [ ] **Numbering warning:** the `a)` list appears in `listNumberingSimplified` with `lowerLetter`, and the "see item b) above" sentence appears in `labelLikeReferences`.
 
 **Verification:** `pnpm verify` → `exit=0`.
 
@@ -340,12 +374,13 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
   - `office:annotation` is skipped, and `text:tracked-changes` deletions are dropped.
 - Then linearize, `buildDocument("odt", …)` and `admitSource`, with the same metadata as DOCX.
 
-**Fixture contents:** the same structures as the DOCX fixture, expressed in ODF, so the linearized goldens can be compared structurally.
+**Fixture contents:** the same structures as the DOCX fixture, expressed in ODF, including the NFD Vietnamese before and inside a table and the leading and trailing whitespace, so the linearized goldens can be compared structurally. Block texts go through `normaliseBlockText` before linearizing (R11). ODT list labels come from the list style, so the `a)` list keeps its real labels; `labelLikeReferences` is still reported.
 
 **Tests (write first):**
 - [ ] A golden linearized text for the ODT fixture.
 - [ ] A cross-format test: the DOCX and ODT fixtures give the same table and list lines (headings and notes may differ in whitespace only, after normalisation).
-- [ ] `text:s text:c="3"` gives three spaces, and an annotation's text is absent.
+- [ ] `text:s text:c="3"` inside a sentence gives one space after block normalisation, and an annotation's text is absent.
+- [ ] **Citations slice back:** the same fixed-point and slicing assertions as the DOCX task.
 
 **Verification:** `pnpm verify` → `exit=0`.
 
@@ -363,12 +398,13 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 - `leap extract --source <file> --out <dir> [--chunk-tokens N]` makes no model call and needs no API key or ledger. It writes:
   - `extracted.txt`: the linearized text;
   - `tables.md`: per table, the index, heading path, row count, header labels or "no marked header row (Column n labels)", and the first two row lines;
-  - `extract.json`: `{ originalSha256, extractor, extractionVersion, textHash, codePoints, pages?, sentenceCount, atomicSegmentCount, oversizeAtomicSegments: [...] }`, with oversize segments computed against `--chunk-tokens` (default the pipeline default).
+  - `extract.json`: `{ originalSha256, extractor, extractionVersion, textHash, codePoints, pages?, sentenceCount, atomicSegmentCount, oversizeAtomicSegments: [...], oversizeRequests: [...], warnings: { listNumberingSimplified, labelLikeReferences } }`, with oversize segments and requests computed against `--chunk-tokens` (default the pipeline default) and `MAX_INPUT_TOKENS`;
+  - `warnings.md`: the simplified-numbering lists and label-like references, each with its heading path and the sentence text, for Checkpoint B.
 - The command exits 1 if admission fails, printing the count and the limit.
 - `--out` must not be inside the repository unless under `docs/uoc/`, so real material stays out of git. A test asserts the refusal.
 
 **Tests (write first):**
-- [ ] Running on the DOCX fixture writes the three files, and `tables.md` lists the key/value table as having no marked header row.
+- [ ] Running on the DOCX fixture writes the four files, `tables.md` lists the key/value table as having no marked header row, and `warnings.md` lists the `a)` list and the "see item b) above" reference.
 - [ ] A source of 499 code points exits 1 with the admission message.
 - [ ] An `--out` inside the repo and outside `docs/uoc/` exits 1.
 
@@ -376,53 +412,72 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 **Commit:** `feat(cli): leap extract for zero-cost inspection; generate accepts DOCX and ODT`
 
-**→ Checkpoint B.** Benjamin runs `leap extract --source docs/uoc/BSBAUD412/<packet> --out docs/uoc/BSBAUD412/extract-1` and checks at least five tables against the original (merged cells, a table across pages, lists in cells, a key/value table, a table without headers), and reviews `oversizeAtomicSegments`. The result, with table numbers and pass or fail but no content, goes into `docs/testing/phase-3-pilot.md`.
+**→ Checkpoint B.** Benjamin runs `leap extract --source docs/uoc/BSBAUD412/<packet> --out docs/uoc/BSBAUD412/extract-1` and checks at least five tables against the original (merged cells, a table across pages, lists in cells, a key/value table, a table without headers), reviews `oversizeAtomicSegments` and `oversizeRequests`, and checks every entry in `warnings.md`: each label-like reference must still point unambiguously at the right item. If any does not, the DOCX adapter renders real numbering formats before P1 (a change to Task 6 with its own tests). The result, with table numbers and pass or fail but no content, goes into `docs/testing/phase-3-pilot.md`.
 
 ---
 
 ### Task 9: Pilot ledger and paid-run authorisation
 
-**Answers:** R6.
+**Answers:** R6, R7.
 
-**Files:** `packages/generator/src/pilot/ledger.ts`, `apps/cli/src/generate.ts`, `apps/cli/src/index.ts`, tests.
+**Files:** `packages/generator/src/pilot/ledger.ts`, `packages/generator/src/llm/spend.ts` (`spendFromAttempts`), `apps/cli/src/generate.ts`, `apps/cli/src/index.ts`, tests.
 
 **Contract:**
-- `readLedger(path)` validates with Zod: `totalCapUsd > 0`; runs with unique `runId`s, an absolute `outDir`, `capUsd > 0`, and non-empty `authorisedBy` and `authorisedOn`.
-- `authoriseRun(ledger, { runId, outDir, budgetUsd }, spentByRun)` returns `ok` or a refusal naming the rule:
+- `readLedger(path)` validates with Zod: `totalCapUsd > 0`; runs with unique `runId`s and unique absolute `outDir`s, `capUsd > 0`, and non-empty `authorisedBy` and `authorisedOn`.
+- `authoriseRun(ledger, { runId, outDir, budgetUsd })` is pure. It returns `ok` or a refusal naming the rule:
+  - the listed caps sum to more than `totalCapUsd` (static allocation; every run is refused until the ledger is corrected);
   - the run is not listed;
-  - `outDir` differs;
-  - `budgetUsd` is above the run's cap;
-  - Σ spent over all runs − spent on this run + this run's cap is above the total. The reservation is the run's full cap, so a run can never be authorised into overspending the total.
-- `spentByRun` is read from each listed `outDir`'s `cost.json`: known and estimated costs, plus unavailable-cost attempts at their reservation. A missing directory counts as 0.
-- `generate` requires `--ledger` and `--run` when the provider is `anthropic` or `record`, and checks before creating or resuming anything. Task 13 applies the same check to `regenerate`. Replay and fake providers ignore the ledger.
+  - `outDir` differs from the entry;
+  - `budgetUsd` is above the run's cap.
+- `spendFromAttempts(attempts)` sums known and estimated outcome costs, plus the reservation of every attempt start with no outcome. It is the same accounting the budget uses on resume, and is used for display and for the per-run check. It never reads `cost.json`.
+- `generate` requires `--ledger` and `--run` when the provider is `anthropic` or `record`, and runs `authoriseRun` before creating or resuming anything. On resume, it also refuses if `spendFromAttempts` for the directory already meets the cap, with a message giving spend and cap. The import's per-import budget is set to `min(--budget-usd, cap)`; the phase-2 rule that a resume may raise the budget is bounded by the cap. Task 13 applies the same checks to `regenerate`. Replay and fake providers ignore the ledger.
+- The documentation and messages call caps **estimated** and never say a run or the pilot "cannot" exceed them.
 
 **Tests (write first):**
 - [ ] Each refusal rule, with its message.
 - [ ] `generate --provider record` without `--ledger` exits 1 before any directory is created.
-- [ ] Two listed runs with $2.50 spent against a $5 total: a third run with a $3 cap is refused, and with a $2.50 cap is allowed.
-- [ ] Unavailable-cost attempts count at their reservation.
+- [ ] **Static allocation:** caps of 1 + 3 + 3 against a total of 5 refuse every run; against 7 they allow each.
+- [ ] **Concurrent authorisations:** two `generate` processes (FakeProvider behind the `record` code path, injected for the test) for two listed runs start at the same moment. Both are authorised, each import's budget equals its own cap, and neither run's spend counts against the other.
+- [ ] **Crash with no `cost.json`:** a run directory with attempt starts and outcomes but no `cost.json`, including one start without an outcome. `spendFromAttempts` counts the orphan start at its reservation, and resume authorisation uses that figure.
+- [ ] **Resuming a partly spent run:** a directory with $0.60 spent against a $1 cap resumes with a per-import budget of $1, and a dispatch whose reservation would cross $1 is refused. A directory whose spend already meets the cap is refused before any dispatch.
+- [ ] `--budget-usd` above the cap is refused, and at the cap it is allowed.
 
 **Verification:** `pnpm verify` → `exit=0`.
 
-**Commit:** `feat(cli): pilot ledger; paid runs need an authorised, capped entry`
-
-**→ Checkpoint C.** Benjamin writes the S1 entry before Task 10 starts.
+**Commit:** `feat(cli): pilot ledger with static cap allocation; spend read from attempt records`
 
 ---
 
 ### Task 10: Knowledge Evidence tree, assessment conditions, source authority and KE alignment
 
-**Answers:** design §4.3–4.4. This is the only task that changes model prompts or output schemas, so the replay fixtures break here and are re-recorded here (run S1).
+**Answers:** design §4.3–4.4, R12. This is the first task that changes model requests, so the synthetic replay fixtures are re-recorded here (run S1).
 
-**Files:** `packages/shared/src/competency.ts`, `packages/shared/src/concepts.ts`, `packages/generator/src/schemas/model-output.ts`, `competency/parse-unit.ts`, `concepts/extract.ts`, `concepts/align.ts`, `plan/planner.ts`, `prompts/system.ts` (`PROMPT_VERSION` bump), synthetic fixtures under `test/fixtures/synthetic/` (the unit gains nested KE bullets and an Assessment Conditions section allowing a workplace or a simulated environment; a new packet fixture has an "RTO instructions" section stating that there is no simulated option), `test/fixtures/replay/synthetic/` (re-recorded), tests.
+**Branching:** the offline part (steps 1–3) is committed on a task branch, `phase-3/task-10`. The phase branch never holds a commit whose verification is red. After Checkpoint C and a successful S1 (step 4), the task branch is fast-forwarded into the phase branch.
+
+**Files:** `packages/shared/src/competency.ts`, `packages/shared/src/concepts.ts`, `packages/generator/src/schemas/model-output.ts`, `competency/parse-unit.ts`, `concepts/extract.ts`, `concepts/align.ts`, `plan/planner.ts`, `prompts/system.ts` (`PROMPT_VERSION` bump), `packages/generator/test/helpers/s1-settings.ts`, the synthetic fixtures, `test/fixtures/replay/synthetic/` (re-recorded), tests.
 
 **Contract:**
 - `KnowledgeEvidenceNode = { id: string; text: string; children: KnowledgeEvidenceNode[] }`, with IDs `KE<n>` and `KE<n>.<m>`, assigned in code in document order, never by the model. The model returns the tree without IDs. `UnitOfCompetency` gains `knowledgeEvidence: KnowledgeEvidenceNode[]`, `assessmentConditions: string | null` (verbatim) and `release: string | null` (as printed). `targetsOf(unit)` returns PCs and every KE node as `{ id, kind: "pc" | "ke", text, path }`.
 - The parse prompt requires verbatim wording and nesting. A check verifies that every KE `text` and the assessment conditions occur, after whitespace normalisation, in the pasted unit text; a failure is a content retry.
 - `Concept.kind: "content" | "rto-instruction"`. The extract prompt defines an RTO instruction as a statement about how one provider organises, delivers, assesses or administers the unit (assessment arrangements, submission rules, simulated or workplace options, attempts, deadlines). The merge keeps kind, and `rto-instruction` wins on conflict.
-- Alignment covers every target from `targetsOf(unit)` under the phase-2 evidence rule. Only `content` concepts are offered. `unsupportedCriteriaIds` includes unsupported KE nodes. Provenance `criteriaIds` holds PC and KE IDs; the field name is unchanged (recorded as a deviation).
+- Alignment covers every target from `targetsOf(unit)` under the phase-2 evidence rule. Only `content` concepts are offered. `unsupportedCriteriaIds` includes unsupported KE nodes. Provenance `criteriaIds` holds PC and KE IDs; the field name is unchanged (a recorded deviation, accepted).
 - The planner never allocates an `rto-instruction` concept. Assessment conditions are never taken from the source document.
 - Records naming target IDs carry `unitTextHash`.
+
+**S1 fixture and settings (R12), pinned in `test/helpers/s1-settings.ts` as `S1_SETTINGS`:**
+- Source: `packages/generator/test/fixtures/synthetic/source-electrical-safety.pdf`, regenerated by its existing script from the source text. The text gains an "RTO instructions" section stating that assessment has no simulated option, and stays above 500 code points and ASCII-only.
+- Unit: `packages/generator/test/fixtures/synthetic/unit-synele001.txt`, gaining nested Knowledge Evidence bullets and an Assessment Conditions section allowing a workplace or a simulated environment.
+- Settings: types `multiChoice, blanks, flashcards`; language `en`; `DEFAULT_PROMPT_CONFIG`; customisation `null`; chunk budget `DEFAULT_CHUNK_TOKENS`; plan rules `DEFAULT_PLAN_RULES`; import ID `s1`; concurrency 1, so request order is deterministic.
+- **Replay consumers:** `packages/generator/test/replay.test.ts` and `apps/cli/test/pilot-rehearsal.test.ts` (Task 15). Both import `S1_SETTINGS`, and a test asserts that each consumer's generate inputs deep-equal it. DOCX and ODT pipeline paths never replay S1; they run on FakeProvider.
+
+**Steps:**
+1. Write the FakeProvider tests below and see them fail.
+2. Implement. Add request-shape tests: every new and changed model-output schema passes the phase-2 `toProviderSchema` contract test, and the parse, extract and align requests for `S1_SETTINGS` are snapshotted (system, user and the serialised schema), so any later unintended change shows in review.
+3. **Offline verification:** `pnpm verify` passes except `replay.test.ts`, which must fail **only** with `ReplayMissError` for the changed requests. A script, `scripts/expect-replay-miss.sh`, runs it and checks exactly that, and it is part of this step's verification. Commit on `phase-3/task-10`.
+4. **→ Checkpoint C**, then S1, only after Benjamin's ledger entry exists:
+   `node --env-file=.env apps/cli/dist/index.js generate --source packages/generator/test/fixtures/synthetic/source-electrical-safety.pdf --unit packages/generator/test/fixtures/synthetic/unit-synele001.txt --out <S1 outDir> --budget-usd 1 --provider record --fixtures packages/generator/test/fixtures/replay/synthetic --ledger docs/uoc/pilot-ledger.json --run S1 --concurrency 1`
+   Stale fixture files are removed first, in the same commit. `replay.test.ts` is updated for the new counts and targets, and `scripts/expect-replay-miss.sh` is deleted.
+5. **If S1 fails** (a provider error, a content failure that leaves the replay set incomplete, or a cap refusal), keep its directory and recorded files, write the failure into `docs/testing/phase-3-pilot.md`, and stop. A retry needs a new ledger entry.
 
 **Tests (write first, FakeProvider):**
 - [ ] Nested KE bullets give `KE1`, `KE2`, `KE2.1`, `KE2.2` with the wording verbatim. Paraphrased KE text in a fake response triggers a content retry.
@@ -430,10 +485,9 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 - [ ] **Negative test:** with the synthetic packet and unit, the "no simulated option" statement's concept has kind `rto-instruction`, the plan targets no such concept, the alignment offers none, and the parsed unit's assessment conditions still allow a simulated environment.
 - [ ] Alignment returns entries for every PC and KE node, and KE-only support appears in `unsupportedCriteriaIds` when absent.
 - [ ] The same unit text gives the same IDs, and a changed unit text gives a different `unitTextHash`.
+- [ ] Both replay consumers' inputs deep-equal `S1_SETTINGS`.
 
-**Re-record (S1, authorised at Checkpoint C):** `node --env-file=.env apps/cli/dist/index.js generate --source <synthetic packet> --unit <synthetic unit> --out <S1 outDir> --budget-usd 1 --provider record --fixtures packages/generator/test/fixtures/replay/synthetic --ledger docs/uoc/pilot-ledger.json --run S1`. Stale fixture files are removed first (`git rm` the old directory contents in the same commit). `replay.test.ts` is updated for the new counts and targets.
-
-**Verification:** `pnpm verify` → `exit=0`, and the S1 cost from `cost.json` is recorded in the commit message.
+**Verification:** after step 4, `pnpm verify` → `exit=0` with no replay miss, and the S1 cost, from `spendFromAttempts`, is recorded in the commit message.
 
 **Commit:** `feat(generator): Knowledge Evidence tree and alignment, assessment conditions, RTO-instruction classification; re-record synthetic fixtures`
 
@@ -473,7 +527,7 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 ### Task 12: Score import: validation, findings, row identity, batch commit and recovery
 
-**Answers:** design §7.2–7.3, R1, R2, C4, C5.
+**Answers:** design §7.2–7.3, R1, R2, R8, C4, C5.
 
 **Files:** `packages/generator/src/review/rubric.ts`, `review/import.ts`, `store/types.ts` (`ReviewBatch`, `ScoreRecord`, `commitBatch`, `listBatches`, `putScore`, `listScores`), `memory-store.ts`, `apps/cli/src/file-store.ts`, `apps/cli/src/review-import.ts`, `apps/cli/src/review.ts` (refuse `--decision` on v2), tests.
 
@@ -494,19 +548,21 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 **Contract, commit and recovery:**
 - If validation reports any error or stale row, nothing is written and the command exits 1 with the full list.
-- Otherwise, the new rows form `ReviewBatch { batchId; sheetId; reviewer; importedAt; rows: ScoreRecord[] }` with `batchId = sha256(sorted rowKeys)`. It is written to `reviews/batches/<batchId>.json` by temporary file and atomic rename under the import's lock; the rename is the commit point.
-- After commit, one `ScoreRecord` per row is appended to `scores.jsonl`, and one `AcceptanceRecord { …, decision, batchId, scoreRowKey, buildId }` per row to `acceptances.jsonl`.
-- **Recovery:** on every lock acquisition in a version-2 store, `replayCommittedBatches()` appends any score or acceptance record whose `(batchId, rowKey)` is missing from the ledgers. It is idempotent.
+- Otherwise, the new rows form `ReviewBatch { batchId; sequence; sheetId; reviewer; importedAt; rows: ScoreRecord[] }`, with `batchId = sha256(sorted rowKeys)` and rows in CSV order. Under the import's lock, `sequence` = 1 + the highest sequence among committed batches (read from the batch files, not the ledgers). The batch is written to `reviews/batches/<sequence, zero-padded to 6>-<batchId>.json` by temporary file and atomic rename; the rename is the commit point. If a batch with the same `batchId` is already committed, nothing is written.
+- After commit, one `ScoreRecord` per row is appended to `scores.jsonl`, and one `AcceptanceRecord { …, decision, batchId, sequence, rowIndex, scoreRowKey, buildId }` per row to `acceptances.jsonl`.
+- **Recovery:** on every lock acquisition in a version-2 store, `replayCommittedBatches()` reads batch files in ascending `sequence` and appends any score or acceptance record whose `(batchId, rowKey)` is missing from the ledgers. It is idempotent.
+- **Order (R8):** every `ScoreRecord` and acceptance record carries `sequence` and `rowIndex`. Every reader decides "latest" by `(sequence, rowIndex)`. No reader uses directory enumeration order or the order in which records were appended, so records replayed late cannot reorder history.
 - With zero new rows, the command prints `nothing new to import (<n> rows already committed, <m> not scored)`, exits 0 and writes nothing.
-- `ScoreRecord { rowKey; batchId; sheetId; importId; activityId; revision; buildId; unitTextHash; rubricVersion; reviewer; scores; findings; minutes; decision; decidedAt }`.
+- `ScoreRecord { rowKey; batchId; sequence; rowIndex; sheetId; importId; activityId; revision; buildId; unitTextHash; rubricVersion; reviewer; scores; findings; minutes; decision; decidedAt }`.
 - `leap review --decision` on a version-2 store exits 1: `acceptance is recorded through leap review-sheet and leap review-import`. `review --criterion` continues, and accepts KE IDs.
 
 **Tests (write first):**
 - [ ] **R1 sequence:** export a sheet for four activities; score two; import (2 committed); complete the other two in the same files, leaving the first two unchanged; import (2 new, 2 recognised as already committed); import again (nothing new). Exactly four score and four acceptance records, and two batch files.
 - [ ] **Unaffected rows:** after the first import, the remaining rows validate even though the reviewed set changed.
-- [ ] **Stale:** regenerate one activity after export (fixture-level promotion of a new revision). That row is reported stale with "revision changed"; the other rows import.
+- [ ] **Stale, all-or-nothing:** regenerate one activity after export (fixture-level promotion of a new revision), then import a file in which that row and two others are scored. The command exits 1, reports the row as stale with "revision changed", and writes nothing: no batch file, and the score and acceptance ledgers are byte-identical. Blanking the stale row's scores (so it is not scored) and importing again commits the other two.
 - [ ] **Committed before stale:** a row committed, then its activity regenerated, then the same file imported again: the row is reported as already committed, not stale.
-- [ ] **Correction:** changing a committed row's score gives a new `rowKey`. If still current, it commits as a new record and latest wins; if stale, it is refused.
+- [ ] **Correction:** changing a committed row's score gives a new `rowKey`. If still current, it commits in a new batch with a higher `sequence`, and readers return it; if stale, the whole import is refused.
+- [ ] **Recovery order:** batches 1 and 2 both score the same activity. The ledgers hold batch 2's records but are missing batch 1's (fixture). Recovery appends batch 1's records after batch 2's, and every reader still returns batch 2's score and decision. Renaming batch files so that directory order differs from sequence order changes nothing.
 - [ ] Duplicate `activityId` rows, unknown `sheetId`, a partly scored row, `na` on an applicable dimension, an unknown `itemId`, a finding on a non-applicable dimension, and a score of 1 without a finding each produce their named error, and all appear in one run.
 - [ ] A contradictory decision column shows the derived decision; a blank one is fine.
 - [ ] **Crash recovery:** a fault is injected after the batch rename and before the ledger appends. The next command that takes the lock appends the missing records once. A second lock acquisition appends nothing.
@@ -521,71 +577,85 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 ### Task 13: `leap regenerate` with logical requests and an allowance
 
-**Answers:** design §6, C2, R6.
+**Answers:** design §6, C2, R6, R7, R9, R10.
 
 **Files:** `packages/generator/src/pipeline/regenerate.ts`, `store/types.ts` (`RegenerationRequest`, `putRegeneration`, `listRegenerations`), `memory-store.ts`, `apps/cli/src/file-store.ts`, `apps/cli/src/regenerate.ts`, `apps/cli/src/index.ts`, tests.
 
 **Contract:**
 - `RegenerationRequest { requestId; importId; activityId; index; baseRevision; targetRevision; note; status: "running" | "succeeded" | "failed"; outcome: string | null; createdAt; completedAt: string | null }`, with `requestId = <activityId>:regen:<index>`. Events are appended; the latest per `requestId` wins.
-- `leap regenerate --out <dir> --activity <id> --note "<text>" [--ledger --run]`, under the lock:
-  1. It refuses store version 1, an activity without a promoted revision, or an activity whose current build's counted decision is not `needs-revision` or `rejected`.
-  2. If the activity's latest request is `running`, the command **resumes** it. The note must equal the stored note, or the command exits 1 showing the stored note. No allowance is consumed.
-  3. Otherwise, if the activity already has 2 requests (any status), the command refuses: `activity <id> has used its 2 regenerations in this pilot`.
-  4. Otherwise it appends request `index = count + 1` with `status: "running"` and `targetRevision = max(revision) + 1`, **before any dispatch**. From this point the request counts.
-  5. It runs the produce operation with key `<importId>:produce:<activityId>:r<targetRevision>`, prompting with the note appended as in parent §5. The resulting revision has `origin: "regenerate"` and the `requestId`. It builds a new build record, validates and promotes only on success; the previous revision is superseded and keeps its builds and reviews.
-  6. It appends `succeeded` or `failed`, with the outcome (content failure, budget, system).
-- Budget: the import's existing per-import budget applies. The ledger check (Task 9) runs first for paid providers.
-- Regeneration attempts are recorded like any other; `cost.json` attributes them to the activity with `purpose: "produce"` and the request ID.
+- `leap regenerate --out <dir> --activity <id> [--note "<text>"] [--ledger --run]`, under the lock, in this order:
+  1. Refuse store version 1. For paid providers, run the ledger checks (Task 9).
+  2. **Reconcile first (R9).** If the activity's latest request is `running`, the command finishes **that** request. `--note` may be omitted; if given, it must equal the stored note, or the command exits 1 showing it. No eligibility or allowance check applies, and no allowance is consumed. Reconciliation looks at what already exists for `targetRevision`:
+     - promoted revision with a current build → append `succeeded`; no model call and no build;
+     - build record for the revision under the current engine, not yet promoted → promote, then append `succeeded`; no model call;
+     - candidate revision persisted, no build under the current engine → build, validate, promote, append `succeeded`; no model call;
+     - produce operation `succeeded` with a persisted result → as the candidate case;
+     - otherwise → run the produce operation with its stable key, which reuses any recorded outcome under phase-2 operation semantics, then build and promote.
+     A content or budget failure during reconciliation appends `failed` with its outcome.
+  3. **Only when creating a new request:** refuse an activity without a promoted revision, an activity whose current build's counted decision is not `needs-revision` or `rejected`, and an activity that already has 2 requests of any status (`activity <id> has used its 2 regenerations in this pilot`). `--note` is required.
+  4. Append request `index = count + 1`, `status: "running"`, `targetRevision = max(revision) + 1`, **before any dispatch**. From this point the request counts.
+  5. Run the produce operation with key `<importId>:produce:<activityId>:r<targetRevision>`, `origin: "regenerate"` and the `requestId` on the operation and on every attempt start (R10). The prompt has the note appended, as in parent §5. The revision has `origin: "regenerate"` and the `requestId`. Build a new build record, validate, and promote only on success; the previous revision is superseded and keeps its builds and reviews.
+  6. Append `succeeded` or `failed`, with the outcome (content, budget or system).
+- Budget: the import's per-import budget applies, bounded by the ledger cap for paid providers.
 
 **Tests (write first, FakeProvider):**
 - [ ] A `needs-revision` activity regenerates: revision 2 is promoted with `origin: "regenerate"`, and revision 1 and its review are unchanged.
 - [ ] An `accepted` activity is refused, as is an activity with no scored review.
-- [ ] **Interrupted request:** a fault after the request is appended and the operation starts; rerunning with the same note resumes the same `requestId` and `targetRevision`, and the provider calls total one logical production (the phase-2 operation reuse holds). A different note is refused.
+- [ ] **Interruptions (R9).** Each case injects a fault at the named point, then reruns `leap regenerate --activity <id>` with no note. It must finish the same `requestId` with the same `targetRevision`, append exactly one `succeeded`, consume no allowance, and make exactly the expected number of provider calls in total:
+  - after the request is appended, before dispatch → one production;
+  - after the candidate revision is persisted → one production in total (none on resume);
+  - after the build bytes and build record are persisted, before promotion → one production, and no second build record;
+  - after promotion, before the `succeeded` event (revision 2 is promoted and has no review, so the eligibility check would refuse it) → one production, and the resume only appends `succeeded`.
+- [ ] A rerun with a different `--note` during a running request is refused and shows the stored note.
 - [ ] **Allowance counts failures:** request 1 fails on content and request 2 succeeds; a third request is refused.
 - [ ] A budget-refused request is recorded `failed` and counts.
 - [ ] A paid provider without a ledger entry is refused before any request is appended.
+- [ ] A regeneration whose produce operation exhausts its content attempts leaves no revision, and its operation and attempt starts carry `origin: "regenerate"` and the `requestId`.
 
 **Verification:** `pnpm verify` → `exit=0`.
 
-**Commit:** `feat(cli): leap regenerate with persisted logical requests and a two-request allowance`
+**Commit:** `feat(cli): leap regenerate with persisted logical requests, recovery before eligibility, and a two-request allowance`
 
 ---
 
 ### Task 14: Gate report
 
-**Answers:** design §8, C1, C3, C6, R3, R5.
+**Answers:** design §8, C1, C3, C6, R3, R5, R10.
 
 **Files:** `packages/generator/src/report/gate.ts`, `apps/cli/src/gate-report.ts`, `apps/cli/src/index.ts`, tests.
 
 **Contract, per import:**
 - **Unit identity:** the unit code, release and short hash, and the import's store version.
 - **Legacy (v1) directories** are listed under "Not eligible (phase-2 store)", with historical acceptance counts labelled "no rubric scores; excluded from the gate". No other figure uses them.
-- **Denominators per type**, as raw counts:
-  - `planned`: activities in the saved plan;
-  - `notAttempted`: failed with `skipped:` and never produced;
-  - `generationFailed`: an `origin: "generate"` revision never promoted, because of a content or system failure;
-  - `promoted`: the first generated revision was promoted;
-  - `reviewed`: the first generated revision has at least one scored review, on any build;
-  - `unreviewed = promoted − reviewed`.
-- **First-pass results** use the first scored review of the first generated revision. `acceptedFirstPass`, `needsRevisionFirstPass` and `rejectedFirstPass` are shown as `n/reviewed` and `n/planned` (end to end). A first-pass review whose build is no longer current is still counted here and labelled `historical` (C3).
-- **After-revision results** use the latest revision's current build and its latest counted scored review (non-stale). They show accepted after revision `n/planned`, and among reviewed; regenerations used and failed; their extra cost; and extra review minutes. Activities whose latest revision is unreviewed are counted as `awaitingReview`.
-- **Gate status per import:** `incomplete` if `unreviewed > 0` or `awaitingReview > 0`, listing the activities; otherwise `complete`. Thresholds are evaluated only on complete imports, and only once they are frozen (Task 16 records them); before that the report shows the provisional targets and "not frozen".
+- **Sources of truth (R10):** the saved plan, activity records, operation records and attempt records, then revisions, builds and score records. A count never depends on a revision existing. First-pass work is whatever carries `origin: "generate"` on its operation and attempt starts; regeneration work carries `origin: "regenerate"`.
+- **First-pass partition per type.** Every planned activity falls into exactly one category, and the report prints the sum next to `planned`:
+  - `dropped`: the activity is flagged dropped (no CLI command drops in phase 3; the category exists so the sum holds);
+  - `notAttempted`: no `origin: "generate"` produce operation ever started (for example, skipped by a stop and never resumed);
+  - `inProgress`: a `generate` produce operation is `running`;
+  - `generationFailed`: every `generate` produce operation for the activity ended `failed`, or a candidate was built and rejected, and no `generate` revision was promoted. This includes producers that exhausted their content attempts without persisting any revision;
+  - `unreviewed`: the first generated revision (the lowest-numbered `origin: "generate"` revision that was promoted) has no scored review;
+  - `accepted`, `needsRevision`, `rejected`: the decision of the first scored review of that revision, in `(sequence, rowIndex)` order, on whatever build it was made (C3: labelled `historical` when that build is no longer current).
+- **First-pass rates:** `accepted / reviewed` among reviewed outputs, where `reviewed = accepted + needsRevision + rejected`; and `accepted / planned` end to end. Both are shown with raw counts.
+- **After-revision partition per type**, over the same planned activities: `dropped`, `notAttempted`, `inProgress`, `generationFailed` (no revision of any origin was ever promoted), `awaitingReview` (the latest promoted revision's current build has no counted, non-stale scored review), `accepted`, `needsRevision`, `rejected`. Each shows accepted after revision among reviewed and among planned, regenerations used and failed, their extra cost, and extra review minutes.
+- **Gate status per import:** `incomplete` if any first-pass activity is `unreviewed` or `inProgress`, or any after-revision activity is `awaitingReview` or `inProgress`, with the activities listed; otherwise `complete`. **An incomplete import can never pass.** Thresholds are evaluated only on complete imports, and only once frozen (the runbook records them); before that the report shows the provisional targets and "not frozen".
 - **Distributions** for each dimension of the 0/1/2/na counts, for first-pass and after-revision separately. Distractors and usefulness each have their own rows.
 - **Items** (flashcards, blanks): items inspected, which is every item of every reviewed revision, and distinct failing items per dimension from findings.
 - **Minutes:** median and total, per activity and per item, first-pass and revisions separately, with item count alongside.
-- **Cost (C1):**
-  - `direct[type]` covers all produce attempts, including failed, retries and regenerations;
-  - `firstPassDirect[type]` covers attempts of `origin: "generate"` revisions only;
-  - `shared` covers parseUnit, extract, merge, align and plan;
-  - `allocateShared(shared, firstPassDirect, planned)` splits by the known and estimated `firstPassDirect` share, or by planned count if that total is 0;
-  - first-pass cost per accepted = (allocated + firstPassDirect) / acceptedFirstPass; after-revision = (allocated + direct) / acceptedAfterRevision;
-  - `n/a (0 accepted)` with the spend shown; any input with an unavailable-cost attempt marks the figure `lower bound (<k> attempts without cost)`.
+- **Cost (C1, R10), from attempt records only:**
+  - `firstPassDirect[type]`: attempts whose start carries `origin: "generate"` on a produce operation of that type's activities, including failed attempts, content retries and transient retries, whether or not a revision exists;
+  - `regenerationDirect[type]`: the same for `origin: "regenerate"`;
+  - `shared`: attempts on `shared` operations (parseUnit, extract, merge, align, plan);
+  - `allocateShared(shared, firstPassDirect, planned)` is an **accounting convention**: shared cost split by each type's share of known and estimated `firstPassDirect`, or by planned count if that total is 0. It makes no claim about which type consumed the source work;
+  - first-pass cost per accepted = (allocated + firstPassDirect) / first-pass `accepted`; after-revision = (allocated + firstPassDirect + regenerationDirect) / after-revision `accepted`;
+  - a type with 0 accepted shows `n/a (0 accepted)` with its spend;
+  - an attempt with unavailable cost is never priced at zero: it is excluded from the sums, counted per type, and every figure it would enter is marked `lower bound (<k> attempts without cost)`. Attempt starts without an outcome are listed as billing-uncertain, at their reservation, in a separate line.
 - **Also:** unsupported and never-targeted PCs and KE nodes; the negative-check count (findings whose reason is tagged `rto-claim`, a reason prefix the sheet documents); stale reviews; and build engine displays, extraction version, prompt version, model roles and rubric version.
 
 **Contract, across imports:** `leap gate-report <dir>...` shows each import as above, then a pooled table per type with a per-unit breakdown. It states the sample against the minimum planned sample of 25/15/5 packages as "planned minimum", with no confidence claim (C6). It writes `gate-report.md` in the first directory; `--summary <file>` writes a numbers-only copy containing no content strings, and a test asserts that no source sentence, no activity text and no target text appears in it.
 
 **Tests (write first, fixture-built stores):**
-- [ ] The denominators on a fixture with one skipped, one content failure, one promoted-unreviewed, and accepted, needs-revision and rejected first-pass activities.
+- [ ] **Partition:** a fixture with one skipped, one in progress, one content failure **that never persisted a revision**, one build rejection, one promoted-unreviewed, and accepted, needs-revision and rejected first-pass activities. Every category count is right, and the categories sum to `planned` for both partitions. A property test over randomly generated store states asserts the sums.
+- [ ] The content failure without a revision contributes its attempts to `firstPassDirect` and counts in `generationFailed`.
 - [ ] Incomplete status while one review is missing, and complete once it is imported.
 - [ ] First pass vs after revision: needs-revision r1 → accepted r2 shows first-pass needs-revision and after-revision accepted, with the regeneration cost counted only after revision.
 - [ ] A stale first-pass review is counted in first pass as `historical` and not in after-revision acceptance.
@@ -601,16 +671,20 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 ### Task 15: CLI wiring, end-to-end offline pilot rehearsal
 
-**Answers:** integration of Tasks 1–14.
+**Answers:** integration of Tasks 1–14, R12.
 
 **Files:** `apps/cli/test/pilot-rehearsal.test.ts`, `apps/cli/src/index.ts` (help text), README (phase-3 commands).
 
-**Contract:** a full rehearsal on the synthetic fixtures, with no network, no ledger and no key. `generate` uses the replay provider and the fixtures re-recorded in Task 10. `regenerate` uses FakeProvider with hand-authored responses labelled synthetic, because Task 10's recording precedes the regenerate command:
+**Contract:** two offline rehearsals, with no network, no ledger and no key.
 
-`extract` → `generate` (DOCX synthetic packet + synthetic unit) → `review-sheet` → fill `scores.csv` and `findings.csv` programmatically (one accepted, one needs-revision, one rejected, one left unscored) → `review-import` → `gate-report` (incomplete) → score the rest → `regenerate` the needs-revision activity → new `review-sheet` → `review-import` → `gate-report` (complete).
+- **Replay rehearsal (the S1 path):** `extract` on the S1 PDF → `generate` with the replay provider and exactly `S1_SETTINGS` → then the scoring loop below. `regenerate` uses FakeProvider with hand-authored responses labelled synthetic, because S1 records no regeneration.
+- **Structured-source rehearsal:** the same loop from the DOCX fixture of Task 6, with FakeProvider throughout. It never touches the S1 fixtures, because DOCX text, sentence IDs and requests differ from the PDF's.
+
+The scoring loop: `review-sheet` → fill `scores.csv` and `findings.csv` programmatically (one accepted, one needs-revision, one rejected, one left unscored) → `review-import` → `gate-report` (incomplete) → score the rest → `regenerate` the needs-revision activity, with a fault injected after promotion and a rerun to finish the request → new `review-sheet` → `review-import` → `gate-report` (complete).
 
 **Tests:**
-- [ ] The rehearsal passes, and the final report's denominators, yields and costs equal hand-computed expectations.
+- [ ] Both rehearsals pass, and each final report's partitions sum to `planned`, and its yields and costs equal hand-computed expectations.
+- [ ] The replay rehearsal's generate inputs deep-equal `S1_SETTINGS`.
 - [ ] A second full rehearsal gives an identical `gate-report.md`, apart from timestamps, which are injected by the clock.
 
 **Verification:** `pnpm verify` → `exit=0`.
@@ -625,7 +699,7 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 **Contents of the runbook:**
 1. **Preconditions:** Checkpoints A–D passed; `pnpm verify` green on the branch head; the P1 ledger entry exists.
-2. **Extraction check result** from Checkpoint B.
+2. **Extraction check result** from Checkpoint B, including each label-like reference and whether it kept its meaning.
 3. **P1 commands**, with `--ledger` and `--run P1`; recorded responses under `docs/uoc/BSBAUD412/replay-p1/`.
 4. **Scoring procedure:**
    - export the sheet, score it, and import it;
@@ -633,14 +707,16 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
    - regenerate at most twice per activity;
    - rescore until the gate report is `complete`.
 5. **Diagnosis table**, from failing dimension to stage (design §9 step 4).
-6. **Experiments:** each needs a new ledger entry and is one change at a time.
-7. **Calibration:** Benjamin sets thresholds from the pilot; they are written into the design's §8.3 with a date and marked frozen before any further unit is scored.
-8. **Recording:** a sanitised gate summary; the line "BSBAUD412 pilot complete" with its date, which is not a gate pass; and the statement that the full gate needs five pairs, including trade units, with results per unit and per item.
+6. **Experiments:** each needs a new ledger entry and is one change at a time. The approved allocations fit at most five.
+7. **Failure:** if any paid run fails, keep its directory, record the failure (numbers and categories only), and stop until Benjamin writes a new entry.
+8. **Calibration:** Benjamin sets thresholds from the pilot; they are written into the design's §8.3 with a date and marked frozen before any further unit is scored.
+9. **Recording:** a sanitised gate summary; the line "BSBAUD412 pilot complete" with its date, which is not a gate pass; and the statement that the full gate needs five pairs, including trade units, with results per unit and per item.
 
 **Deviations section (in this plan):**
 - Provenance field `criteriaIds` holds PC and KE IDs, unrenamed.
-- DOCX custom list numbering is rendered as decimal or bullet.
-- Non-atomic oversize sentences keep phase-2 behaviour.
+- DOCX custom list numbering is rendered as decimal or bullet, accepted only with the `listNumberingSimplified` and `labelLikeReferences` warnings and the Checkpoint B confirmation that references keep their meaning (R13). If Checkpoint B finds a reference that loses its meaning, this deviation is withdrawn and the adapter renders the real formats before P1.
+- Non-atomic oversize sentences stay whole, as in phase 2, but only while the complete provider request fits the model's input limit; otherwise the run is refused (R14).
+- Pilot-total enforcement is static cap allocation, not a durable pilot-wide reservation (R7).
 - `review --decision` is refused on version-2 stores.
 - The mammoth-vs-XML path per table property, as recorded in Task 6.
 
@@ -656,7 +732,7 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 - `pnpm verify` is green on the branch head, with no real API call, and the S1 re-record is the only paid call made by the tasks.
 - Checkpoints A–D are signed off. Checkpoint B's table check is recorded, with no content, in `docs/testing/phase-3-pilot.md`.
-- Every contract clarification C1–C7 and R1–R6 has at least one named test that fails without it.
+- Every contract clarification C1–C7 and R1–R14 has at least one named test that fails without it, or, for R13, a recorded Checkpoint B confirmation.
 - No file under `docs/uoc/` is tracked (`git ls-files docs/uoc` is empty).
 
 ## Acceptance checks for the owner's review
@@ -671,9 +747,13 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 | "No simulated option" in the packet never reaches a plan entry; the unit's conditions stand | Task 10 negative test |
 | Half-scored sheet → complete → reimport gives no duplicates | Task 12 R1 sequence |
 | Every 0/1 has a per-dimension finding with an item ID | Task 12 validation tests |
-| Interrupted regeneration resumes without using allowance; failed ones count | Task 13 tests |
+| Interrupted regeneration resumes without using allowance, at each of four interruption points, including after promotion; failed ones count | Task 13 tests |
+| A stale row means zero writes; recovery keeps committed order | Task 12 tests |
+| Every planned activity lands in exactly one outcome category, including failures with no revision | Task 14 partition and property tests |
+| Citations slice back exactly after NFC and whitespace normalisation in DOCX and ODT | Tasks 5–7 tests |
+| S1 is recorded from one named fixture with pinned settings, and every replay consumer uses them | Tasks 10 and 15 tests |
 | Denominators, incomplete status, first-pass vs after-revision, cost convention | Task 14 tests |
-| No paid run without a ledger entry and cap | Task 9 tests |
+| No paid run without a ledger entry; caps allocated statically; spend read from attempt records, including after a crash | Task 9 tests |
 
 ## Deviations from the design, recorded
 
