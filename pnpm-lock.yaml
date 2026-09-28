@@ -256,6 +256,9 @@ importers:
       '@eslint/js':
         specifier: ^9
         version: 9.39.5
+      '@types/node':
+        specifier: ^20
+        version: 20.19.43
       eslint:
         specifier: ^9
         version: 9.39.5
