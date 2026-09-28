@@ -8,7 +8,7 @@ A hosted service that takes source material (text, files, web pages, audio/video
 
 **Scope statement on alignment.** The activities are for understanding and revision. They are not assessment tasks, and the mapping is a *suggested* alignment of revision activities to performance criteria, distinguished from human-reviewed alignment in the export. Any wording elsewhere (including the positioning document) that calls this "assessment-mapping evidence" should be read as this narrower claim.
 
-**What the product claims, and what it does not** (ruling, 28 Sep 2026). Generated activities are learning and revision activities. Each activity's answers are verified against the source passages it cites, and its relevance is verified against the published unit's Knowledge Evidence and performance criteria. Neither the product nor its exports may claim that completing these activities demonstrates competency or satisfies an RTO's assessment requirements. This applies to UI copy, export headers, `mapping.csv`, prompts and documentation.
+**What the product claims, and what it does not** (ruling, 28 Sep 2026). Generated activities are learning and revision activities. Unreviewed output carries source citations and a *suggested* alignment. An evidence ID that resolves proves only that the quoted sentence exists in the source. Answers are verified against the cited passages, and relevance against the published unit's Knowledge Evidence and performance criteria, by human review; only a reviewed and accepted revision may be described that way. Neither the product nor its exports may claim that completing these activities demonstrates competency or satisfies an RTO's assessment requirements. This applies to UI copy, export headers, `mapping.csv`, prompts and documentation.
 
 Version 1 is used internally (Benjamin and the agency) but modelled for tenancy from the start, so opening it to outside users adds accounts and billing rather than a rewrite.
 
@@ -20,7 +20,7 @@ Version 1 is used internally (Benjamin and the agency) but modelled for tenancy 
 | Output unit | One `ActivitySpec` per exportable `.h5p` package. Generation may return several specs of the same type for one import. Interactive Book has two distinct composition modes: activity collection and narrated audio book (§6) |
 | Editing in v1 | Preview, regenerate (optionally with a note), drop, restore. No field editing, no H5P editor |
 | Vocational | Unit of competency as a structured input; activities tagged to performance criteria and Knowledge Evidence items; mapping table exported with suggested vs reviewed status. Revision, not assessment; no claim of competency or of meeting RTO assessment requirements |
-| Sources | Pasted text; a web page; a Wikipedia article; a document file (PDF text layer, DOCX, ODT; txt and md in the CLI); audio/video upload; YouTube. Text sources are 500–400,000 characters after extraction; PDFs at most 100 pages (ruling, 28 Sep 2026, modelled on H5P.com Smart Import) |
+| Sources | Pasted text; a web page; a Wikipedia article; a document file (PDF text layer, DOCX, ODT; txt and md in the CLI); audio/video upload; YouTube. The submitted learning source is 500–400,000 characters inclusive after extraction; PDFs at most 100 pages (ruling, 28 Sep 2026, modelled on H5P.com Smart Import) |
 | Runtime | One Node service in a container: SvelteKit + API + job worker, Postgres, R2 |
 | Interactive Video | Next spec, not this one |
 | Code structure | Split generation from compilation, in a monorepo |
@@ -286,7 +286,7 @@ Each phase ends with something demonstrable. The detailed task plan follows from
 |---|---|
 | Input limits | Text 500–400,000 characters after extraction, PDFs at most 100 pages (ruling, 28 Sep 2026; replaces the provisional 300,000-character ceiling). Out-of-limit input is rejected with a message, never truncated; per-import budgets added |
 | Sources (ruling, 28 Sep 2026) | Pasted text, web page, Wikipedia article, document file (PDF, DOCX, ODT), as H5P.com Smart Import accepts. Audio/video and YouTube stay in phase 6 |
-| Claims (ruling, 28 Sep 2026) | Answers verified against cited source passages; relevance verified against Knowledge Evidence and performance criteria. No claim that completing the activities demonstrates competency or satisfies an RTO's assessment requirements (§1) |
+| Claims (ruling, 28 Sep 2026) | Unreviewed output: source citations and suggested alignment. Human review verifies answers against cited passages and relevance against Knowledge Evidence and performance criteria. No claim that completing the activities demonstrates competency or satisfies an RTO's assessment requirements (§1) |
 | Models | Exact API IDs recorded in config; Haiku 4.5 for extraction is provisional pending the phase-3 gate; one generation adapter first |
 | Bilingual mode | CLI-only; language fields kept in the contract; compatibility fixture |
 | Rename | Not a phase dependency; provisional `@leaplearn/*`; CLI alias retained |
@@ -296,10 +296,10 @@ Each phase ends with something demonstrable. The detailed task plan follows from
 
 ## 14. Open questions
 
-- The pasted-text minimum: the 28 Sep ruling gives both 550 and 500 characters. This spec uses 500 for every text source until that is confirmed.
-- Which phase brings the 28 Sep ruling into code. Phase 2 ingests text, markdown and PDF, with a 300,000-character ceiling and no minimum or page limit. It has no DOCX, ODT, web page or Wikipedia adapter (web was deferred to phase 5), and its alignment maps concepts to performance criteria only: Knowledge Evidence is parsed but not aligned. The phase-3 design proposes the order.
 - The production preview hostname and TLS arrangement on the demo VPS.
 
 Closed: `singleChoiceSet` stays in its native multi-question form (§2.1).
 
 Closed (28 Sep 2026): phase 3 starts with one source-and-unit pair, BSBAUD412, and the corpus grows toward the five pairs across trades as material arrives. Benjamin is the only reviewer, so the rubric has no checks for agreement between reviewers. Real material lives in `docs/uoc/`, which git ignores.
+
+Closed (28 Sep 2026, Benjamin's review of the phase-3 draft): the text minimum is 500 characters inclusive, as a product decision, applied to the submitted learning source after extraction. Phase 3 brings the input limits, DOCX and ODT ingestion, Knowledge Evidence alignment and the claims wording into code. Web page and Wikipedia ingestion stay in phase 5. See `2026-09-28-phase-3-quality-gate-design.md`.
