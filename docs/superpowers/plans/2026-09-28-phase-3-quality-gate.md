@@ -429,7 +429,7 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
   - the run is not listed;
   - `outDir` differs from the entry;
   - `budgetUsd` is above the run's cap.
-- `spendFromAttempts(attempts)` sums known and estimated outcome costs, plus the reservation of every attempt start with no outcome. It is the same accounting the budget uses on resume, and is used for display and for the per-run check. It never reads `cost.json`.
+- `spendFromAttempts(attempts)` sums known and estimated outcome costs. It keeps the **reservation** as spent in two cases: an attempt start with no outcome, and an outcome whose cost is unavailable. This is phase 2's accounting (`settle` in `llm/budget.ts` keeps the reservation when the actual cost is unknown, and resume reconciliation treats an orphan start the same way), and it is used for display and for the per-run check. It never reads `cost.json`.
 - `generate` requires `--ledger` and `--run` when the provider is `anthropic` or `record`, and runs `authoriseRun` before creating or resuming anything. On resume, it also refuses if `spendFromAttempts` for the directory already meets the cap, with a message giving spend and cap. The import's per-import budget is set to `min(--budget-usd, cap)`; the phase-2 rule that a resume may raise the budget is bounded by the cap. Task 13 applies the same checks to `regenerate`. Replay and fake providers ignore the ledger.
 - The documentation and messages call caps **estimated** and never say a run or the pilot "cannot" exceed them.
 
@@ -438,7 +438,8 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 - [ ] `generate --provider record` without `--ledger` exits 1 before any directory is created.
 - [ ] **Static allocation:** caps of 1 + 3 + 3 against a total of 5 refuse every run; against 7 they allow each.
 - [ ] **Concurrent authorisations:** two `generate` processes (FakeProvider behind the `record` code path, injected for the test) for two listed runs start at the same moment. Both are authorised, each import's budget equals its own cap, and neither run's spend counts against the other.
-- [ ] **Crash with no `cost.json`:** a run directory with attempt starts and outcomes but no `cost.json`, including one start without an outcome. `spendFromAttempts` counts the orphan start at its reservation, and resume authorisation uses that figure.
+- [ ] **Crash with no `cost.json`:** a run directory with attempt starts and outcomes but no `cost.json`, including one start without an outcome and one outcome with unavailable cost. `spendFromAttempts` counts both at their reservations, and resume authorisation uses that figure.
+- [ ] **Matches phase-2 accounting:** for the same attempt records, `spendFromAttempts` equals the `budgetUsed.spentUsdMicro` that phase-2 resume reconciliation produces.
 - [ ] **Resuming a partly spent run:** a directory with $0.60 spent against a $1 cap resumes with a per-import budget of $1, and a dispatch whose reservation would cross $1 is refused. A directory whose spend already meets the cap is refused before any dispatch.
 - [ ] `--budget-usd` above the cap is refused, and at the cap it is allowed.
 
@@ -452,12 +453,13 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 **Answers:** design §4.3–4.4, R12. This is the first task that changes model requests, so the synthetic replay fixtures are re-recorded here (run S1).
 
-**Branching:** the offline part (steps 1–3) is committed on a task branch, `phase-3/task-10`. The phase branch never holds a commit whose verification is red. After Checkpoint C and a successful S1 (step 4), the task branch is fast-forwarded into the phase branch.
+**Branching:** the offline part (steps 1–3) is committed on a task branch, `phase-3/task-10`, so its intermediate state can be reviewed. After Checkpoint C and a successful S1 (step 4), the offline work and the recording are **squashed into one commit** and that commit is added to the phase branch. A fast-forward would keep only the head green and carry the temporarily failing checkpoint into history; squashing keeps every commit on the phase branch green. The task branch is kept until the squashed commit is reviewed.
 
 **Files:** `packages/shared/src/competency.ts`, `packages/shared/src/concepts.ts`, `packages/generator/src/schemas/model-output.ts`, `competency/parse-unit.ts`, `concepts/extract.ts`, `concepts/align.ts`, `plan/planner.ts`, `prompts/system.ts` (`PROMPT_VERSION` bump), `packages/generator/test/helpers/s1-settings.ts`, the synthetic fixtures, `test/fixtures/replay/synthetic/` (re-recorded), tests.
 
 **Contract:**
 - `KnowledgeEvidenceNode = { id: string; text: string; children: KnowledgeEvidenceNode[] }`, with IDs `KE<n>` and `KE<n>.<m>`, assigned in code in document order, never by the model. The model returns the tree without IDs. `UnitOfCompetency` gains `knowledgeEvidence: KnowledgeEvidenceNode[]`, `assessmentConditions: string | null` (verbatim) and `release: string | null` (as printed). `targetsOf(unit)` returns PCs and every KE node as `{ id, kind: "pc" | "ke", text, path }`.
+- **Wire schema (no recursion):** the structured-output API does not accept recursive schemas. The model returns Knowledge Evidence as a **flat list** `{ index, parentIndex: number | null, text }[]` in document order; code validates it (unique indices, parents earlier in the list, no cycles) and rebuilds the tree, then assigns IDs. The recursive `KnowledgeEvidenceNode` type exists only in `packages/shared` and never in a model-output schema. An invalid parent index is a content retry.
 - The parse prompt requires verbatim wording and nesting. A check verifies that every KE `text` and the assessment conditions occur, after whitespace normalisation, in the pasted unit text; a failure is a content retry.
 - `Concept.kind: "content" | "rto-instruction"`. The extract prompt defines an RTO instruction as a statement about how one provider organises, delivers, assesses or administers the unit (assessment arrangements, submission rules, simulated or workplace options, attempts, deadlines). The merge keeps kind, and `rto-instruction` wins on conflict.
 - Alignment covers every target from `targetsOf(unit)` under the phase-2 evidence rule. Only `content` concepts are offered. `unsupportedCriteriaIds` includes unsupported KE nodes. Provenance `criteriaIds` holds PC and KE IDs; the field name is unchanged (a recorded deviation, accepted).
@@ -472,11 +474,16 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 **Steps:**
 1. Write the FakeProvider tests below and see them fail.
-2. Implement. Add request-shape tests: every new and changed model-output schema passes the phase-2 `toProviderSchema` contract test, and the parse, extract and align requests for `S1_SETTINGS` are snapshotted (system, user and the serialised schema), so any later unintended change shows in review.
-3. **Offline verification:** `pnpm verify` passes except `replay.test.ts`, which must fail **only** with `ReplayMissError` for the changed requests. A script, `scripts/expect-replay-miss.sh`, runs it and checks exactly that, and it is part of this step's verification. Commit on `phase-3/task-10`.
+2. Implement. Add request-shape tests: every new and changed model-output schema passes the phase-2 `toProviderSchema` contract test; **the actual outgoing `output_config.format.schema` for parse, extract and align, as sent by the Anthropic adapter, contains no `$ref`, `$defs` or `definitions` and no self-reference** (a test walks the serialised schema); and the parse, extract and align requests for `S1_SETTINGS` are snapshotted (system, user and the serialised schema), so any later unintended change shows in review.
+3. **Offline verification:** build, typecheck, lint and every test file pass, except `replay.test.ts`. That file must fail **only** because a recorded response is missing. A script, `scripts/expect-replay-miss.mjs`, runs the whole generator suite with Vitest's JSON reporter and checks:
+   - every failing test is in `replay.test.ts`, and no other file has a failure or an error;
+   - every failure's error is a `ReplayMissError` thrown by `ReplayProvider.complete`, with a message naming a purpose and a request-key prefix;
+   - for each such key prefix, no file in `test/fixtures/replay/synthetic/` starts with it (the recording is genuinely absent, not unreadable or malformed);
+   - the purpose is one this task changes (`parseUnit` for the first stage to miss).
+   Any other failure, including a malformed fixture, a schema error or an assertion failure, fails the script. Build, typecheck and lint run separately and must exit 0. Commit on `phase-3/task-10`.
 4. **→ Checkpoint C**, then S1, only after Benjamin's ledger entry exists:
    `node --env-file=.env apps/cli/dist/index.js generate --source packages/generator/test/fixtures/synthetic/source-electrical-safety.pdf --unit packages/generator/test/fixtures/synthetic/unit-synele001.txt --out <S1 outDir> --budget-usd 1 --provider record --fixtures packages/generator/test/fixtures/replay/synthetic --ledger docs/uoc/pilot-ledger.json --run S1 --concurrency 1`
-   Stale fixture files are removed first, in the same commit. `replay.test.ts` is updated for the new counts and targets, and `scripts/expect-replay-miss.sh` is deleted.
+   Stale fixture files are removed first, in the same commit. `replay.test.ts` is updated for the new counts and targets, and `scripts/expect-replay-miss.mjs` is deleted.
 5. **If S1 fails** (a provider error, a content failure that leaves the replay set incomplete, or a cap refusal), keep its directory and recorded files, write the failure into `docs/testing/phase-3-pilot.md`, and stop. A retry needs a new ledger entry.
 
 **Tests (write first, FakeProvider):**
@@ -631,13 +638,14 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 - **First-pass partition per type.** Every planned activity falls into exactly one category, and the report prints the sum next to `planned`:
   - `dropped`: the activity is flagged dropped (no CLI command drops in phase 3; the category exists so the sum holds);
   - `notAttempted`: no `origin: "generate"` produce operation ever started (for example, skipped by a stop and never resumed);
-  - `inProgress`: a `generate` produce operation is `running`;
-  - `generationFailed`: every `generate` produce operation for the activity ended `failed`, or a candidate was built and rejected, and no `generate` revision was promoted. This includes producers that exhausted their content attempts without persisting any revision;
+  - `inProgress`: a `generate` produce operation is `running`, or a build operation for its candidate is `running`;
+  - `buildPending`: a `generate` produce operation `succeeded` and its candidate revision is persisted, but no build exists and no build is running (for example, the process stopped between produce and build);
+  - `generationFailed`: every `generate` produce operation for the activity ended `failed`, or a persisted candidate's build or validation failed (a `rejected` revision or a failed build operation), and no `generate` revision was promoted. This includes producers that exhausted their content attempts without persisting any revision;
   - `unreviewed`: the first generated revision (the lowest-numbered `origin: "generate"` revision that was promoted) has no scored review;
   - `accepted`, `needsRevision`, `rejected`: the decision of the first scored review of that revision, in `(sequence, rowIndex)` order, on whatever build it was made (C3: labelled `historical` when that build is no longer current).
 - **First-pass rates:** `accepted / reviewed` among reviewed outputs, where `reviewed = accepted + needsRevision + rejected`; and `accepted / planned` end to end. Both are shown with raw counts.
-- **After-revision partition per type**, over the same planned activities: `dropped`, `notAttempted`, `inProgress`, `generationFailed` (no revision of any origin was ever promoted), `awaitingReview` (the latest promoted revision's current build has no counted, non-stale scored review), `accepted`, `needsRevision`, `rejected`. Each shows accepted after revision among reviewed and among planned, regenerations used and failed, their extra cost, and extra review minutes.
-- **Gate status per import:** `incomplete` if any first-pass activity is `unreviewed` or `inProgress`, or any after-revision activity is `awaitingReview` or `inProgress`, with the activities listed; otherwise `complete`. **An incomplete import can never pass.** Thresholds are evaluated only on complete imports, and only once frozen (the runbook records them); before that the report shows the provisional targets and "not frozen".
+- **After-revision partition per type**, over the same planned activities: `dropped`, `notAttempted`, `inProgress`, `buildPending`, `generationFailed` (no revision of any origin was ever promoted), `awaitingReview` (the latest promoted revision's current build has no counted, non-stale scored review), `accepted`, `needsRevision`, `rejected`. Each shows accepted after revision among reviewed and among planned, regenerations used and failed, their extra cost, and extra review minutes.
+- **Gate status per import:** `incomplete` if any first-pass activity is `unreviewed`, `inProgress` or `buildPending`, or any after-revision activity is `awaitingReview`, `inProgress` or `buildPending`, with the activities listed; otherwise `complete`. **An incomplete import can never pass.** Thresholds are evaluated only on complete imports, and only once frozen (the runbook records them); before that the report shows the provisional targets and "not frozen".
 - **Distributions** for each dimension of the 0/1/2/na counts, for first-pass and after-revision separately. Distractors and usefulness each have their own rows.
 - **Items** (flashcards, blanks): items inspected, which is every item of every reviewed revision, and distinct failing items per dimension from findings.
 - **Minutes:** median and total, per activity and per item, first-pass and revisions separately, with item count alongside.
@@ -654,7 +662,7 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 **Contract, across imports:** `leap gate-report <dir>...` shows each import as above, then a pooled table per type with a per-unit breakdown. It states the sample against the minimum planned sample of 25/15/5 packages as "planned minimum", with no confidence claim (C6). It writes `gate-report.md` in the first directory; `--summary <file>` writes a numbers-only copy containing no content strings, and a test asserts that no source sentence, no activity text and no target text appears in it.
 
 **Tests (write first, fixture-built stores):**
-- [ ] **Partition:** a fixture with one skipped, one in progress, one content failure **that never persisted a revision**, one build rejection, one promoted-unreviewed, and accepted, needs-revision and rejected first-pass activities. Every category count is right, and the categories sum to `planned` for both partitions. A property test over randomly generated store states asserts the sums.
+- [ ] **Partition:** a fixture with one skipped, one in progress, one content failure **that never persisted a revision**, one persisted candidate whose produce succeeded and whose build is pending, one persisted candidate whose build failed, one build rejection, one promoted-unreviewed, and accepted, needs-revision and rejected first-pass activities. Every category count is right, and the categories sum to `planned` for both partitions. A property test over randomly generated store states asserts the sums.
 - [ ] The content failure without a revision contributes its attempts to `firstPassDirect` and counts in `generationFailed`.
 - [ ] Incomplete status while one review is missing, and complete once it is imported.
 - [ ] First pass vs after revision: needs-revision r1 → accepted r2 shows first-pass needs-revision and after-revision accepted, with the regeneration cost counted only after revision.
