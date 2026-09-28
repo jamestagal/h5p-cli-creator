@@ -1,0 +1,680 @@
+# Phase 3: Human Quality Gate Implementation Plan
+
+> Steps use checkbox (`- [ ]`) syntax for tracking. The execution workflow is the same as phases 1 and 2: one task per dispatch, a review of the diff and verification output between tasks, a commit at each checkpoint, and a whole-branch review at the end.
+
+**Goal:** Make a trustworthy BSBAUD412 pilot possible and record it properly. By the end of this plan:
+- builds record the engine that made them, and build history cannot be rewritten;
+- DOCX and ODT sources arrive with their tables, lists and headings intact, checked by eye before any paid run;
+- units keep their Knowledge Evidence as a tree and their assessment conditions, and the packet's RTO instructions never become claims about the unit;
+- a reviewer scores activities against a fixed rubric through a sheet whose identity is persisted, and the import is checked, recoverable and idempotent;
+- a defect is fixed only by regeneration and a fresh review;
+- a gate report keeps first-pass results, after-revision results and every denominator apart;
+- every paid run is authorised and capped in a pilot ledger.
+
+**Design:** `docs/superpowers/specs/2026-09-28-phase-3-quality-gate-design.md`, revision 2 (`76cd223`), accepted for planning on 28 Sep 2026 with the contract clarifications below. Parent spec: `docs/superpowers/specs/2026-09-18-generator-service-design.md` (§1 claims, §5 regenerate, §10 quality gate, §13 rulings).
+
+**Architecture:** No new package.
+- `packages/engine` gains a build-time identity file and a runtime `engineIdentity()`.
+- `packages/generator` gains:
+  - `ingest/structure/`: a block model, a linearizer, and DOCX and ODT readers;
+  - `admitSource()`;
+  - `review/`: rubric, decision derivation, sheet manifest, score validation, batch identity;
+  - `report/gate.ts`: denominators, yields, distributions, cost allocation;
+  - `pilot/ledger.ts`: run authorisation and caps;
+  - new `ImportStore` records: builds, sheets, batches, scores, regeneration requests.
+- `apps/cli` gains `leap extract`, `leap regenerate`, `leap review-sheet`, `leap review-import` and `leap gate-report`. `FileStore` moves to store version 2.
+- `apps/cli-legacy` is untouched.
+
+**Tech stack additions:** `mammoth` (DOCX → HTML), `htmlparser2` and `domhandler` (walking mammoth's HTML), `jszip` (already used by the engine) and `@xmldom/xmldom` (ODT `content.xml`), all in `packages/generator`. `yaml` is a dev dependency of `packages/engine`, for reading `pnpm-lock.yaml` at build time. Exact versions are pinned at install and recorded in the task's commit message.
+
+**Contract rules:** This plan states contracts and tests exactly and leaves the implementations to each task. Phase 2's supplied implementations were where its review found defects, so a task here is done when its named tests pass and its contract holds, not when it matches a code listing.
+
+## Contract clarifications from the review of design revision 2 (28 Sep 2026)
+
+These rules override the design where the two differ.
+
+| # | Clarification | Rule in this plan | Task |
+|---|---|---|---|
+| C1 | Shared cost by first-pass generation cost | This is an **accounting convention**, not a claim that more generated text consumes more source work. If the known and estimated first-pass direct cost totals zero, shared cost is allocated by planned activity count. An attempt with unavailable cost is never priced at zero: it is excluded from sums and counted, and every figure it touches is marked a lower bound. A type with 0 accepted activities shows `n/a (0 accepted)` with its spend | 14 |
+| C2 | Two regenerations per activity | The allowance counts **logical regeneration requests**, including unsuccessful ones. A request is persisted before any dispatch. Re-running the command while a request is `running` resumes that request and does not consume allowance | 13 |
+| C3 | Stale reviews | A review of a build that is no longer current does not count for **current acceptance**. It still counts in the clearly labelled **historical first-pass** results | 14 |
+| C4 | Contradictory decision column | The row is rejected, and the error shows the derived decision | 12 |
+| C5 | Acceptance only through score sheets | Historical acceptance records are preserved. Decisions without rubric scores are excluded from the gate and listed as such. `leap review --decision` is refused on store version 2 | 12 |
+| C6 | 25 / 15 / 5 packages across five units | This is the **minimum planned sample**, not evidence of statistical confidence. Results are shown per unit and per item | 14, 16 |
+| C7 | NFC and code-point counting | Limits count **Unicode code points of the NFC-normalised extracted text**. Provenance offsets stay **UTF-16 code units, half-open, into the stored normalised text**. The two conventions are never mixed, and a test pins both | 4 |
+| R1 | Persist the exported sheet manifest | `review-sheet` writes an immutable manifest. Import checks each row against its manifest entry and the entry against current state, per row. Reviewing another activity never invalidates an unchanged row. A row already committed is recognised **before** any stale check. Row-level identity makes completing a half-imported sheet, and reimporting it, safe | 11, 12 |
+| R2 | Failing items by dimension | Findings are records of `{ dimension, itemId, score, reason }` in a separate `findings.csv`. A dimension's activity score must equal the lowest score among its findings, or 2 when it has none | 10, 11, 12 |
+| R3 | Acceptance denominators | Report planned, not attempted, generation-failed, promoted, reviewed, unreviewed and accepted counts. The first generated revision is marked `origin: "generate"`. Acceptance is reported among reviewed outputs and end to end among planned outputs. The gate status is `incomplete` while any required review is missing, and an incomplete gate cannot pass | 3, 14 |
+| R4 | Table header rows | A first row becomes a header **only when the format marks it**: DOCX `w:tblHeader`, ODT `table:table-header-rows`. Otherwise the row is preserved as data and cells are labelled `Column 1`, `Column 2`, and so on. Fixtures include a two-column key/value table. An atomic row larger than the chunk budget is preserved whole and the run is refused before any model call, naming the table, row and size | 5, 6, 7 |
+| R5 | Existing phase-2 imports | Store version 1 directories are **read-only**. Every write command refuses them, with instructions to use a new directory. Their packages, revisions, acceptances and alignment reviews are never modified or migrated. No build record or engine fingerprint is reconstructed for them; their recorded `engineFingerprint` string is shown as recorded at production, with phase-2 semantics. The gate report lists them as not eligible. New fingerprints include the dist bytes of workspace dependencies and the resolved identities (name, version, integrity) of the transitive runtime dependency closure | 1, 2 |
+| R6 | Experiment budget | Every paid run needs an entry in a pilot ledger that Benjamin writes. The ledger gives a per-run cap and a pilot total. `generate` and `regenerate` refuse to dispatch without an authorising entry, or when the cap or total would be exceeded. **Approving this plan authorises no live run** | 9, and "Paid runs and authorisation" |
+
+## Paid runs and authorisation
+
+**Approving this plan authorises no paid run.** Tasks 1–9 and 11–16 make no model calls. Task 10 needs one small paid run on synthetic material, and the pilot needs paid runs on BSBAUD412. Each requires Benjamin's ledger entry beforehand.
+
+**The ledger** is `docs/uoc/pilot-ledger.json`, ignored by git and written by Benjamin:
+
+```json
+{
+  "totalCapUsd": 20.00,
+  "runs": [
+    { "runId": "S1", "purpose": "re-record synthetic replay fixtures after the Task 10 prompt changes", "outDir": "/abs/path/to/s1", "capUsd": 1.00, "authorisedBy": "Benjamin", "authorisedOn": "YYYY-MM-DD" }
+  ]
+}
+```
+
+**Proposed caps, for Benjamin to set.** Real-material costs are unmeasured. The phase-2 figure came from a short synthetic source.
+
+| Run | Purpose | Proposed cap |
+|---|---|---|
+| S1 | Re-record synthetic replay fixtures (Task 10) | $1 |
+| P1 | BSBAUD412 baseline, including its regenerations | $3 |
+| E1… | One experiment each (§9 step 6 of the design), each a new import, including its regenerations | $3 each |
+| **Total** | Everything in phase 3, S1 included | **$20** |
+
+**Enforcement (Task 9):**
+- `generate` and `regenerate` take `--ledger <file> --run <runId>`.
+- They refuse when the run is not listed, when `--out` differs from the entry, when `--budget-usd` exceeds the entry's cap, or when the ledger's spent total plus this run's remaining cap would exceed `totalCapUsd`. The spent total is summed from the `cost.json` of every listed run directory. Unavailable-cost attempts count at their reservation.
+- The ledger is read and nothing is written to it. A new experiment is a new entry, written by Benjamin.
+- `--provider replay` and `--provider fake` need no ledger. `--provider anthropic` and `--provider record` always do.
+
+## Global constraints
+
+Phase 2's global constraints continue to apply, unchanged: the engine boundary, one SDK call site, two-event attempt recording, budget semantics, stop signal, persisted results, derived provenance, pricing and model IDs in one file each, micro-dollar integers, the SSRF guard, Conventional Commits, `set -o pipefail`, and no real API calls in `pnpm verify`. In addition:
+
+- **Real material never enters git.** Nothing under `docs/uoc/` is committed. Recorded responses, sheets, batches and reports from real material are written only under `docs/uoc/` or the import directory. Only numbers are copied into `docs/testing/`.
+- **Build history is append-only.** Build records and build bytes are never overwritten or deleted. Revisions, score records, batches, sheet manifests and regeneration requests are append-only or immutable once written; "latest wins" is always a read rule, never an overwrite.
+- **Store version 1 is read-only**, as in R5.
+- **The decision is derived in code** (`deriveDecision`) and nowhere else. No command accepts a decision as input except to check it against the derived one.
+- **Offsets vs counts**, as in C7. Every function that takes or returns an offset says so in its doc comment.
+- **Claims:** unreviewed output is described as "source citations" and "suggested alignment". "Verified" and "reviewed" are used only for a revision whose current build has a counted, accepted scored review. Nothing claims competency or satisfaction of an RTO's assessment requirements.
+
+## Execution workflow and checkpoints
+
+Execute tasks in order. Each task writes its failing tests first, runs them and sees them fail, implements, runs the named verification and confirms `exit=0`, then commits. Do not start a task while the previous task's verification is red. Root verification stays `pnpm verify`. Repository: `/Users/benjaminjameswaller/Projects/personal/h5p-cli-creator`.
+
+| Checkpoint | After task | Who | What |
+|---|---|---|---|
+| **A: engine and build identity** | 3 | Reviewer | Whole-diff review of Tasks 1–3; `pnpm verify` green |
+| **B: extraction inspection** | 8 | Benjamin, zero cost | `leap extract` on the BSBAUD412 packet; compare at least five representative tables with the original (design §4.2). Any mismatch goes back to Tasks 5–7 before anything else proceeds |
+| **C: authorise S1** | 9 | Benjamin | Ledger entry for S1. Task 10 does not start without it |
+| **D: tooling complete** | 16 | Reviewer | Whole-branch review; `pnpm verify` green; the pilot runbook reviewed |
+| **E: authorise P1** | D | Benjamin | Ledger entry for P1. This is the first paid BSBAUD412 run; it comes after A and B by construction |
+
+## File structure changes
+
+```
+packages/engine/
+  scripts/write-identity.mjs         build step: dist/identity.json (runtime dependency closure from pnpm-lock.yaml)
+  src/identity.ts                    engineIdentity(librariesDir) → { fingerprint, display, inputs, nodeVersion }
+packages/shared/src/
+  competency.ts                      KnowledgeEvidenceNode tree, assessmentConditions, targetsOf(unit)
+  concepts.ts                        Concept.kind: "content" | "rto-instruction"
+  generation.ts                      AcceptanceDecision + "needs-revision"; MappingStatus + "reviewed"; RevisionOrigin
+  review.ts                          Dimension, Score, Finding, RUBRIC_VERSION
+packages/generator/src/
+  ingest/
+    admit.ts                         admitSource(): NFC, code-point limits, SourceTooSmallError / SourceTooLargeError
+    structure/blocks.ts              Block union
+    structure/linearize.ts           blocks → { text, segments: { charStart, charEnd, atomic, headingPath }[] }
+    docx.ts  odt.ts                  ingestDocx, ingestOdt
+    pdf.ts                           page count checked before getText (≤ 100)
+    source-document.ts               EXTRACTION_VERSION; segmentation honours atomic ranges; SourceDocument.metadata additions
+  concepts/chunk.ts                  OversizeAtomicSegmentError
+  review/
+    rubric.ts                        applicability, deriveDecision, activityScores(findings)
+    sheet.ts                         SheetManifest, sheetId, buildSheet
+    import.ts                        parseScores, validateRows, rowKey, batchId
+  report/gate.ts                     gateReport(imports) → GateReport; allocateShared
+  pilot/ledger.ts                    readLedger, authoriseRun
+  pipeline/regenerate.ts             regenerateActivity with RegenerationRequest
+  store/types.ts                     BuildRecord, SheetManifest, ReviewBatch, ScoreRecord, RegenerationRequest; ImportStore additions; STORE_VERSION = 2
+apps/cli/src/
+  extract.ts  regenerate.ts  review-sheet.ts  review-import.ts  gate-report.ts
+  file-store.ts                      store version 2 layout; v1 read-only adapter
+docs/testing/phase-3-pilot.md        runbook now; sanitised numbers after the pilot
+```
+
+**Store version 2 layout (FileStore)**, additions to phase 2's:
+
+```
+import.json                  + storeVersion: 2
+builds/<activity>-r<n>-<fp12>.h5p      immutable
+builds/records/<buildId>.json          BuildRecord, immutable
+reviews/sheets/<sheetId>.json          SheetManifest, immutable
+reviews/batches/<batchId>.json         ReviewBatch, immutable; the commit point
+scores.jsonl                           ScoreRecord, append-only, derived from batches
+acceptances.jsonl                      AcceptanceRecord (+ batchId, + scoreRowKey), append-only
+regenerations.jsonl                    RegenerationRequest events, append-only, latest per requestId wins
+```
+
+---
+
+### Task 1: Store version 2 and read-only phase-2 imports
+
+**Answers:** R5.
+
+**Files:** `packages/generator/src/store/types.ts`, `packages/generator/src/store/memory-store.ts`, `apps/cli/src/file-store.ts`, `apps/cli/src/generate.ts`, `apps/cli/src/review.ts`, tests in both packages.
+
+**Contract:**
+- `STORE_VERSION = 2`. `ImportRecord.storeVersion: 2` is written when an import is created. A record without `storeVersion` is version 1.
+- `FileStore.open(dir)` reports the version. `LegacyStoreError(dir)`: "`<dir>` was created by phase 2 (store version 1). It is kept unchanged and is read-only. Use a new output directory for phase-3 commands."
+- Every write path checks the version under the lock and throws `LegacyStoreError` before any write: `generate` resume, `review` (both kinds), and later `regenerate`, `review-sheet` and `review-import`.
+- `readLegacyImport(dir)` returns the phase-2 records as they are stored, typed `LegacyImportView`: import, activities, revisions with their recorded `engineFingerprint` string, acceptances and alignment reviews. It never writes, never computes a fingerprint and never builds a `BuildRecord`.
+- `RevisionRecord` gains `origin: "generate" | "regenerate"` and `requestId: string | null`; `engineFingerprint` and `buildKey` move to `BuildRecord` (Task 3). In this task the fields are added and `origin: "generate"` is set by `runImport`.
+
+**Tests (write first):**
+- [ ] A phase-2 directory fixture (copied from the phase-2 FileStore test output shape: import without `storeVersion`, one promoted revision, one build, one acceptance). `generate` resume, `review --decision` and `review --criterion` each exit 1 with the `LegacyStoreError` message. A byte-for-byte hash of the directory tree is identical before and after.
+- [ ] `readLegacyImport` returns the recorded `engineFingerprint` verbatim and makes no write (the tree hash is unchanged).
+- [ ] A new import writes `storeVersion: 2`, and its first revision has `origin: "generate"` and `requestId: null`.
+
+**Verification:** `set -o pipefail; pnpm --filter @leaplearn/generator test && pnpm --filter @leaplearn/cli test && pnpm -r typecheck && pnpm -r lint; echo "exit=$?"` → `exit=0`.
+
+**Commit:** `feat(store): store version 2; phase-2 import directories are read-only`
+
+---
+
+### Task 2: Engine identity
+
+**Answers:** design §3.2, R5 (workspace code and transitive identities).
+
+**Files:** `packages/engine/scripts/write-identity.mjs`, `packages/engine/package.json` (`build` becomes `tsc -p tsconfig.json && node scripts/write-identity.mjs`), `packages/engine/src/identity.ts`, `packages/engine/src/index.ts` (export), `apps/cli/src/generate.ts` (replace the phase-2 `engineFingerprint()`), `packages/engine/test/identity.test.ts`.
+
+**Contract:**
+- `write-identity.mjs` reads `pnpm-lock.yaml` and computes the runtime dependency closure of the importers `packages/engine` and `packages/shared`: `dependencies` only, recursively through `snapshots`, each package as `{ name, version, integrity }` from `packages[...].resolution`. Workspace links (`link:`) are recorded as `{ name, workspace: true }`, and their code is hashed at runtime. It writes `dist/identity.json` as canonical JSON (sorted keys, closure sorted by name then version, no timestamps).
+- `engineIdentity(librariesDir)` returns `{ fingerprint, display, inputs, nodeVersion }`. `inputs` is the canonical document:
+  - `engineDist`: sorted `[relativePath, sha256]` for every file under `packages/engine/dist`, paths `/`-normalised, `*.tsbuildinfo` excluded;
+  - `workspaceDist`: the same for `@leaplearn/shared`'s `dist`, located from the engine's own module URL, never from `process.cwd()`;
+  - `librariesLockSha256`;
+  - `zlib`: `process.versions.zlib`.
+
+  `fingerprint = sha256(canonical(inputs))`, `display = engine@<version>+<fingerprint[0..12]>`, and `nodeVersion = process.versions.node`, which is recorded but not hashed.
+- The engine boundary holds: `identity.ts` reads files under the engine's own directory and the given `librariesDir` only.
+
+**Tests (write first):**
+- [ ] The closure fixture: a small `pnpm-lock.yaml` fixture with a transitive chain (a → b → c) and a workspace link gives the expected sorted closure. The integrity strings are carried through.
+- [ ] Canonical output: the same input in a different key order gives byte-identical `identity.json`.
+- [ ] Sensitivity: changing one byte of an engine dist file, one byte of a shared dist file, the libraries lock, or the zlib value (injected for the test) each changes `fingerprint`. Changing `nodeVersion` does not.
+- [ ] Reproducibility (integration, in `pnpm verify`): two clean builds of the engine and shared packages into separate temporary copies give the same `fingerprint`.
+
+**Verification:** `set -o pipefail; pnpm --filter @leaplearn/shared build && pnpm --filter @leaplearn/engine build && pnpm --filter @leaplearn/engine test && pnpm -r typecheck && pnpm -r lint; echo "exit=$?"` → `exit=0`.
+
+**Commit:** `feat(engine): content-derived engine identity over dist bytes, workspace code, dependency closure, libraries and zlib`
+
+---
+
+### Task 3: Immutable build records, stamped at build time
+
+**Answers:** design §3.3–3.4, R3 (first generated revision), R5.
+
+**Files:** `packages/generator/src/store/types.ts`, `memory-store.ts`, `pipeline/run-import.ts`, `apps/cli/src/file-store.ts`, `apps/cli/src/report.ts` (mapping and cost read builds), tests.
+
+**Contract:**
+- `BuildRecord { importId; activityId; revision; buildId; buildKey; sha256; byteLength; engineFingerprint; engineDisplay; engineInputs; nodeVersion; builtAt }`, where `buildId = sha256(activityId, revision, engineFingerprint)[0..16]` and `buildKey = builds/<activity>-r<n>-<engineFingerprint[0..12]>.h5p`.
+- `ImportStore` gains `putBuildRecord(record)`, `listBuilds(activityId)` and `getBuildRecord(buildId)`. `RevisionRecord` gains `currentBuildId: string | null` and loses `engineFingerprint` and `buildKey` for version-2 stores.
+- `putBuild(key, bytes)`: if the key exists with identical bytes, it is a no-op; with different bytes it throws `BuildIntegrityError` naming the key and both hashes. It never overwrites.
+- `runImport` stamps the engine identity from `deps.engineIdentity` when it **builds**, never when it produces. Resuming a saved candidate under a new engine builds under the new engine and records that. A promoted revision's `currentBuildId` names the build that was made.
+- `RunImportDeps.engineFingerprint: string` is replaced by `engineIdentity: EngineIdentity`. The test constant becomes a fixed identity object.
+
+**Tests (write first):**
+- [ ] **Candidate under A, built under B:** a FakeProvider run stops after the produce operation persists the candidate (a fault injected at build). The resume uses identity B. The promoted revision's current build names B, the stored bytes' sha256 equals the build record's, and the resume makes zero provider calls.
+- [ ] **Lockfile only:** the same case with only `librariesLockSha256` differing.
+- [ ] **No rewriting history:** a revision promoted under A is built again under B through the store API directly (no command does this in phase 3). Two build records exist, A's bytes and record are unchanged, and `currentBuildId` names B. The corresponding review-side assertions come with score records: a review naming A's build is stale for current acceptance (Task 12) and historical in first-pass results (Task 14).
+- [ ] **Overwrite refused:** `putBuild` with different bytes for an existing key throws `BuildIntegrityError`; with identical bytes it succeeds and writes nothing (the file mtime is unchanged).
+- [ ] The phase-2 replay test still passes. Build keys change, and its assertions on build paths are updated to read them from build records.
+
+**Verification:** `set -o pipefail; pnpm verify; echo "exit=$?"` → `exit=0`.
+
+**Commit:** `feat(pipeline): immutable build records stamped with the engine that built them`
+
+**→ Checkpoint A.**
+
+---
+
+### Task 4: Source admission, NFC, the PDF page limit and the extraction version
+
+**Answers:** design §4.1, C7.
+
+**Files:** `packages/generator/src/ingest/admit.ts`, `source-document.ts`, `text.ts`, `pdf.ts`, `pipeline/fingerprint.ts`, tests; test fixtures under 500 characters are lengthened.
+
+**Contract:**
+- `normaliseSourceText(raw)`: CRLF → LF, trailing spaces before a newline removed, trim, then **NFC**. It is pure, enforces no limit, and is used by every adapter.
+- `countCodePoints(text) = [...text].length`.
+- `admitSource(text)`: throws `EmptySourceError` for 0, `SourceTooSmallError(count)` for 1–499, and `SourceTooLargeError(count)` above 400,000; 500 and 400,000 are admitted. Messages name the count and the limit. `MIN_SOURCE_CODE_POINTS = 500`, `MAX_SOURCE_CODE_POINTS = 400_000`; `MAX_SOURCE_CHARACTERS` is removed.
+- `buildDocument` no longer enforces limits. The `ingest*` entry points call `admitSource` exactly once, on the final normalised text. There is no bypass flag.
+- `ingestPdf` reads the page count before `getText()` (via pdf-parse's document info; the task confirms the field against the synthetic PDF) and throws `PdfTooManyPagesError(pages)` above 100.
+- `EXTRACTION_VERSION = "2026-09-28.1"` is recorded in `SourceDocument.metadata.extractionVersion` and included in `runFingerprint`.
+- Offsets in `Sentence` and `Evidence` stay UTF-16 code units into the stored normalised text. Doc comments on both say so, and say that limits count code points.
+
+**Tests (write first):**
+- [ ] Boundaries: 499 code points rejected, 500 admitted, 400,000 admitted, 400,001 rejected. The same at 500 when the text contains astral characters (for example 250 × U+1F600, 500 UTF-16 units but 250 code points), which is rejected.
+- [ ] NFC: a decomposed Vietnamese string (NFD) gives the NFC text and hash, and its code-point count is the NFC count.
+- [ ] Offsets: for text with an astral character before a sentence, `text.slice(charStart, charEnd)` equals the sentence text (UTF-16 slicing).
+- [ ] PDF: a 101-page synthetic PDF (generated in the test with `pdf-lib`) is rejected before text extraction, and the text extraction is spied to be uncalled. A 100-page PDF is admitted on page count.
+- [ ] The limit applies only to the submitted source: `segmentSentences`, `chunkSentences` and `parseUnit` accept inputs under 500 (tested directly).
+- [ ] The fingerprint changes when `EXTRACTION_VERSION` changes.
+
+**Verification:** `pnpm verify` → `exit=0`.
+
+**Commit:** `feat(ingest): 500–400,000 code-point admission on NFC text, a 100-page PDF limit and an extraction version`
+
+---
+
+### Task 5: Structured blocks, the linearizer and atomic segments
+
+**Answers:** design §4.2, R4 (header rows, oversize rows).
+
+**Files:** `packages/generator/src/ingest/structure/blocks.ts`, `structure/linearize.ts`, `source-document.ts` (segmentation honours atomic ranges; `Sentence.headingPath`), `concepts/chunk.ts`, `concepts/extract.ts` (heading path shown as context), tests.
+
+**Contract:**
+- `Block = { kind: "heading"; level: 1..6; text } | { kind: "paragraph"; text } | { kind: "listItem"; depth; label; text } | { kind: "table"; index; headerRows: number; rows: Cell[][] } | { kind: "note"; n; text }`, where `Cell = { text; colSpan; rowSpan; blocks?: Block[] }` (a nested table sits in `blocks`).
+- `linearize(blocks) → { text, segments: { charStart; charEnd; atomic: boolean; headingPath: string[] }[] }`. Offsets are UTF-16 code units into `text`.
+  - Headings: their own line; they update the heading path.
+  - List items: `"  ".repeat(depth) + label + " " + text`.
+  - Tables: spans are expanded first, repeating the value in every grid position it covers. If `headerRows > 0`, the last header row supplies labels (earlier header rows are joined per column with " / "). If `headerRows === 0`, **no row is consumed**, labels are `Column 1…n`, and row numbering starts at 1 with the first row. Each data row becomes one line: `[Table <index>, row <r>] <label>: <cell>; <label>: <cell>`. Empty cells are written `<label>: —`. A nested table is written inline as `[Table <index>.<k> …]` in the cell's place. Each row line is an **atomic** segment.
+  - Notes: `[Note n] text`, placed after the block that cites them.
+- `segmentSentences(text, segments?)`: without segments it behaves as in phase 2. With segments, atomic ranges are one sentence each and are never split; non-atomic ranges are split by the phase-2 rules. Each sentence carries the `headingPath` of its range.
+- `chunkSentences`: an **atomic** sentence whose estimate exceeds the budget throws `OversizeAtomicSegmentError { sentenceId, headingPath, label, estimatedTokens, budgetTokens }`, with a message naming the table and row, its size and the budget, and suggesting `--chunk-tokens` or splitting the table in the source. `runImport` performs chunking before any dispatch, so the import fails with no model call. A non-atomic oversize sentence keeps phase-2 behaviour (its own chunk).
+- The extraction prompt shows each chunk's heading paths as unquotable context lines, not numbered evidence.
+
+**Tests (write first):**
+- [ ] Two-column key/value table with `headerRows: 0`: row 1 is preserved as `[Table 1, row 1] Column 1: Audit scope; Column 2: …`.
+- [ ] Table with `headerRows: 1`: row 1 supplies labels and is not emitted as a data row.
+- [ ] Horizontal and vertical spans are repeated into every covered position.
+- [ ] A nested list keeps depth and labels, and a list inside a cell is kept in the cell text in order.
+- [ ] A nested table is written inline.
+- [ ] A row containing `". "` stays one sentence, and the `[Table …]` prefix is inside it.
+- [ ] Heading paths: a sentence under H1 › H2 carries both, and a new H2 replaces the old one.
+- [ ] Oversize atomic row: with a budget of 50 tokens, `runImport` with FakeProvider fails with `OversizeAtomicSegmentError` and FakeProvider records zero calls.
+- [ ] Offsets: for every segment, `text.slice(charStart, charEnd)` is the emitted line.
+
+**Verification:** `pnpm verify` → `exit=0`.
+
+**Commit:** `feat(ingest): structured blocks, a table-preserving linearizer, atomic row segments and heading paths`
+
+---
+
+### Task 6: DOCX adapter
+
+**Answers:** design §4.2, R4.
+
+**Files:** `packages/generator/src/ingest/docx.ts`, `packages/generator/test/fixtures/structure/*.docx` (synthetic, generated by a checked-in script `test/fixtures/structure/make-docx.mjs` so the fixture is reproducible), tests.
+
+**Contract:**
+- `ingestDocx(bytes, opts)` runs mammoth (`convertToHtml`, default style map, images ignored) and walks the HTML with htmlparser2 into blocks:
+  - `h1`–`h6` → heading, `p` → paragraph;
+  - `ol`/`ul` → listItem with depth and a label (`ol`: `1.`, `2.`… by position; `ul`: `•`);
+  - `table` → table: `thead`/`th` rows are counted as `headerRows` only when they come from `w:tblHeader`; `colspan`/`rowspan` are kept;
+  - footnote and endnote references → note blocks placed after the citing block.
+- The task first checks mammoth's behaviour against the fixture: `th` for `w:tblHeader` rows, `colspan` for `gridSpan`, `rowspan` for `vMerge`, deletions dropped, insertions kept. Wherever mammoth does not deliver one of these, the adapter reads that property from `word/document.xml` (via jszip and xmldom) for the affected tables. The commit message records which path each property uses.
+- Custom numbering formats (`a)`, `i.`) are rendered as decimal or bullet labels. This is recorded as a known limitation in the adapter's doc comment and shown by `leap extract`.
+- The result goes through `linearize`, then `buildDocument("docx", …)` with segments, then `admitSource`. The metadata records `originalSha256`, `extractor: "docx"` and `extractionVersion`.
+
+**Fixture contents (synthetic):** H1 › H2 headings; a nested numbered list; a two-column key/value table without a header row; a table with a marked header row, a horizontal and a vertical merge, and a list inside a cell; a nested table; a footnote; a tracked insertion and a tracked deletion; more than 500 code points in total.
+
+**Tests (write first):**
+- [ ] A golden linearized text for the fixture, compared exactly.
+- [ ] The tracked deletion's text is absent and the insertion's text is present.
+- [ ] The metadata fields are set, and `originalSha256` equals the sha256 of the input bytes.
+
+**Verification:** `pnpm verify` → `exit=0`.
+
+**Commit:** `feat(ingest): DOCX ingestion preserving tables, lists, headings and notes`
+
+---
+
+### Task 7: ODT adapter
+
+**Answers:** design §4.2, R4.
+
+**Files:** `packages/generator/src/ingest/odt.ts`, `test/fixtures/structure/make-odt.mjs` and the generated `.odt`, tests.
+
+**Contract:**
+- `ingestOdt(bytes, opts)` opens the zip with jszip, parses `content.xml` with xmldom, and walks `office:body/office:text` in document order:
+  - `text:h` (`text:outline-level`) → heading; `text:p` → paragraph;
+  - `text:list` / `text:list-item` → nested listItem, with labels from the list style in `office:automatic-styles` or `styles.xml` (number format and suffix), falling back to decimal or bullet;
+  - `table:table` → table: `table:table-header-rows` counts toward `headerRows`; `table:number-columns-spanned` and `table:number-rows-spanned` are kept; `table:covered-table-cell` is skipped because the span expansion fills it;
+  - `text:note` → note block after its paragraph;
+  - `text:s` (with `text:c`), `text:tab` and `text:line-break` → space, tab and newline;
+  - `office:annotation` is skipped, and `text:tracked-changes` deletions are dropped.
+- Then linearize, `buildDocument("odt", …)` and `admitSource`, with the same metadata as DOCX.
+
+**Fixture contents:** the same structures as the DOCX fixture, expressed in ODF, so the linearized goldens can be compared structurally.
+
+**Tests (write first):**
+- [ ] A golden linearized text for the ODT fixture.
+- [ ] A cross-format test: the DOCX and ODT fixtures give the same table and list lines (headings and notes may differ in whitespace only, after normalisation).
+- [ ] `text:s text:c="3"` gives three spaces, and an annotation's text is absent.
+
+**Verification:** `pnpm verify` → `exit=0`.
+
+**Commit:** `feat(ingest): ODT ingestion with the same structural contract as DOCX`
+
+---
+
+### Task 8: `leap extract` and DOCX/ODT sources in `generate`
+
+**Answers:** design §4.2 (inspection before any paid run).
+
+**Files:** `apps/cli/src/extract.ts`, `apps/cli/src/index.ts`, `apps/cli/src/generate.ts` (dispatch by extension: `.txt`, `.md`, `.pdf`, `.docx`, `.odt`; anything else is refused with the list), tests.
+
+**Contract:**
+- `leap extract --source <file> --out <dir> [--chunk-tokens N]` makes no model call and needs no API key or ledger. It writes:
+  - `extracted.txt`: the linearized text;
+  - `tables.md`: per table, the index, heading path, row count, header labels or "no marked header row (Column n labels)", and the first two row lines;
+  - `extract.json`: `{ originalSha256, extractor, extractionVersion, textHash, codePoints, pages?, sentenceCount, atomicSegmentCount, oversizeAtomicSegments: [...] }`, with oversize segments computed against `--chunk-tokens` (default the pipeline default).
+- The command exits 1 if admission fails, printing the count and the limit.
+- `--out` must not be inside the repository unless under `docs/uoc/`, so real material stays out of git. A test asserts the refusal.
+
+**Tests (write first):**
+- [ ] Running on the DOCX fixture writes the three files, and `tables.md` lists the key/value table as having no marked header row.
+- [ ] A source of 499 code points exits 1 with the admission message.
+- [ ] An `--out` inside the repo and outside `docs/uoc/` exits 1.
+
+**Verification:** `pnpm verify` → `exit=0`.
+
+**Commit:** `feat(cli): leap extract for zero-cost inspection; generate accepts DOCX and ODT`
+
+**→ Checkpoint B.** Benjamin runs `leap extract --source docs/uoc/BSBAUD412/<packet> --out docs/uoc/BSBAUD412/extract-1` and checks at least five tables against the original (merged cells, a table across pages, lists in cells, a key/value table, a table without headers), and reviews `oversizeAtomicSegments`. The result, with table numbers and pass or fail but no content, goes into `docs/testing/phase-3-pilot.md`.
+
+---
+
+### Task 9: Pilot ledger and paid-run authorisation
+
+**Answers:** R6.
+
+**Files:** `packages/generator/src/pilot/ledger.ts`, `apps/cli/src/generate.ts`, `apps/cli/src/index.ts`, tests.
+
+**Contract:**
+- `readLedger(path)` validates with Zod: `totalCapUsd > 0`; runs with unique `runId`s, an absolute `outDir`, `capUsd > 0`, and non-empty `authorisedBy` and `authorisedOn`.
+- `authoriseRun(ledger, { runId, outDir, budgetUsd }, spentByRun)` returns `ok` or a refusal naming the rule:
+  - the run is not listed;
+  - `outDir` differs;
+  - `budgetUsd` is above the run's cap;
+  - Σ spent over all runs − spent on this run + this run's cap is above the total. The reservation is the run's full cap, so a run can never be authorised into overspending the total.
+- `spentByRun` is read from each listed `outDir`'s `cost.json`: known and estimated costs, plus unavailable-cost attempts at their reservation. A missing directory counts as 0.
+- `generate` requires `--ledger` and `--run` when the provider is `anthropic` or `record`, and checks before creating or resuming anything. Task 13 applies the same check to `regenerate`. Replay and fake providers ignore the ledger.
+
+**Tests (write first):**
+- [ ] Each refusal rule, with its message.
+- [ ] `generate --provider record` without `--ledger` exits 1 before any directory is created.
+- [ ] Two listed runs with $2.50 spent against a $5 total: a third run with a $3 cap is refused, and with a $2.50 cap is allowed.
+- [ ] Unavailable-cost attempts count at their reservation.
+
+**Verification:** `pnpm verify` → `exit=0`.
+
+**Commit:** `feat(cli): pilot ledger; paid runs need an authorised, capped entry`
+
+**→ Checkpoint C.** Benjamin writes the S1 entry before Task 10 starts.
+
+---
+
+### Task 10: Knowledge Evidence tree, assessment conditions, source authority and KE alignment
+
+**Answers:** design §4.3–4.4. This is the only task that changes model prompts or output schemas, so the replay fixtures break here and are re-recorded here (run S1).
+
+**Files:** `packages/shared/src/competency.ts`, `packages/shared/src/concepts.ts`, `packages/generator/src/schemas/model-output.ts`, `competency/parse-unit.ts`, `concepts/extract.ts`, `concepts/align.ts`, `plan/planner.ts`, `prompts/system.ts` (`PROMPT_VERSION` bump), synthetic fixtures under `test/fixtures/synthetic/` (the unit gains nested KE bullets and an Assessment Conditions section allowing a workplace or a simulated environment; a new packet fixture has an "RTO instructions" section stating that there is no simulated option), `test/fixtures/replay/synthetic/` (re-recorded), tests.
+
+**Contract:**
+- `KnowledgeEvidenceNode = { id: string; text: string; children: KnowledgeEvidenceNode[] }`, with IDs `KE<n>` and `KE<n>.<m>`, assigned in code in document order, never by the model. The model returns the tree without IDs. `UnitOfCompetency` gains `knowledgeEvidence: KnowledgeEvidenceNode[]`, `assessmentConditions: string | null` (verbatim) and `release: string | null` (as printed). `targetsOf(unit)` returns PCs and every KE node as `{ id, kind: "pc" | "ke", text, path }`.
+- The parse prompt requires verbatim wording and nesting. A check verifies that every KE `text` and the assessment conditions occur, after whitespace normalisation, in the pasted unit text; a failure is a content retry.
+- `Concept.kind: "content" | "rto-instruction"`. The extract prompt defines an RTO instruction as a statement about how one provider organises, delivers, assesses or administers the unit (assessment arrangements, submission rules, simulated or workplace options, attempts, deadlines). The merge keeps kind, and `rto-instruction` wins on conflict.
+- Alignment covers every target from `targetsOf(unit)` under the phase-2 evidence rule. Only `content` concepts are offered. `unsupportedCriteriaIds` includes unsupported KE nodes. Provenance `criteriaIds` holds PC and KE IDs; the field name is unchanged (recorded as a deviation).
+- The planner never allocates an `rto-instruction` concept. Assessment conditions are never taken from the source document.
+- Records naming target IDs carry `unitTextHash`.
+
+**Tests (write first, FakeProvider):**
+- [ ] Nested KE bullets give `KE1`, `KE2`, `KE2.1`, `KE2.2` with the wording verbatim. Paraphrased KE text in a fake response triggers a content retry.
+- [ ] Assessment conditions are parsed verbatim, and paraphrase is rejected.
+- [ ] **Negative test:** with the synthetic packet and unit, the "no simulated option" statement's concept has kind `rto-instruction`, the plan targets no such concept, the alignment offers none, and the parsed unit's assessment conditions still allow a simulated environment.
+- [ ] Alignment returns entries for every PC and KE node, and KE-only support appears in `unsupportedCriteriaIds` when absent.
+- [ ] The same unit text gives the same IDs, and a changed unit text gives a different `unitTextHash`.
+
+**Re-record (S1, authorised at Checkpoint C):** `node --env-file=.env apps/cli/dist/index.js generate --source <synthetic packet> --unit <synthetic unit> --out <S1 outDir> --budget-usd 1 --provider record --fixtures packages/generator/test/fixtures/replay/synthetic --ledger docs/uoc/pilot-ledger.json --run S1`. Stale fixture files are removed first (`git rm` the old directory contents in the same commit). `replay.test.ts` is updated for the new counts and targets.
+
+**Verification:** `pnpm verify` → `exit=0`, and the S1 cost from `cost.json` is recorded in the commit message.
+
+**Commit:** `feat(generator): Knowledge Evidence tree and alignment, assessment conditions, RTO-instruction classification; re-record synthetic fixtures`
+
+---
+
+### Task 11: Claims wording, mapping kinds and the review-sheet export
+
+**Answers:** design §4.5, §7.1, R1, R2.
+
+**Files:** `packages/shared/src/review.ts`, `packages/shared/src/generation.ts`, `packages/generator/src/review/sheet.ts`, `packages/generator/src/store/types.ts` (`SheetManifest`, `putSheet`, `getSheet`), `apps/cli/src/report.ts` (mapping), `apps/cli/src/review-sheet.ts`, `apps/cli/src/index.ts`, README and CLI help text, tests.
+
+**Contract, claims:**
+- `mapping.csv` starts with the notice line `# Suggested alignment of revision activities; not an assessment record. Rows marked reviewed were checked by a person against the cited passages and the unit.`
+- Columns gain `kind` (`pc` or `ke`), `targetText` and `unitTextHash`. `MappingStatus` gains `reviewed`, set only when the activity's current build has a counted scored review with decision `accepted`; alignment-review statuses are unchanged.
+- A test greps the CLI help, README, prompts and report headers for the words `competent`, `competency achieved`, `assessment evidence`, `meets RTO`, `verified` and `validated`. Any hit outside an allowed-phrases list fails the test.
+
+**Contract, sheet:**
+- `RUBRIC_VERSION = "r1"`. `Dimension = "correctness" | "support" | "distractors" | "mapping" | "usefulness"`. `applicable(dimension, type, hasUnit)` follows design §5.
+- `SheetManifest { sheetId; importId; unitTextHash | null; rubricVersion; createdAt; entries: { activityId; revision; buildId; type; itemIds: string[] }[] }`, with `sheetId = sha256(canonical({ importId, unitTextHash, rubricVersion, entries sorted by activityId }))`. It is written once to `reviews/sheets/<sheetId>.json` and never changed. Writing the same `sheetId` again is a no-op.
+- `review-sheet` includes every promoted, non-dropped activity whose current build has no counted scored review. It writes the manifest, then three files next to it under the import directory:
+  - `review-sheet.md`, per activity: the content, keyed answers, item IDs and item count; (a) supporting passages in full with sentence IDs and heading paths; (b) targets with kind, path and text; (c) flagged RTO-instruction passages; the unit code, release and short hash; the `.h5p` path;
+  - `scores.csv`: `sheetId, activityId, revision, buildId, correctness, support, distractors, mapping, usefulness, minutes, decision`, with `na` pre-filled where not applicable and other score cells blank;
+  - `findings.csv`: the header `sheetId, activityId, dimension, itemId, score, reason` and no rows.
+- It refuses store version 1 (Task 1).
+
+**Tests (write first):**
+- [ ] The manifest is written once. Exporting again with nothing changed gives the same `sheetId` and no new file.
+- [ ] `na` is pre-filled for distractors on flashcards and blanks, and for mapping without a unit.
+- [ ] The sheet shows RTO-instruction passages in section (c) for the negative fixture.
+- [ ] The mapping notice line and `kind` column are present. The claims grep passes on the tree and fails on a planted phrase.
+
+**Verification:** `pnpm verify` → `exit=0`.
+
+**Commit:** `feat(review): persisted sheet manifests, the review sheet, and claims wording`
+
+---
+
+### Task 12: Score import: validation, findings, row identity, batch commit and recovery
+
+**Answers:** design §7.2–7.3, R1, R2, C4, C5.
+
+**Files:** `packages/generator/src/review/rubric.ts`, `review/import.ts`, `store/types.ts` (`ReviewBatch`, `ScoreRecord`, `commitBatch`, `listBatches`, `putScore`, `listScores`), `memory-store.ts`, `apps/cli/src/file-store.ts`, `apps/cli/src/review-import.ts`, `apps/cli/src/review.ts` (refuse `--decision` on v2), tests.
+
+**Contract, rubric (pure):**
+- `activityScores(rowScores, findings)`: for every applicable dimension, the activity score must equal `min(scores of that dimension's findings)`, or 2 when there are none. A row score of 0 or 1 with no finding, or a finding scored lower than the row, is an error naming the dimension.
+- `deriveDecision(scores)`: any applicable 0 → `rejected`; otherwise any applicable 1 → `needs-revision`; otherwise `accepted`. It is exhaustive and total, and tested over all 3⁵ combinations with applicability masks.
+
+**Contract, validation.** `validateImport(csvRows, findingRows, store)` reports every problem at once, each naming the row or finding line:
+1. Each `sheetId` resolves to a stored manifest. An unknown sheet is an error.
+2. Each row matches its manifest entry (`activityId`, `revision`, `buildId`). There are no duplicate `activityId` rows within a file, and no rows for activities outside the manifest.
+3. A row with every score cell blank (or `na` only where pre-filled) is **not scored** and is skipped. A partly scored row is an error.
+4. Scores are `0`, `1`, `2` or `na`, with `na` only where applicable is false.
+5. Findings: the dimension must be applicable; the `itemId` must be in the entry's `itemIds` (for single-item types the item is the activity ID); the score must be 0 or 1; the reason must be non-empty; `activityScores` must hold.
+6. `minutes` is a non-negative number, required on scored rows.
+7. The `decision` column may be blank. If filled and different from the derived decision, the row is an error: `row <n> (<activityId>): decision "<given>" does not match the scores; the derived decision is "<derived>"`.
+8. For each scored row, `rowKey = sha256(canonical({ sheetId, activityId, revision, buildId, scores, findings sorted, minutes, reviewer }))`. **If a score record with that `rowKey` exists, the row is already committed and is skipped before step 9.**
+9. Current-state check, for scored rows not already committed: the entry's revision is still the activity's current revision; `buildId` is still its `currentBuildId`; the import's `unitTextHash` equals the manifest's; and `rubricVersion` equals `RUBRIC_VERSION`. A failure makes that row **stale**, naming what changed. Other rows are unaffected, and another activity having been reviewed never makes a row stale.
+
+**Contract, commit and recovery:**
+- If validation reports any error or stale row, nothing is written and the command exits 1 with the full list.
+- Otherwise, the new rows form `ReviewBatch { batchId; sheetId; reviewer; importedAt; rows: ScoreRecord[] }` with `batchId = sha256(sorted rowKeys)`. It is written to `reviews/batches/<batchId>.json` by temporary file and atomic rename under the import's lock; the rename is the commit point.
+- After commit, one `ScoreRecord` per row is appended to `scores.jsonl`, and one `AcceptanceRecord { …, decision, batchId, scoreRowKey, buildId }` per row to `acceptances.jsonl`.
+- **Recovery:** on every lock acquisition in a version-2 store, `replayCommittedBatches()` appends any score or acceptance record whose `(batchId, rowKey)` is missing from the ledgers. It is idempotent.
+- With zero new rows, the command prints `nothing new to import (<n> rows already committed, <m> not scored)`, exits 0 and writes nothing.
+- `ScoreRecord { rowKey; batchId; sheetId; importId; activityId; revision; buildId; unitTextHash; rubricVersion; reviewer; scores; findings; minutes; decision; decidedAt }`.
+- `leap review --decision` on a version-2 store exits 1: `acceptance is recorded through leap review-sheet and leap review-import`. `review --criterion` continues, and accepts KE IDs.
+
+**Tests (write first):**
+- [ ] **R1 sequence:** export a sheet for four activities; score two; import (2 committed); complete the other two in the same files, leaving the first two unchanged; import (2 new, 2 recognised as already committed); import again (nothing new). Exactly four score and four acceptance records, and two batch files.
+- [ ] **Unaffected rows:** after the first import, the remaining rows validate even though the reviewed set changed.
+- [ ] **Stale:** regenerate one activity after export (fixture-level promotion of a new revision). That row is reported stale with "revision changed"; the other rows import.
+- [ ] **Committed before stale:** a row committed, then its activity regenerated, then the same file imported again: the row is reported as already committed, not stale.
+- [ ] **Correction:** changing a committed row's score gives a new `rowKey`. If still current, it commits as a new record and latest wins; if stale, it is refused.
+- [ ] Duplicate `activityId` rows, unknown `sheetId`, a partly scored row, `na` on an applicable dimension, an unknown `itemId`, a finding on a non-applicable dimension, and a score of 1 without a finding each produce their named error, and all appear in one run.
+- [ ] A contradictory decision column shows the derived decision; a blank one is fine.
+- [ ] **Crash recovery:** a fault is injected after the batch rename and before the ledger appends. The next command that takes the lock appends the missing records once. A second lock acquisition appends nothing.
+- [ ] A crash before the rename leaves no batch and no records, and the import can be rerun.
+- [ ] `review --decision` on a v2 store exits 1. On the v1 fixture it exits 1 with the legacy message (from Task 1).
+
+**Verification:** `pnpm verify` → `exit=0`.
+
+**Commit:** `feat(review): checked, idempotent score import with per-dimension findings and a recoverable batch commit`
+
+---
+
+### Task 13: `leap regenerate` with logical requests and an allowance
+
+**Answers:** design §6, C2, R6.
+
+**Files:** `packages/generator/src/pipeline/regenerate.ts`, `store/types.ts` (`RegenerationRequest`, `putRegeneration`, `listRegenerations`), `memory-store.ts`, `apps/cli/src/file-store.ts`, `apps/cli/src/regenerate.ts`, `apps/cli/src/index.ts`, tests.
+
+**Contract:**
+- `RegenerationRequest { requestId; importId; activityId; index; baseRevision; targetRevision; note; status: "running" | "succeeded" | "failed"; outcome: string | null; createdAt; completedAt: string | null }`, with `requestId = <activityId>:regen:<index>`. Events are appended; the latest per `requestId` wins.
+- `leap regenerate --out <dir> --activity <id> --note "<text>" [--ledger --run]`, under the lock:
+  1. It refuses store version 1, an activity without a promoted revision, or an activity whose current build's counted decision is not `needs-revision` or `rejected`.
+  2. If the activity's latest request is `running`, the command **resumes** it. The note must equal the stored note, or the command exits 1 showing the stored note. No allowance is consumed.
+  3. Otherwise, if the activity already has 2 requests (any status), the command refuses: `activity <id> has used its 2 regenerations in this pilot`.
+  4. Otherwise it appends request `index = count + 1` with `status: "running"` and `targetRevision = max(revision) + 1`, **before any dispatch**. From this point the request counts.
+  5. It runs the produce operation with key `<importId>:produce:<activityId>:r<targetRevision>`, prompting with the note appended as in parent §5. The resulting revision has `origin: "regenerate"` and the `requestId`. It builds a new build record, validates and promotes only on success; the previous revision is superseded and keeps its builds and reviews.
+  6. It appends `succeeded` or `failed`, with the outcome (content failure, budget, system).
+- Budget: the import's existing per-import budget applies. The ledger check (Task 9) runs first for paid providers.
+- Regeneration attempts are recorded like any other; `cost.json` attributes them to the activity with `purpose: "produce"` and the request ID.
+
+**Tests (write first, FakeProvider):**
+- [ ] A `needs-revision` activity regenerates: revision 2 is promoted with `origin: "regenerate"`, and revision 1 and its review are unchanged.
+- [ ] An `accepted` activity is refused, as is an activity with no scored review.
+- [ ] **Interrupted request:** a fault after the request is appended and the operation starts; rerunning with the same note resumes the same `requestId` and `targetRevision`, and the provider calls total one logical production (the phase-2 operation reuse holds). A different note is refused.
+- [ ] **Allowance counts failures:** request 1 fails on content and request 2 succeeds; a third request is refused.
+- [ ] A budget-refused request is recorded `failed` and counts.
+- [ ] A paid provider without a ledger entry is refused before any request is appended.
+
+**Verification:** `pnpm verify` → `exit=0`.
+
+**Commit:** `feat(cli): leap regenerate with persisted logical requests and a two-request allowance`
+
+---
+
+### Task 14: Gate report
+
+**Answers:** design §8, C1, C3, C6, R3, R5.
+
+**Files:** `packages/generator/src/report/gate.ts`, `apps/cli/src/gate-report.ts`, `apps/cli/src/index.ts`, tests.
+
+**Contract, per import:**
+- **Unit identity:** the unit code, release and short hash, and the import's store version.
+- **Legacy (v1) directories** are listed under "Not eligible (phase-2 store)", with historical acceptance counts labelled "no rubric scores; excluded from the gate". No other figure uses them.
+- **Denominators per type**, as raw counts:
+  - `planned`: activities in the saved plan;
+  - `notAttempted`: failed with `skipped:` and never produced;
+  - `generationFailed`: an `origin: "generate"` revision never promoted, because of a content or system failure;
+  - `promoted`: the first generated revision was promoted;
+  - `reviewed`: the first generated revision has at least one scored review, on any build;
+  - `unreviewed = promoted − reviewed`.
+- **First-pass results** use the first scored review of the first generated revision. `acceptedFirstPass`, `needsRevisionFirstPass` and `rejectedFirstPass` are shown as `n/reviewed` and `n/planned` (end to end). A first-pass review whose build is no longer current is still counted here and labelled `historical` (C3).
+- **After-revision results** use the latest revision's current build and its latest counted scored review (non-stale). They show accepted after revision `n/planned`, and among reviewed; regenerations used and failed; their extra cost; and extra review minutes. Activities whose latest revision is unreviewed are counted as `awaitingReview`.
+- **Gate status per import:** `incomplete` if `unreviewed > 0` or `awaitingReview > 0`, listing the activities; otherwise `complete`. Thresholds are evaluated only on complete imports, and only once they are frozen (Task 16 records them); before that the report shows the provisional targets and "not frozen".
+- **Distributions** for each dimension of the 0/1/2/na counts, for first-pass and after-revision separately. Distractors and usefulness each have their own rows.
+- **Items** (flashcards, blanks): items inspected, which is every item of every reviewed revision, and distinct failing items per dimension from findings.
+- **Minutes:** median and total, per activity and per item, first-pass and revisions separately, with item count alongside.
+- **Cost (C1):**
+  - `direct[type]` covers all produce attempts, including failed, retries and regenerations;
+  - `firstPassDirect[type]` covers attempts of `origin: "generate"` revisions only;
+  - `shared` covers parseUnit, extract, merge, align and plan;
+  - `allocateShared(shared, firstPassDirect, planned)` splits by the known and estimated `firstPassDirect` share, or by planned count if that total is 0;
+  - first-pass cost per accepted = (allocated + firstPassDirect) / acceptedFirstPass; after-revision = (allocated + direct) / acceptedAfterRevision;
+  - `n/a (0 accepted)` with the spend shown; any input with an unavailable-cost attempt marks the figure `lower bound (<k> attempts without cost)`.
+- **Also:** unsupported and never-targeted PCs and KE nodes; the negative-check count (findings whose reason is tagged `rto-claim`, a reason prefix the sheet documents); stale reviews; and build engine displays, extraction version, prompt version, model roles and rubric version.
+
+**Contract, across imports:** `leap gate-report <dir>...` shows each import as above, then a pooled table per type with a per-unit breakdown. It states the sample against the minimum planned sample of 25/15/5 packages as "planned minimum", with no confidence claim (C6). It writes `gate-report.md` in the first directory; `--summary <file>` writes a numbers-only copy containing no content strings, and a test asserts that no source sentence, no activity text and no target text appears in it.
+
+**Tests (write first, fixture-built stores):**
+- [ ] The denominators on a fixture with one skipped, one content failure, one promoted-unreviewed, and accepted, needs-revision and rejected first-pass activities.
+- [ ] Incomplete status while one review is missing, and complete once it is imported.
+- [ ] First pass vs after revision: needs-revision r1 → accepted r2 shows first-pass needs-revision and after-revision accepted, with the regeneration cost counted only after revision.
+- [ ] A stale first-pass review is counted in first pass as `historical` and not in after-revision acceptance.
+- [ ] Cost allocation by share, the zero-base fallback to planned count, a lower-bound label with an unavailable attempt, and `n/a (0 accepted)`.
+- [ ] A v1 directory is listed as not eligible and changes no figure.
+- [ ] The summary contains no content strings.
+
+**Verification:** `pnpm verify` → `exit=0`.
+
+**Commit:** `feat(report): gate report with explicit denominators, first-pass and after-revision yields, and defined cost allocation`
+
+---
+
+### Task 15: CLI wiring, end-to-end offline pilot rehearsal
+
+**Answers:** integration of Tasks 1–14.
+
+**Files:** `apps/cli/test/pilot-rehearsal.test.ts`, `apps/cli/src/index.ts` (help text), README (phase-3 commands).
+
+**Contract:** a full rehearsal on the synthetic fixtures, with no network, no ledger and no key. `generate` uses the replay provider and the fixtures re-recorded in Task 10. `regenerate` uses FakeProvider with hand-authored responses labelled synthetic, because Task 10's recording precedes the regenerate command:
+
+`extract` → `generate` (DOCX synthetic packet + synthetic unit) → `review-sheet` → fill `scores.csv` and `findings.csv` programmatically (one accepted, one needs-revision, one rejected, one left unscored) → `review-import` → `gate-report` (incomplete) → score the rest → `regenerate` the needs-revision activity → new `review-sheet` → `review-import` → `gate-report` (complete).
+
+**Tests:**
+- [ ] The rehearsal passes, and the final report's denominators, yields and costs equal hand-computed expectations.
+- [ ] A second full rehearsal gives an identical `gate-report.md`, apart from timestamps, which are injected by the clock.
+
+**Verification:** `pnpm verify` → `exit=0`.
+
+**Commit:** `test(cli): offline end-to-end pilot rehearsal`
+
+---
+
+### Task 16: Pilot runbook and recorded deviations
+
+**Files:** `docs/testing/phase-3-pilot.md`, `docs/superpowers/specs/2026-09-28-phase-3-quality-gate-design.md` (status line only), this plan's "Deviations" section.
+
+**Contents of the runbook:**
+1. **Preconditions:** Checkpoints A–D passed; `pnpm verify` green on the branch head; the P1 ledger entry exists.
+2. **Extraction check result** from Checkpoint B.
+3. **P1 commands**, with `--ledger` and `--run P1`; recorded responses under `docs/uoc/BSBAUD412/replay-p1/`.
+4. **Scoring procedure:**
+   - export the sheet, score it, and import it;
+   - use the `rto-claim` reason prefix for §4.4 violations;
+   - regenerate at most twice per activity;
+   - rescore until the gate report is `complete`.
+5. **Diagnosis table**, from failing dimension to stage (design §9 step 4).
+6. **Experiments:** each needs a new ledger entry and is one change at a time.
+7. **Calibration:** Benjamin sets thresholds from the pilot; they are written into the design's §8.3 with a date and marked frozen before any further unit is scored.
+8. **Recording:** a sanitised gate summary; the line "BSBAUD412 pilot complete" with its date, which is not a gate pass; and the statement that the full gate needs five pairs, including trade units, with results per unit and per item.
+
+**Deviations section (in this plan):**
+- Provenance field `criteriaIds` holds PC and KE IDs, unrenamed.
+- DOCX custom list numbering is rendered as decimal or bullet.
+- Non-atomic oversize sentences keep phase-2 behaviour.
+- `review --decision` is refused on version-2 stores.
+- The mammoth-vs-XML path per table property, as recorded in Task 6.
+
+**Verification:** `pnpm verify` → `exit=0`.
+
+**Commit:** `docs: phase-3 pilot runbook and recorded deviations`
+
+**→ Checkpoint D**, then **Checkpoint E** (Benjamin authorises P1). The pilot itself follows the runbook and is not a task in this plan.
+
+---
+
+## Done when
+
+- `pnpm verify` is green on the branch head, with no real API call, and the S1 re-record is the only paid call made by the tasks.
+- Checkpoints A–D are signed off. Checkpoint B's table check is recorded, with no content, in `docs/testing/phase-3-pilot.md`.
+- Every contract clarification C1–C7 and R1–R6 has at least one named test that fails without it.
+- No file under `docs/uoc/` is tracked (`git ls-files docs/uoc` is empty).
+
+## Acceptance checks for the owner's review
+
+| Check | Where |
+|---|---|
+| A candidate built after an engine change records the new engine; old build records and reviews are untouched | Task 3 tests |
+| Phase-2 directories are byte-identical after every phase-3 command is tried on them | Task 1 test |
+| Key/value table first rows are preserved; header rows only when marked | Tasks 5–7 goldens |
+| An oversize table row stops the run before any model call | Task 5 test |
+| 500 and 400,000 admitted; 499 and 400,001 refused; offsets still UTF-16 | Task 4 tests |
+| "No simulated option" in the packet never reaches a plan entry; the unit's conditions stand | Task 10 negative test |
+| Half-scored sheet → complete → reimport gives no duplicates | Task 12 R1 sequence |
+| Every 0/1 has a per-dimension finding with an item ID | Task 12 validation tests |
+| Interrupted regeneration resumes without using allowance; failed ones count | Task 13 tests |
+| Denominators, incomplete status, first-pass vs after-revision, cost convention | Task 14 tests |
+| No paid run without a ledger entry and cap | Task 9 tests |
+
+## Deviations from the design, recorded
+
+Filled in by Task 16.
