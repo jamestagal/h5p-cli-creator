@@ -5,6 +5,7 @@ import { readFileSync, createReadStream, statSync } from "node:fs";
 import JSZip from "jszip";
 import { ActivitySpec, type AssetEntry } from "@leaplearn/shared";
 import { compile, compileToBuffer, compileToFile, createRegistry, validate, type LibraryRegistry, type Logger } from "../src/index.js";
+import { crc32, entryData, readZipStructure } from "./helpers/zip-structure.js";
 
 const root = resolve(import.meta.dirname, "../../..");
 const fixtures = resolve(import.meta.dirname, "fixtures");
@@ -13,7 +14,15 @@ beforeAll(async () => { registry = await createRegistry({ lockPath: resolve(root
 
 const card = (): AssetEntry => { const p = resolve(fixtures, "assets/card.jpg"); return { assetId: "card", sha256: createHash("sha256").update(readFileSync(p)).digest("hex"), byteLength: statSync(p).size, mimeType: "image/jpeg", open: () => createReadStream(p) }; };
 const load = (n: string) => ActivitySpec.parse(JSON.parse(readFileSync(resolve(fixtures, "specs", `${n}.json`), "utf8")));
-const goldenHashes: Record<string, string> = JSON.parse(readFileSync(resolve(fixtures, "golden-hashes.json"), "utf8"));
+interface Golden {
+  content: { sha256: string; entries: number };
+  package: { sha256: string; runtime: { node: string; zlib: string; platform: string; arch: string } };
+}
+const goldens: Record<string, Golden> = JSON.parse(readFileSync(resolve(fixtures, "golden-hashes.json"), "utf8"));
+const flashcardsGolden = goldens["flashcards@1"]!;
+/** Deflate output is implementation-defined, so the compressed-bytes golden holds only on the runtime it was recorded on. */
+const onRecordedRuntime = ((r) => process.versions.node === r.node && process.versions.zlib === r.zlib && process.platform === r.platform && process.arch === r.arch)(flashcardsGolden.package.runtime);
+const describeRuntime = (r: Golden["package"]["runtime"]): string => `${r.platform} ${r.arch}, Node ${r.node}, zlib ${r.zlib}`;
 
 describe("compile", () => {
   it("produces byte-identical packages for identical inputs", async () => {
@@ -156,10 +165,63 @@ describe("compile", () => {
     expect(openStream.destroyed).toBe(true);
   });
 
-  it("matches the committed golden hash for flashcards@1 (a mismatch means the toolchain, yazl, a handler or a library changed and the hash must be re-recorded deliberately)", async () => {
+  it("matches the portable content golden for flashcards@1: every entry's uncompressed bytes, on any runtime", async () => {
+    const buf = await compileToBuffer(load("flashcards"), new Map([["card", card()]]), { registry, revision: 1 });
+    const zip = readZipStructure(buf);
+    const lines = zip.entries.map((e, i) => `${e.name} ${createHash("sha256").update(entryData(buf, e, zip.locals[i]!)).digest("hex")}`).sort();
+    expect(lines).toHaveLength(flashcardsGolden.content.entries);
+    const content = createHash("sha256").update(lines.join("\n")).digest("hex");
+    expect(content, "the uncompressed content of flashcards@1 changed: a handler, the params, a library or the fixture changed. Re-record the content golden deliberately if the change was intended.").toBe(flashcardsGolden.content.sha256);
+  });
+
+  it("writes the same ZIP metadata on any runtime: fixed times, modes and versions, no extra fields or comments, CRCs and sizes that match the data", async () => {
+    const buf = await compileToBuffer(load("flashcards"), new Map([["card", card()]]), { registry, revision: 1 });
+    const zip = readZipStructure(buf);
+    expect(zip.commentLength).toBe(0);
+    const names = zip.entries.map((e) => e.name);
+    expect(names).toEqual([...names].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))); // UTF-16 code-unit order
+    expect(names.some((n) => n.endsWith("/"))).toBe(false);
+    const streamed = new Set(["content/images/fc-1-c2.jpg"]); // media arrives as a stream, so its sizes and CRC follow in a data descriptor
+    let previousOffset = -1;
+    zip.entries.forEach((e, i) => {
+      const local = zip.locals[i]!;
+      const data = entryData(buf, e, local);
+      const where = `${e.name}: `;
+      expect({ versionMadeBy: e.versionMadeBy, versionNeeded: e.versionNeeded, method: e.method, dosTime: e.dosTime, dosDate: e.dosDate, extraLength: e.extraLength, commentLength: e.commentLength, diskStart: e.diskStart, internalAttributes: e.internalAttributes, externalAttributes: e.externalAttributes }, where)
+        .toEqual({ versionMadeBy: 0x033f, versionNeeded: 20, method: 8, dosTime: 0, dosDate: 10273, extraLength: 0, commentLength: 0, diskStart: 0, internalAttributes: 0, externalAttributes: (0o100644 << 16) >>> 0 });
+      expect(e.flags, where).toBe(streamed.has(e.name) ? 0x0808 : 0x0800); // UTF-8 names; bit 3 only for streamed entries
+      expect({ versionNeeded: local.versionNeeded, flags: local.flags, method: local.method, dosTime: local.dosTime, dosDate: local.dosDate, extraLength: local.extraLength, name: local.name }, where)
+        .toEqual({ versionNeeded: e.versionNeeded, flags: e.flags, method: e.method, dosTime: e.dosTime, dosDate: e.dosDate, extraLength: 0, name: e.name });
+      expect(crc32(data), where).toBe(e.crc32);
+      expect(data.length, where).toBe(e.uncompressedSize);
+      if (streamed.has(e.name)) {
+        expect({ crc32: local.crc32, compressedSize: local.compressedSize, uncompressedSize: local.uncompressedSize }, where).toEqual({ crc32: 0, compressedSize: 0, uncompressedSize: 0 });
+        const after = local.dataOffset + e.compressedSize;
+        expect({ signature: buf.readUInt32LE(after), crc32: buf.readUInt32LE(after + 4), compressedSize: buf.readUInt32LE(after + 8), uncompressedSize: buf.readUInt32LE(after + 12) }, where)
+          .toEqual({ signature: 0x08074b50, crc32: e.crc32, compressedSize: e.compressedSize, uncompressedSize: e.uncompressedSize });
+      } else {
+        expect({ crc32: local.crc32, compressedSize: local.compressedSize, uncompressedSize: local.uncompressedSize }, where).toEqual({ crc32: e.crc32, compressedSize: e.compressedSize, uncompressedSize: e.uncompressedSize });
+      }
+      expect(e.localHeaderOffset, where).toBeGreaterThan(previousOffset); // local records in central-directory order
+      previousOffset = e.localHeaderOffset;
+    });
+  });
+
+  it("compresses every entry exactly as this runtime's zlib does at level 6 (yazl's default), so a change of level or method is caught on any runtime", async () => {
+    const { deflateRawSync } = await import("node:zlib");
+    const buf = await compileToBuffer(load("flashcards"), new Map([["card", card()]]), { registry, revision: 1 });
+    const zip = readZipStructure(buf);
+    zip.entries.forEach((e, i) => {
+      const local = zip.locals[i]!;
+      const stored = buf.subarray(local.dataOffset, local.dataOffset + e.compressedSize);
+      expect(stored.equals(deflateRawSync(entryData(buf, e, local), { level: 6 })), `${e.name}: stored stream is not this runtime's level-6 deflate`).toBe(true);
+    });
+  });
+
+  it.runIf(onRecordedRuntime)(`matches the compressed-bytes golden for flashcards@1 on its recorded runtime (${describeRuntime(flashcardsGolden.package.runtime)})`, async () => {
     const buf = await compileToBuffer(load("flashcards"), new Map([["card", card()]]), { registry, revision: 1 });
     const hash = createHash("sha256").update(buf).digest("hex");
-    expect(hash, "compiled bytes for flashcards@1 no longer match packages/engine/test/fixtures/golden-hashes.json: the Node/zlib toolchain, yazl, a handler or a library changed. Re-record the hash deliberately if the change was intended.").toBe(goldenHashes["flashcards@1"]);
+    expect(hash, "on the recorded runtime, compiled bytes for flashcards@1 no longer match: the runtime's deflate output, yazl, a handler or a library changed. The content and metadata goldens say which layer. Re-record deliberately if the change was intended.").toBe(flashcardsGolden.package.sha256);
   });
 
   it("calls the injected logger with a compiled summary after a successful write", async () => {
