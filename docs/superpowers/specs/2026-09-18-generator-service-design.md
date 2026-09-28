@@ -1,12 +1,14 @@
 # AI activity generator: service design
 
-Date: 18 Sep 2026, revision 2 (after review, amended). Status: approved for planning phases 0–1. Companion: `docs/reviews/2026-09-18-codebase-review.md` (the state of the code this design starts from).
+Date: 18 Sep 2026, revision 2 (after review, amended; sources, limits and claims amended 28 Sep 2026 by Benjamin's ruling, §13). Status: approved for planning phases 0–1. Companion: `docs/reviews/2026-09-18-codebase-review.md` (the state of the code this design starts from).
 
 ## 1. What we're building
 
 A hosted service that takes source material (text, files, web pages, audio/video, YouTube) and produces a set of interactive H5P activities the user can preview, regenerate or drop, then export as standard `.h5p` packages. Vocational education is the first market: the user can supply a unit of competency, generated activities are aligned to its performance criteria, and the export includes a mapping table.
 
 **Scope statement on alignment.** The activities are for understanding and revision. They are not assessment tasks, and the mapping is a *suggested* alignment of revision activities to performance criteria, distinguished from human-reviewed alignment in the export. Any wording elsewhere (including the positioning document) that calls this "assessment-mapping evidence" should be read as this narrower claim.
+
+**What the product claims, and what it does not** (ruling, 28 Sep 2026). Generated activities are learning and revision activities. Each activity's answers are verified against the source passages it cites, and its relevance is verified against the published unit's Knowledge Evidence and performance criteria. Neither the product nor its exports may claim that completing these activities demonstrates competency or satisfies an RTO's assessment requirements. This applies to UI copy, export headers, `mapping.csv`, prompts and documentation.
 
 Version 1 is used internally (Benjamin and the agency) but modelled for tenancy from the start, so opening it to outside users adds accounts and billing rather than a rewrite.
 
@@ -17,8 +19,8 @@ Version 1 is used internally (Benjamin and the agency) but modelled for tenancy 
 | Who uses v1 | Internal first, tenancy in the data model (org on every row, keys per org, usage per job) |
 | Output unit | One `ActivitySpec` per exportable `.h5p` package. Generation may return several specs of the same type for one import. Interactive Book has two distinct composition modes: activity collection and narrated audio book (§6) |
 | Editing in v1 | Preview, regenerate (optionally with a note), drop, restore. No field editing, no H5P editor |
-| Vocational | Unit of competency as a structured input; activities tagged to performance criteria; mapping table exported with suggested vs reviewed status. Revision, not assessment |
-| Sources | Pasted text, text files (txt, md, docx, PDF text layer), web page, audio/video upload, YouTube |
+| Vocational | Unit of competency as a structured input; activities tagged to performance criteria and Knowledge Evidence items; mapping table exported with suggested vs reviewed status. Revision, not assessment; no claim of competency or of meeting RTO assessment requirements |
+| Sources | Pasted text; a web page; a Wikipedia article; a document file (PDF text layer, DOCX, ODT; txt and md in the CLI); audio/video upload; YouTube. Text sources are 500–400,000 characters after extraction; PDFs at most 100 pages (ruling, 28 Sep 2026, modelled on H5P.com Smart Import) |
 | Runtime | One Node service in a container: SvelteKit + API + job worker, Postgres, R2 |
 | Interactive Video | Next spec, not this one |
 | Code structure | Split generation from compilation, in a monorepo |
@@ -157,7 +159,7 @@ Statuses. `imports`: `queued → ingesting → extracting → planning → gener
 
 A worker job per import. Progress is persisted per activity and per extraction chunk, every operation carries an idempotency key, and a restarted job skips operations whose outcome is already recorded. A provider call interrupted by a crash **may have been billed**; on restart the operation is marked `billing_uncertain` and re-run rather than assumed unbilled. Exactly-once model execution is not promised.
 
-1. **Ingest.** Store the raw upload or fetched page in R2. Extract text and, for audio/video, segments. Compute `textHash`. Reject empty input, and reject oversized input with a message (no automatic truncation). Provisional ceilings: 200 MB per file, 90 minutes of audio, 300,000 characters of text; the file-size limit will usually bind before the duration limit for video.
+1. **Ingest.** Store the raw upload or fetched page in R2. Extract text and, for audio/video, segments. Compute `textHash`. Reject empty input, and reject input outside the limits with a message (no automatic truncation, no padding). Text limits apply to the extracted text of every text source (pasted text, web page, Wikipedia article, document file): **at least 500 and at most 400,000 characters**. A PDF over **100 pages** is rejected by page count before its text is extracted. Media ceilings stay provisional: 200 MB per file, 90 minutes of audio; the file-size limit will usually bind before the duration limit for video.
 2. **Parse the unit** if supplied and not cached.
 3. **Extract concepts.** Chunk, extract per chunk (persisted), verify evidence, merge, align to criteria if a unit exists. Persist the concept map with the unsupported-criteria list.
 4. **Plan.** Persist `ActivityPlan[]`; create `activities` rows in planner order.
@@ -254,7 +256,7 @@ Screens mirror H5P.com's Smart Import, which users already understand:
 - **Engine**: golden tests per type (spec fixture → params snapshot, byte-identical package hash); the validator runs in every golden test; package tests assert `h5p.json`, lockfile-matching versions, dependency closure, media references, sorted entries and no directory entries. **Player smoke tests**: a headless browser loads each golden package in `h5p-standalone` and asserts it renders without console errors and can be answered. The existing compilation tests are migrated; tests of AI handlers are replaced by generator tests.
 - **Generator**: `callModel` behind an interface with a recording provider (fixtures of real responses including usage and request IDs), so pipeline and cost tests run offline and assert exact figures, including cache read/write accounting and `cost_status` handling. Quality checks have unit tests with deliberately bad specs. Provenance tests assert every evidence quote verifies against the stored text.
 - **Service**: end-to-end import from pasted text through the worker with the recorded provider and real compilation; crash-recovery test (kill the worker mid-produce, restart, assert no duplicate promotion and `billing_uncertain` set); concurrent-regeneration test; two-org isolation tests.
-- **Human quality gate** (phase 3): a corpus of at least five representative source-and-unit pairs across trades. For each generated activity, a reviewer scores answer correctness, source support, distractor quality, mapping accuracy and usefulness, and records an `acceptance_decisions` row. Metrics tracked per type: acceptance rate, retries, review time, cost per accepted activity. The gate decides whether the prompts, the concept layer or the model choices change before more types are added.
+- **Human quality gate** (phase 3): a corpus of at least five representative source-and-unit pairs across trades. For each generated activity, a reviewer scores answer correctness, source support (the answer is supported by the passage the activity cites), distractor quality, mapping accuracy (relevance to the unit's Knowledge Evidence and performance criteria), and usefulness, and records an `acceptance_decisions` row. Metrics tracked per type: acceptance rate, retries, review time, cost per accepted activity. The gate decides whether the prompts, the concept layer or the model choices change before more types are added.
 - **Manual platform gate**: for each type, upload a built package to h5p.com and to the Moodle version and H5P integration used by the first pilot customer (recorded in `docs/testing/platform-checklist.md`).
 
 ## 11. Sequencing
@@ -282,7 +284,9 @@ Each phase ends with something demonstrable. The detailed task plan follows from
 
 | Item | Decision |
 |---|---|
-| Input limits | Provisional ceilings kept; oversized input is rejected with a message, never truncated; per-import budgets added |
+| Input limits | Text 500–400,000 characters after extraction, PDFs at most 100 pages (ruling, 28 Sep 2026; replaces the provisional 300,000-character ceiling). Out-of-limit input is rejected with a message, never truncated; per-import budgets added |
+| Sources (ruling, 28 Sep 2026) | Pasted text, web page, Wikipedia article, document file (PDF, DOCX, ODT), as H5P.com Smart Import accepts. Audio/video and YouTube stay in phase 6 |
+| Claims (ruling, 28 Sep 2026) | Answers verified against cited source passages; relevance verified against Knowledge Evidence and performance criteria. No claim that completing the activities demonstrates competency or satisfies an RTO's assessment requirements (§1) |
 | Models | Exact API IDs recorded in config; Haiku 4.5 for extraction is provisional pending the phase-3 gate; one generation adapter first |
 | Bilingual mode | CLI-only; language fields kept in the contract; compatibility fixture |
 | Rename | Not a phase dependency; provisional `@leaplearn/*`; CLI alias retained |
@@ -293,6 +297,8 @@ Each phase ends with something demonstrable. The detailed task plan follows from
 ## 14. Open questions
 
 - Which five source-and-unit pairs form the phase-3 corpus, and who reviews them besides Benjamin.
+- The pasted-text minimum: the 28 Sep ruling gives both 550 and 500 characters. This spec uses 500 for every text source until that is confirmed.
+- Which phase brings the 28 Sep ruling into code. Phase 2 ingests text, markdown and PDF, with a 300,000-character ceiling and no minimum or page limit. It has no DOCX, ODT, web page or Wikipedia adapter (web was deferred to phase 5), and its alignment maps concepts to performance criteria only: Knowledge Evidence is parsed but not aligned. The phase-3 design proposes the order.
 - The production preview hostname and TLS arrangement on the demo VPS.
 
 Closed: `singleChoiceSet` stays in its native multi-question form (§2.1).
