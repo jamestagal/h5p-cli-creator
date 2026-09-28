@@ -27,6 +27,17 @@ describe("leap review on a phase-2 import", () => {
     expect(await store.listAcceptances("imp")).toEqual([]);
     expect(await store.listAlignmentReviews("imp")).toEqual([]);
   });
+
+  it("refuses both kinds of decision when storeVersion is malformed (\"bogus\", \"2\", {}) and writes nothing", async () => {
+    for (const raw of ["bogus", "2", {}] as unknown[]) {
+      const store = await seeded();
+      await store.putImport({ ...(await store.getImport("imp"))!, storeVersion: raw } as unknown as Parameters<typeof store.putImport>[0]);
+      await expect(recordReview(store, "imp", { kind: "acceptance", activityId: "act-4", reviewer: "o", decision: "accepted", notes: null })).rejects.toMatchObject({ name: "MalformedStoreVersionError" });
+      await expect(recordReview(store, "imp", { kind: "alignment", activityId: "act-4", reviewer: "o", criterionId: "PC2.1", decision: "confirmed", itemId: null })).rejects.toMatchObject({ name: "MalformedStoreVersionError" });
+      expect(await store.listAcceptances("imp")).toEqual([]);
+      expect(await store.listAlignmentReviews("imp")).toEqual([]);
+    }
+  });
 });
 
 describe("leap review", () => {

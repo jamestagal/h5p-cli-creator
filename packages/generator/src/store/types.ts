@@ -42,8 +42,16 @@ export interface AcceptanceRecord { importId: string; activityId: string; revisi
 export interface AlignmentReviewRecord { importId: string; activityId: string; revision: number; itemId: string | null; unitTextHash: string | null; criterionId: string; decision: AlignmentDecision; reviewer: string; decidedAt: string; }
 export type ArtifactName = "source" | "unit" | "conceptMap" | "plan" | `chunk-${number}`;
 
-export function storeVersionOf(record: Pick<ImportRecord, "storeVersion">): number {
-  return record.storeVersion ?? 1;
+/**
+ * The store version of an import record as parsed from disk, where the TypeScript type is not enforced. An absent
+ * version is a phase-2 (version 1) import. A present version must be a positive integer; anything else ("2", "bogus",
+ * {}, null, 2.5, 0) is refused rather than coerced, so no malformed record is ever treated as writable.
+ */
+export function storeVersionOf(record: object, where: string): number {
+  const raw: unknown = (record as { storeVersion?: unknown }).storeVersion;
+  if (raw === undefined) return 1;
+  if (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw < 1) throw new MalformedStoreVersionError(where, raw);
+  return raw;
 }
 
 /** A phase-2 import directory: kept exactly as it is, never written by phase-3 commands. */
@@ -53,12 +61,24 @@ export class LegacyStoreError extends Error {
     this.name = "LegacyStoreError";
   }
 }
+export class MalformedStoreVersionError extends Error {
+  constructor(where: string, raw: unknown) {
+    let shown: string;
+    try { shown = JSON.stringify(raw) ?? String(raw); } catch { shown = String(raw); }
+    super(`${where} has a malformed storeVersion (${shown}); it must be a positive integer, or absent for a phase-2 import. The directory is left unchanged.`);
+    this.name = "MalformedStoreVersionError";
+  }
+}
 export class UnsupportedStoreVersionError extends Error {
   constructor(where: string, version: number) { super(`${where} has store version ${version}, which this build does not know (it writes version ${STORE_VERSION}); use a matching build of leap`); this.name = "UnsupportedStoreVersionError"; }
 }
-/** Refuses any write to an import that is not at the current store version. Callers run it under the import's lock, before their first write. */
-export function assertWritableStoreVersion(record: Pick<ImportRecord, "storeVersion">, where: string): void {
-  const version = storeVersionOf(record);
+/** The refusals a store-version check can raise; commands report them as a plain message and exit 1. */
+export function isStoreVersionError(err: unknown): err is LegacyStoreError | UnsupportedStoreVersionError | MalformedStoreVersionError {
+  return err instanceof LegacyStoreError || err instanceof UnsupportedStoreVersionError || err instanceof MalformedStoreVersionError;
+}
+/** Refuses any write to an import that is not at the current store version, including a malformed one. Callers run it under the import's lock, before their first write. */
+export function assertWritableStoreVersion(record: object, where: string): void {
+  const version = storeVersionOf(record, where);
   if (version < STORE_VERSION) throw new LegacyStoreError(where);
   if (version > STORE_VERSION) throw new UnsupportedStoreVersionError(where, version);
 }

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { cp, mkdtemp, readdir, readFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import { FileStore } from "../src/file-store.js";
@@ -99,8 +99,64 @@ describe("phase-2 import directories are read-only", () => {
   it("refuses to read a current-version import as legacy", async () => {
     const out = await phase2Copy();
     const record = JSON.parse(await readFile(join(out, "import.json"), "utf8")) as Record<string, unknown>;
-    const { writeFile } = await import("node:fs/promises");
     await writeFile(join(out, "import.json"), JSON.stringify({ ...record, storeVersion: 2 }));
     await expect(readLegacyImport(out)).rejects.toMatchObject({ name: "NotALegacyImportError" });
+  });
+});
+
+describe("malformed store versions are refused, not read as a number", () => {
+  const MALFORMED = /^leap: .*phase2-store has a malformed storeVersion \(.*\); it must be a positive integer, or absent for a phase-2 import\. The directory is left unchanged\.$/m;
+  for (const [label, raw] of [["\"bogus\"", "bogus"], ["\"2\"", "2"], ["{}", {}]] as const) {
+    it(`storeVersion ${label}: generate, review --decision and review --criterion exit 1, and the directory is byte-identical`, async () => {
+      const out = await phase2Copy();
+      const record = JSON.parse(await readFile(join(out, "import.json"), "utf8")) as Record<string, unknown>;
+      await writeFile(join(out, "import.json"), JSON.stringify({ ...record, storeVersion: raw }, null, 2) + "\n");
+      const fixtures = await mkdtemp(join(tmpdir(), "leap-no-fixtures-"));
+      const before = await treeHash(out);
+      await expect(FileStore.storeVersionAt(out)).rejects.toMatchObject({ name: "MalformedStoreVersionError" });
+      for (const args of [
+        ["generate", "--source", sourceMd, "--unit", unitTxt, "--out", out, "--provider", "replay", "--fixtures", fixtures, "--libraries", librariesDir],
+        ["review", "--out", out, "--activity", "act-1", "--reviewer", "owner", "--decision", "accepted"],
+        ["review", "--out", out, "--activity", "act-1", "--reviewer", "owner", "--criterion", "PC2.1", "--alignment", "confirmed"]
+      ]) {
+        const run = await leap(args);
+        expect(run.stderr, `${args[0]}: ${run.stderr}`).toMatch(MALFORMED);
+        expect(run.code, args.join(" ")).toBe(1);
+      }
+      expect(await treeHash(out)).toBe(before);
+    }, 60_000);
+  }
+});
+
+describe("readLegacyImport propagates filesystem errors other than a missing directory", () => {
+  it("reads an import with no activities directory as having no activities (absence is legitimate)", async () => {
+    const out = await phase2Copy();
+    await rm(join(out, "activities"), { recursive: true });
+    const view = await readLegacyImport(out);
+    expect(view.activities).toEqual([]);
+    expect(view.revisions).toEqual([]);
+  });
+
+  it("reads an activity with no revisions directory as having no revisions", async () => {
+    const out = await phase2Copy();
+    await rm(join(out, "revisions"), { recursive: true });
+    const view = await readLegacyImport(out);
+    expect(view.activities.map((a) => a.activityId)).toEqual(["act-1"]);
+    expect(view.revisions).toEqual([]);
+  });
+
+  it("rejects a malformed layout: activities is a file, not a directory", async () => {
+    const out = await phase2Copy();
+    await rm(join(out, "activities"), { recursive: true });
+    await writeFile(join(out, "activities"), "not a directory\n");
+    await expect(readLegacyImport(out)).rejects.toMatchObject({ code: "ENOTDIR" });
+  });
+
+  it("rejects a malformed layout: an activity's revisions path is a file, not a directory", async () => {
+    const out = await phase2Copy();
+    await rm(join(out, "revisions", "act-1"), { recursive: true });
+    await mkdir(join(out, "revisions"), { recursive: true });
+    await writeFile(join(out, "revisions", "act-1"), "not a directory\n");
+    await expect(readLegacyImport(out)).rejects.toMatchObject({ code: "ENOTDIR" });
   });
 });

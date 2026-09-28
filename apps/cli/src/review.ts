@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { criteriaOf, type AcceptanceDecision, type AlignmentDecision, type UnitOfCompetency } from "@leaplearn/shared";
-import { assertWritableStoreVersion, LegacyStoreError, StoreLockedError, UnsupportedStoreVersionError, type AcceptanceRecord, type AlignmentReviewRecord, type ImportStore } from "@leaplearn/generator";
+import { assertWritableStoreVersion, isStoreVersionError, StoreLockedError, type AcceptanceRecord, type AlignmentReviewRecord, type ImportStore } from "@leaplearn/generator";
 import { FileStore } from "./file-store.js";
 import { importIdFor } from "./generate.js";
 import { formatCostReport, writeReports } from "./report.js";
@@ -52,10 +52,7 @@ export interface ReviewArgs { out: string; activity: string; reviewer: string; d
 
 export async function review(args: ReviewArgs, io: { out: (s: string) => void; err: (s: string) => void }): Promise<number> {
   const outDir = resolve(args.out);
-  const existingVersion = await FileStore.storeVersionAt(outDir);
-  if (existingVersion !== null) {
-    try { assertWritableStoreVersion({ storeVersion: existingVersion }, outDir); } catch (err) { if (err instanceof LegacyStoreError || err instanceof UnsupportedStoreVersionError) { io.err(`leap: ${err.message}\n`); return 1; } throw err; }
-  }
+  try { await FileStore.assertWritableAt(outDir); } catch (err) { if (isStoreVersionError(err)) { io.err(`leap: ${err.message}\n`); return 1; } throw err; }
   const store = new FileStore(outDir);
   const importId = importIdFor(outDir);
   const base = { activityId: args.activity, reviewer: args.reviewer };
@@ -74,7 +71,7 @@ export async function review(args: ReviewArgs, io: { out: (s: string) => void; e
     io.out(formatCostReport(report) + "\n");
     return 0;
   } catch (err) {
-    if (err instanceof ReviewError || err instanceof LegacyStoreError || err instanceof UnsupportedStoreVersionError) { io.err(`leap: ${err.message}\n`); return 1; }
+    if (err instanceof ReviewError || isStoreVersionError(err)) { io.err(`leap: ${err.message}\n`); return 1; }
     throw err;
   } finally {
     await lock.release();

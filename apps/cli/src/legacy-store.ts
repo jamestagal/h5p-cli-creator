@@ -17,26 +17,35 @@ export interface LegacyImportView {
   alignmentReviews: AlignmentReviewRecord[];
 }
 
+/** Lists a directory, treating only its absence (ENOENT) as empty. Permission errors, a file where a directory belongs (ENOTDIR) and every other failure propagate. */
+async function listIfPresent(dir: string): Promise<string[]> {
+  try { return await readdir(dir); } catch (err) {
+    if ((err as { code?: string }).code === "ENOENT") return [];
+    throw err;
+  }
+}
+
 export class NotALegacyImportError extends Error {
   constructor(dir: string, version: number | null) { super(version === null ? `${dir} holds no import` : `${dir} is at store version ${version}, not a phase-2 import`); this.name = "NotALegacyImportError"; }
 }
 
 /**
  * Reads a phase-2 (store version 1) import directory as it is. It takes no lock, repairs no ledger tail and writes
- * nothing: a crash-truncated final ledger line is skipped by the reader, not cut from the file.
+ * nothing: a crash-truncated final ledger line is skipped by the reader, not cut from the file. A missing activities or
+ * revisions directory reads as empty; any other filesystem error propagates rather than reading as an empty import.
  */
 export async function readLegacyImport(dir: string): Promise<LegacyImportView> {
   const importRecord = await readJson<ImportRecord>(join(dir, "import.json"));
-  const version = importRecord ? storeVersionOf(importRecord) : null;
+  const version = importRecord ? storeVersionOf(importRecord, dir) : null;
   if (!importRecord || version !== 1) throw new NotALegacyImportError(dir, version);
 
-  const activityNames = (await readdir(join(dir, "activities")).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort();
+  const activityNames = (await listIfPresent(join(dir, "activities"))).filter((n) => n.endsWith(".json")).sort(); // an import that planned nothing has no activities directory
   const activities = (await Promise.all(activityNames.map((n) => readJson<ActivityRecord>(join(dir, "activities", n)))))
     .filter((a): a is ActivityRecord => a !== null && a.importId === importRecord.importId)
     .sort((a, b) => a.order - b.order);
   const revisions: LegacyRevisionRecord[] = [];
   for (const activity of activities) {
-    const names = (await readdir(join(dir, "revisions", activity.activityId)).catch(() => [] as string[])).filter((n) => /^r\d+\.json$/.test(n));
+    const names = (await listIfPresent(join(dir, "revisions", activity.activityId))).filter((n) => /^r\d+\.json$/.test(n)); // an activity that failed before any revision has none
     const read = await Promise.all(names.map((n) => readJson<LegacyRevisionRecord>(join(dir, "revisions", activity.activityId, n))));
     revisions.push(...read.filter((r): r is LegacyRevisionRecord => r !== null).sort((a, b) => a.revision - b.revision));
   }

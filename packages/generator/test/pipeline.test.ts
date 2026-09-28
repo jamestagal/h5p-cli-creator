@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { resolve } from "node:path";
 import { createRegistry, type LibraryRegistry } from "@leaplearn/engine";
 import { MemoryStore } from "../src/store/memory-store.js";
-import { LegacyStoreError, STORE_VERSION, StoreLockedError, UnsupportedStoreVersionError } from "../src/store/types.js";
+import { LegacyStoreError, MalformedStoreVersionError, STORE_VERSION, StoreLockedError, UnsupportedStoreVersionError, type ImportRecord } from "../src/store/types.js";
 import { DEFAULT_MAX_ATTEMPT_MS, runImport, SKIPPED_PREFIX, type RunImportDeps, type RunImportInput } from "../src/pipeline/run-import.js";
 import { IncompatibleResumeError, runFingerprint } from "../src/pipeline/fingerprint.js";
 import { FakeProvider, fakeResponse } from "../src/llm/fake-provider.js";
@@ -154,6 +154,23 @@ describe("runImport", () => {
     await store.putImport({ ...legacy, storeVersion: 3 });
     await expect(runImport(await input("imp-legacy"), deps(store, empty))).rejects.toBeInstanceOf(UnsupportedStoreVersionError);
     await expect(runImport(await input("imp-legacy"), deps(store, empty))).rejects.toThrow(/imp-legacy was created by phase 2|store version 3/);
+  });
+
+  it("refuses an import whose storeVersion is malformed on disk (\"bogus\", \"2\", {}), with no write and no model call", async () => {
+    const store = new MemoryStore();
+    const doc = await syntheticDoc();
+    await runImport(await input("imp-bad"), deps(store, new FakeProvider(await fullScript(doc))));
+    const good = (await store.getImport("imp-bad"))!;
+    const empty = new FakeProvider([]);
+    for (const raw of ["bogus", "2", {}] as unknown[]) {
+      await store.putImport({ ...good, status: "generating", storeVersion: raw } as unknown as ImportRecord); // what JSON.parse can hand back
+      const before = await store.getImport("imp-bad");
+      const operationsBefore = await store.listOperations("imp-bad");
+      await expect(runImport(await input("imp-bad"), deps(store, empty))).rejects.toBeInstanceOf(MalformedStoreVersionError);
+      expect(await store.getImport("imp-bad")).toEqual(before);
+      expect(await store.listOperations("imp-bad")).toEqual(operationsBefore);
+    }
+    expect(empty.requests).toHaveLength(0);
   });
 
   it("refuses a second writer while the import is locked", async () => {

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFile, mkdir, readdir, readFile, rename, truncate, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { storeVersionOf, type AcceptanceRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
+import { assertWritableStoreVersion, storeVersionOf, type AcceptanceRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
 import { acquireDirectoryLock, type HeldLock, type LockOptions } from "./lock.js";
 
 export class StoreCorruptError extends Error {
@@ -48,10 +48,19 @@ export class FileStore implements ImportStore {
   constructor(private readonly dir: string, private readonly options: { lock?: LockOptions } = {}) {}
   private p(...parts: string[]): string { return join(this.dir, ...parts); }
 
-  /** The store version of the import in `dir`, or null when there is none. Reads only: no lock, no repair, no write. */
+  /** The store version of the import in `dir`, or null when there is none; a malformed version throws. Reads only: no lock, no repair, no write. */
   static async storeVersionAt(dir: string): Promise<number | null> {
-    const record = await readJson<ImportRecord>(join(dir, "import.json"));
-    return record ? storeVersionOf(record) : null;
+    const record = await readJson<object>(join(dir, "import.json"));
+    return record ? storeVersionOf(record, dir) : null;
+  }
+  /**
+   * Refuses, before any lock or write, a directory whose import is not at the current store version (legacy, newer or
+   * malformed). A directory with no import yet is writable. A legacy or malformed record never becomes writable on its
+   * own, so this read cannot go stale; the command checks again under the lock.
+   */
+  static async assertWritableAt(dir: string): Promise<void> {
+    const record = await readJson<object>(join(dir, "import.json"));
+    if (record) assertWritableStoreVersion(record, dir);
   }
 
   async lock(importId: string): Promise<StoreLock> {
