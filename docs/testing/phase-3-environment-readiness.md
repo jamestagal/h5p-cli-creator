@@ -113,12 +113,12 @@ Copying `~/leap-diagnostics/` back (it contains only the synthetic fixture packa
 - **Blocking Task 2, Task 3 and Checkpoint A:**
   - the engine golden: **resolved.** The correction in `9f36c5e` is approved after the owner's 51-of-51 run on the recorded runtime. On every runtime it adds a portable uncompressed-content golden, structural ZIP-metadata assertions and a level-6 compression check; the compressed-bytes golden, unchanged, runs only on its recorded runtime. The repeated-build and cross-timezone byte-equality tests are unchanged.
   - browser qualification: **resolved on 29 Sep** (see the "full network access" entry below). The pinned `chromium_headless_shell-1243` now installs, and all 10 smoke tests pass against it under Node 20.20.2 after `pnpm -r build`. The substitute browser is not adopted and is no longer needed.
-  - Task 1 review: the owner's review of `2174e06` asked for two fixes (malformed store versions, suppressed filesystem errors), made in the following commit and awaiting review.
+  - Task 1 review: **resolved.** The owner's review of `2174e06` asked for two fixes (malformed store versions, suppressed filesystem errors), made in `fa28c18`; the owner has since confirmed those findings resolved. The same error-suppression pattern in phase-2 `FileStore` code is tracked as follow-up F1, due before Checkpoint A.
 
 ## Task 1, reported separately from baseline readiness
 
 - The baseline at `c078580` lint-passes. Task 1's first verification run was **lint-red** because of two unused variables introduced by Task 1's own new tests (`_dropped` in `packages/generator/test/pipeline.test.ts`, `_v` in `apps/cli/test/review.test.ts`), not because of the baseline.
-- They were fixed and Task 1 was committed as `2174e06` after its named checks passed (build, generator 132 tests, cli 33 tests, typecheck, lint). That commit was pushed in response to a stop hook, before the owner's review. It is **not** accepted as Task 1 completion until the owner reviews it.
+- They were fixed and Task 1 was committed as `2174e06` after its named checks passed (build, generator 132 tests, cli 33 tests, typecheck, lint). That commit was pushed in response to a stop hook, before the owner's review. The owner's review then asked for two fixes, made in `fa28c18`, and those findings are now resolved.
 
 ---
 
