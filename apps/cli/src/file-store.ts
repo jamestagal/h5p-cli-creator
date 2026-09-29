@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { appendFile, mkdir, readdir, readFile, rename, truncate, writeFile } from "node:fs/promises";
+import { appendFile, link, mkdir, readdir, readFile, rename, truncate, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { assertWritableStoreVersion, storeVersionOf, type AcceptanceRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
+import { assertWritableStoreVersion, BuildIntegrityError, canonicalRecordJson, sha256Hex, sortBuilds, storeVersionOf, type AcceptanceRecord, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
 import { acquireDirectoryLock, type HeldLock, type LockOptions } from "./lock.js";
 
 export class StoreCorruptError extends Error {
@@ -9,6 +9,18 @@ export class StoreCorruptError extends Error {
 }
 
 const isEnoent = (err: unknown): boolean => (err as { code?: string }).code === "ENOENT";
+const BUILD_KEY = /^builds\/[A-Za-z0-9._-]+\.h5p$/;
+const BUILD_ID = /^[0-9a-f]{16}$/;
+
+function checkBuildKey(buildKey: string): void {
+  if (!BUILD_KEY.test(buildKey)) throw new Error(`invalid build key ${JSON.stringify(buildKey)}; expected builds/<name>.h5p`);
+}
+function checkBuildId(buildId: string): void {
+  if (!BUILD_ID.test(buildId)) throw new Error(`invalid build id ${JSON.stringify(buildId)}; expected 16 hex characters`);
+}
+async function readIfPresent(path: string): Promise<Buffer | null> {
+  try { return await readFile(path); } catch (err) { if (isEnoent(err)) return null; throw err; }
+}
 
 async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
@@ -145,15 +157,48 @@ export class FileStore implements ImportStore {
     return { recordStart: append, recordOutcome: append };
   }
   async listAttempts(_importId: string) { return (await readJsonl<AttemptEvent>(this.p("attempts.jsonl"))).records; }
-  async putBuild(_importId: string, activityId: string, revision: number, bytes: Buffer) {
-    const key = `builds/${activityId}-r${revision}.h5p`;
+  /**
+   * Writes `bytes` at `path` only if nothing is there: the temp file is hard-linked into place, which fails rather than
+   * replacing an existing file. Content that `same` judges equal to what is already there is a no-op (the file is not
+   * touched); anything else throws BuildIntegrityError naming `label` and both hashes.
+   */
+  private async putImmutable(path: string, bytes: Buffer, label: string, same: (existing: Buffer) => boolean, hashOf: (b: Buffer) => string): Promise<void> {
     await this.assertWritable();
-    await mkdir(this.p("builds"), { recursive: true });
-    const tmp = this.p(`${key}.tmp-${randomBytes(4).toString("hex")}`);
-    await writeFile(tmp, bytes); await rename(tmp, this.p(key));
-    return key;
+    const refuseUnlessSame = (existing: Buffer): void => { if (!same(existing)) throw new BuildIntegrityError(label, hashOf(existing), hashOf(bytes)); };
+    const existing = await readIfPresent(path);
+    if (existing) { refuseUnlessSame(existing); return; }
+
+    await mkdir(dirname(path), { recursive: true });
+    const tmp = `${path}.tmp-${randomBytes(4).toString("hex")}`;
+    await writeFile(tmp, bytes);
+    try {
+      await link(tmp, path);
+    } catch (err) {
+      if ((err as { code?: string }).code !== "EEXIST") throw err;
+      refuseUnlessSame(await readFile(path));
+    } finally {
+      await unlink(tmp);
+    }
   }
-  async getBuild(buildKey: string) { try { return await readFile(this.p(buildKey)); } catch { return null; } }
+  async putBuild(buildKey: string, bytes: Buffer) {
+    checkBuildKey(buildKey);
+    await this.putImmutable(this.p(buildKey), bytes, buildKey, (existing) => existing.equals(bytes), sha256Hex);
+  }
+  async getBuild(buildKey: string) { checkBuildKey(buildKey); return readIfPresent(this.p(buildKey)); }
+  async putBuildRecord(record: BuildRecord) {
+    checkBuildId(record.buildId);
+    const canonical = canonicalRecordJson(record);
+    const recordHash = (b: Buffer): string => sha256Hex(canonicalRecordJson(JSON.parse(b.toString("utf8"))));
+    await this.putImmutable(this.p("builds", "records", `${record.buildId}.json`), Buffer.from(JSON.stringify(record, null, 2) + "\n"), `build record ${record.buildId}`, (existing) => canonicalRecordJson(JSON.parse(existing.toString("utf8"))) === canonical, recordHash);
+  }
+  getBuildRecord(buildId: string) { checkBuildId(buildId); return readJson<BuildRecord>(this.p("builds", "records", `${buildId}.json`)); }
+  async listBuilds(activityId: string) {
+    const dir = this.p("builds", "records");
+    let names: string[];
+    try { names = await readdir(dir); } catch (err) { if (isEnoent(err)) return []; throw err; } // no build yet
+    const all = await Promise.all(names.filter((n) => /^[0-9a-f]{16}\.json$/.test(n)).map((n) => readJson<BuildRecord>(join(dir, n))));
+    return sortBuilds(all.filter((r): r is BuildRecord => r !== null && r.activityId === activityId));
+  }
   async listAcceptances(importId: string) {
     const latest = new Map<string, AcceptanceRecord>();
     for (const a of (await readJsonl<AcceptanceRecord>(this.p("acceptances.jsonl"))).records) if (a.importId === importId) latest.set(`${a.activityId}/${a.revision}`, a);

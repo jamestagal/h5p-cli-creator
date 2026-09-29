@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { FileStore, readJsonl, StoreCorruptError } from "../src/file-store.js";
 
 /** Failure injection for the one filesystem call the tail repair makes: each queued error fails the next append, everything else is the real fs. */
@@ -16,10 +17,12 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 
 const importRecord = { importId: "imp", orgId: "local", name: "n", sourceType: "markdown" as const, status: "queued" as const, customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice" as const], fingerprint: "f".repeat(64), budget: { usdMicro: 10, requests: 1, tokens: 1, elapsedMs: 1 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: "imp", createdAt: "t", updatedAt: "t" };
-const start = { event: "start" as const, attemptId: "a1", operationId: "imp:plan", callKey: "plan", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: 0, purpose: "plan" as const, provider: "fake" as const, model: "m", credentialOwner: "server" as const, reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" };
-const operationRecord = { operationId: "imp:plan", importId: "imp", activityId: null, purpose: "plan" as const, status: "running" as const, idempotencyKey: "imp:plan", contentAttempts: 0, outcome: null, billingUncertain: false, startedAt: "t", completedAt: null };
+const start = { event: "start" as const, attemptId: "a1", operationId: "imp:plan", origin: "shared" as const, requestId: null, callKey: "plan", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: 0, purpose: "plan" as const, provider: "fake" as const, model: "m", credentialOwner: "server" as const, reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 1, startedAt: "t" };
+const operationRecord = { operationId: "imp:plan", importId: "imp", activityId: null, purpose: "plan" as const, status: "running" as const, origin: "shared" as const, requestId: null, idempotencyKey: "imp:plan", contentAttempts: 0, outcome: null, billingUncertain: false, startedAt: "t", completedAt: null };
 const activityRecord = { activityId: "act-1", importId: "imp", type: "multiChoice" as const, order: 0, status: "planned" as const, currentRevision: null, conceptIds: [], criteriaIds: [], error: null, dropped: false };
-const revisionRecord = { activityId: "act-1", revision: 1, state: "candidate" as const, spec: { id: "act-1", title: "T", type: "multiChoice" as const, language: "en", schemaVersion: 1 as const, question: "q", answers: [{ text: "a", correct: true }, { text: "b", correct: false }], randomAnswers: true }, schemaVersion: 1, promptVersion: "p", origin: "generate" as const, requestId: null, modelConfig: { provider: "fake", models: {}, profiles: {} }, engineFingerprint: "f", note: null, buildKey: null, attemptIds: [], createdAt: "t" };
+const revisionRecord = { activityId: "act-1", revision: 1, state: "candidate" as const, spec: { id: "act-1", title: "T", type: "multiChoice" as const, language: "en", schemaVersion: 1 as const, question: "q", answers: [{ text: "a", correct: true }, { text: "b", correct: false }], randomAnswers: true }, schemaVersion: 1, promptVersion: "p", origin: "generate" as const, requestId: null, modelConfig: { provider: "fake", models: {}, profiles: {} }, note: null, currentBuildId: null, attemptIds: [], createdAt: "t" };
+
+const buildRecord = { importId: "imp", activityId: "act-1", revision: 1, buildId: "0123456789abcdef", buildKey: "builds/act-1-r1-0123456789ab.h5p", sha256: createHash("sha256").update("PK..").digest("hex"), byteLength: 4, engineFingerprint: "0123456789ab".padEnd(64, "0"), engineDisplay: "engine@0.1.0+0123456789ab", engineInputs: { engineDist: [["index.js", "e".repeat(64)]] as [string, string][], workspaceDist: [] as [string, string][], librariesLockSha256: "1".repeat(64), zlib: "1.3.1" }, nodeVersion: "20.20.2", builtAt: "t" };
 
 describe("FileStore", () => {
   it("round-trips records, appends ledgers, keeps the latest review per key, and leaves no temp files", async () => {
@@ -29,7 +32,7 @@ describe("FileStore", () => {
     expect(await store.getImport("imp")).toEqual(importRecord);
     await store.putArtifact("imp", "chunk-3", [{ tempId: "k3-0" }]);
     expect(await store.getArtifact("imp", "chunk-3")).toEqual([{ tempId: "k3-0" }]);
-    const op = { operationId: "imp:plan", importId: "imp", activityId: null, purpose: "plan" as const, status: "running" as const, idempotencyKey: "imp:plan", contentAttempts: 0, outcome: null, billingUncertain: false, startedAt: "t", completedAt: null };
+    const op = { operationId: "imp:plan", importId: "imp", activityId: null, purpose: "plan" as const, status: "running" as const, origin: "shared" as const, requestId: null, idempotencyKey: "imp:plan", contentAttempts: 0, outcome: null, billingUncertain: false, startedAt: "t", completedAt: null };
     await store.putOperation(op);
     await store.putOperation({ ...op, status: "succeeded", outcome: "ok" });
     expect((await store.listOperations("imp")).map((o) => o.status)).toEqual(["succeeded"]);
@@ -41,8 +44,11 @@ describe("FileStore", () => {
     await store.putAlignmentReview({ importId: "imp", activityId: "act-1", revision: 1, itemId: null, unitTextHash: null, criterionId: "PC1.1", decision: "confirmed", reviewer: "r", decidedAt: "t" });
     await store.putAlignmentReview({ importId: "imp", activityId: "act-1", revision: 1, itemId: "b1", unitTextHash: null, criterionId: "PC1.1", decision: "rejected", reviewer: "r", decidedAt: "t" });
     expect((await store.listAlignmentReviews("imp")).map((r) => [r.itemId, r.decision])).toEqual([[null, "confirmed"], ["b1", "rejected"]]);
-    const key = await store.putBuild("imp", "act-1", 1, Buffer.from("PK.."));
-    expect((await store.getBuild(key))?.toString()).toBe("PK..");
+    await store.putBuild("builds/act-1-r1-0123456789ab.h5p", Buffer.from("PK.."));
+    expect((await store.getBuild("builds/act-1-r1-0123456789ab.h5p"))?.toString()).toBe("PK..");
+    await store.putBuildRecord(buildRecord);
+    expect(await store.getBuildRecord(buildRecord.buildId)).toEqual(buildRecord);
+    expect(await store.listBuilds("act-1")).toEqual([buildRecord]);
     const files = await readdir(dir, { recursive: true });
     expect(files.some((f) => /\.tmp-/.test(f))).toBe(false);
     expect((await readFile(join(dir, "operations.jsonl"), "utf8")).trim().split("\n")).toHaveLength(2);
@@ -73,7 +79,7 @@ describe("FileStore", () => {
     expect(afterTruncated.truncatedTail).toBe(false);
     expect((await new FileStore(dir).listAttempts("imp")).map((e) => e.attemptId)).toEqual(["a1", "a2"]); // a fresh reopen sees a clean ledger
     const path2 = join(dir, "operations.jsonl");
-    const op = { operationId: "imp:plan", importId: "imp", activityId: null, purpose: "plan" as const, status: "running" as const, idempotencyKey: "imp:plan", contentAttempts: 0, outcome: null, billingUncertain: false, startedAt: "t", completedAt: null };
+    const op = { operationId: "imp:plan", importId: "imp", activityId: null, purpose: "plan" as const, status: "running" as const, origin: "shared" as const, requestId: null, idempotencyKey: "imp:plan", contentAttempts: 0, outcome: null, billingUncertain: false, startedAt: "t", completedAt: null };
     await writeFile(path2, JSON.stringify(op)); // a complete final record that lost only its newline
     await store.putOperation({ ...op, status: "succeeded", outcome: "ok" });
     const ops = await readJsonl<{ status: string }>(path2);
@@ -124,7 +130,8 @@ describe("FileStore", () => {
     await expect(store.putArtifact("imp", "conceptMap", { concepts: [] })).rejects.toMatchObject({ name: "LockLostError" });
     await expect(store.putActivity(activityRecord)).rejects.toMatchObject({ name: "LockLostError" });
     await expect(store.putRevision(revisionRecord)).rejects.toMatchObject({ name: "LockLostError" });
-    await expect(store.putBuild("imp", "act-1", 1, Buffer.from("PK.."))).rejects.toMatchObject({ name: "LockLostError" });
+    await expect(store.putBuild("builds/act-1-r1-0123456789ab.h5p", Buffer.from("PK.."))).rejects.toMatchObject({ name: "LockLostError" });
+    await expect(store.putBuildRecord(buildRecord)).rejects.toMatchObject({ name: "LockLostError" });
     await expect(store.putOperation(operationRecord)).rejects.toMatchObject({ name: "LockLostError" });
     await expect(store.putAcceptance({ importId: "imp", activityId: "act-1", revision: 1, decision: "accepted", reviewer: "r", notes: null, decidedAt: "t" })).rejects.toMatchObject({ name: "LockLostError" });
     await expect(store.putAlignmentReview({ importId: "imp", activityId: "act-1", revision: 1, itemId: null, unitTextHash: null, criterionId: "PC1.1", decision: "confirmed", reviewer: "r", decidedAt: "t" })).rejects.toMatchObject({ name: "LockLostError" });
@@ -132,5 +139,44 @@ describe("FileStore", () => {
     expect(left).toEqual([]); // no record, no artifact, no build, no ledger, no half-written .tmp-
     await lock.release(); // not ours: the second process's lock survives
     expect(JSON.parse(await readFile(join(dir, "lock", "owner.json"), "utf8"))).toMatchObject({ token: "second-process" });
+  });
+  it("never overwrites a build or a build record: identical content is a no-op that leaves the file untouched, different content throws BuildIntegrityError", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "leap-builds-"));
+    const store = new FileStore(dir);
+    const key = "builds/act-1-r1-0123456789ab.h5p";
+    await store.putBuild(key, Buffer.from("PK.."));
+    const before = await stat(join(dir, key));
+    await new Promise((r) => setTimeout(r, 20));
+    await store.putBuild(key, Buffer.from("PK.."));
+    expect((await stat(join(dir, key))).mtimeMs).toBe(before.mtimeMs);
+    const refused = await store.putBuild(key, Buffer.from("PK!!")).catch((e: unknown) => e);
+    expect(refused).toMatchObject({ name: "BuildIntegrityError" });
+    expect((refused as Error).message).toContain(key);
+    expect((refused as Error).message).toContain(createHash("sha256").update("PK..").digest("hex"));
+    expect((refused as Error).message).toContain(createHash("sha256").update("PK!!").digest("hex"));
+    expect((await readFile(join(dir, key))).toString()).toBe("PK..");
+
+    await store.putBuildRecord(buildRecord);
+    const recordPath = join(dir, "builds", "records", `${buildRecord.buildId}.json`);
+    const recordBefore = await stat(recordPath);
+    await new Promise((r) => setTimeout(r, 20));
+    await store.putBuildRecord({ ...buildRecord });
+    expect((await stat(recordPath)).mtimeMs).toBe(recordBefore.mtimeMs);
+    await expect(store.putBuildRecord({ ...buildRecord, builtAt: "later" })).rejects.toMatchObject({ name: "BuildIntegrityError" });
+    expect(await store.getBuildRecord(buildRecord.buildId)).toEqual(buildRecord);
+    expect((await readdir(dir, { recursive: true })).some((f) => /\.tmp-/.test(f))).toBe(false);
+  });
+
+  it("refuses a build key outside builds/", async () => {
+    const store = new FileStore(await mkdtemp(join(tmpdir(), "leap-builds-key-")));
+    await expect(store.putBuild("../escape.h5p", Buffer.from("PK.."))).rejects.toThrow(/build key/);
+    await expect(store.putBuild("builds/../../escape.h5p", Buffer.from("PK.."))).rejects.toThrow(/build key/);
+  });
+
+  it("reads a missing build or build record as absent", async () => {
+    const store = new FileStore(await mkdtemp(join(tmpdir(), "leap-builds-none-")));
+    expect(await store.getBuild("builds/act-1-r1-0123456789ab.h5p")).toBeNull();
+    expect(await store.getBuildRecord("0123456789abcdef")).toBeNull();
+    expect(await store.listBuilds("act-1")).toEqual([]);
   });
 });

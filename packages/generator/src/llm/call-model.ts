@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { computeCost } from "./cost.js";
 import { reserve, settle, type Budget, type BudgetLimitName } from "./budget.js";
 import { ProviderError, type ModelProvider } from "./provider.js";
+import type { OperationOrigin } from "../store/types.js";
 import type { AttemptOutcome, AttemptRecorder, AttemptStatus, ModelRequest, ModelResponse, RetryReason } from "./types.js";
 
 export interface CallContext {
@@ -9,6 +10,9 @@ export interface CallContext {
   recorder: AttemptRecorder;
   budget: Budget;
   operationId: string;
+  /** The operation's origin and request id, stamped on the attempt start. */
+  origin: OperationOrigin;
+  requestId: string | null;
   callKey: string;
   retryIndex: number;
   retryReason: RetryReason | null;
@@ -43,7 +47,7 @@ export async function callModel(request: ModelRequest, ctx: CallContext): Promis
 
   const attemptId = (ctx.ids ?? randomUUID)();
   await ctx.recorder.recordStart({
-    event: "start", attemptId, operationId: ctx.operationId, callKey: ctx.callKey, retryIndex: ctx.retryIndex, retryReason: ctx.retryReason, attempt: ctx.attempt, deadlineMs: ctx.budget.deadlineMs,
+    event: "start", attemptId, operationId: ctx.operationId, origin: ctx.origin, requestId: ctx.requestId, callKey: ctx.callKey, retryIndex: ctx.retryIndex, retryReason: ctx.retryReason, attempt: ctx.attempt, deadlineMs: ctx.budget.deadlineMs,
     purpose: request.purpose, provider: ctx.provider.name, model: request.model, credentialOwner: "server",
     reservedInputTokens: reservation.reservedInputTokens, reservedOutputTokens: reservation.reservedOutputTokens, reservedUsdMicro: reservation.reservedUsdMicro, startedAt: now().toISOString()
   });

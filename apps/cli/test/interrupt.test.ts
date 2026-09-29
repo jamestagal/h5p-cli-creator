@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createRegistry } from "@leaplearn/engine";
+import { createRegistry, type EngineIdentity } from "@leaplearn/engine";
 import { ingestText, runImport, DEFAULT_PROMPT_CONFIG, type AttemptStart, type ModelProvider } from "@leaplearn/generator";
 import { FileStore, readJsonl } from "../src/file-store.js";
 
@@ -17,6 +17,7 @@ const cacheDir = resolve(root, "libraries/cache");
 const SOURCE = "Lock it out before work starts. Test for dead at the point of work. Restore supply only after guards are refitted.";
 const UNIT = "SYNELE001 Isolate and test electrical equipment";
 const MAX_ATTEMPT_MS = 3000; // what a hung call is charged when the process dies inside it
+const CHILD_IDENTITY: EngineIdentity = { fingerprint: "c".repeat(64), display: "engine@0.1.0+cccccccccccc", inputs: { engineDist: [], workspaceDist: [], librariesLockSha256: "1".repeat(64), zlib: "1.3.1" }, nodeVersion: "20.20.2" };
 const importInput = (source: Awaited<ReturnType<typeof ingestText>>) => ({ importId: "child", name: "child", source, unitText: UNIT, selectedTypes: ["multiChoice"] as const, budget: { usdMicro: 1_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null });
 
 const childScript = `
@@ -26,7 +27,7 @@ import { FileStore } from ${JSON.stringify(fileStoreDist)};
 const registry = await createRegistry({ lockPath: ${JSON.stringify(lockPath)}, cacheDir: ${JSON.stringify(cacheDir)} });
 const provider = { name: "fake", async complete() { process.stdout.write("dispatched\\n"); await new Promise((r) => setTimeout(r, 60_000)); throw new Error("unreachable"); } };
 const source = await ingestText(${JSON.stringify(SOURCE)}, { sourceId: "src-child" });
-await runImport({ importId: "child", name: "child", source, unitText: ${JSON.stringify(UNIT)}, selectedTypes: ["multiChoice"], budget: { usdMicro: 1_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null }, { store: new FileStore(process.env.LEAP_TEST_DIR), provider, registry, engineFingerprint: "child", maxAttemptMs: ${MAX_ATTEMPT_MS} });
+await runImport({ importId: "child", name: "child", source, unitText: ${JSON.stringify(UNIT)}, selectedTypes: ["multiChoice"], budget: { usdMicro: 1_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null }, { store: new FileStore(process.env.LEAP_TEST_DIR), provider, registry, engineIdentity: ${JSON.stringify(CHILD_IDENTITY)}, maxAttemptMs: ${MAX_ATTEMPT_MS} });
 `;
 
 describe("abrupt termination", () => {
@@ -58,7 +59,7 @@ describe("abrupt termination", () => {
       // reconcileElapsed never charges more than the time that has really passed, so the tail is only reachable on a
       // clock offset by one maximum attempt length — the same injection the pipeline's own resume tests use.
       const clock = (): Date => new Date(Date.now() + MAX_ATTEMPT_MS);
-      await runImport(importInput(source), { store, provider: empty, registry, engineFingerprint: "child", maxAttemptMs: MAX_ATTEMPT_MS, clock }).catch(() => undefined);
+      await runImport(importInput(source), { store, provider: empty, registry, engineIdentity: CHILD_IDENTITY, maxAttemptMs: MAX_ATTEMPT_MS, clock }).catch(() => undefined);
       expect((await store.listOperations("child")).find((o) => o.operationId === "child:parseUnit")).toMatchObject({ status: "failed", billingUncertain: true });
       const starts = (await store.listAttempts("child")).filter((e): e is AttemptStart => e.event === "start" && e.callKey === "parseUnit");
       expect(starts.map((s) => [s.retryIndex, s.retryReason])).toEqual([[0, null], [1, "resume"]]);

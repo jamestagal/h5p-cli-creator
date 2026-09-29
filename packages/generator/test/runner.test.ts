@@ -15,7 +15,7 @@ const Out = z.object({ n: z.number() });
 const call = (verify?: (v: { n: number }) => string[]) => ({ key: "produce:act-1", request: { purpose: "produce" as const, model: modelForRole("produce"), system: "s", user: "u", maxOutputTokens: 100, outputSchema: toProviderSchema(Out) }, schema: Out, ...(verify ? { verify } : {}) });
 type RunnerOptions = Parameters<typeof createRunner>[0];
 /** Budgets start now (the real clock the runner uses), so the elapsed deadline is ahead of every test. */
-const mk = (provider: FakeProvider, recorder: AttemptRecorder = new MemoryRecorder(), extra: Partial<RunnerOptions> = {}) => createRunner({ provider, recorder, budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op", sleep: async () => undefined, ...extra });
+const mk = (provider: FakeProvider, recorder: AttemptRecorder = new MemoryRecorder(), extra: Partial<RunnerOptions> = {}) => createRunner({ provider, recorder, budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op", origin: "shared", requestId: null, sleep: async () => undefined, ...extra });
 
 describe("stage runner", () => {
   it("feeds schema and verify failures back and succeeds within three content attempts, numbering the retries", async () => {
@@ -82,7 +82,7 @@ describe("stage runner", () => {
   });
   it("stops on a permanent provider failure and on a budget refusal without regeneration", async () => {
     await expect(mk(new FakeProvider([new ProviderError("bad key", "permanent", 401, { requestId: "req_401" })])).run(call())).rejects.toMatchObject({ name: "InfrastructureFailure", message: expect.stringMatching(/req_401/) });
-    const runner = createRunner({ provider: new FakeProvider([fakeResponse({ outputText: "{\"n\":1}" })]), recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 1 }), operationId: "op", sleep: async () => undefined });
+    const runner = createRunner({ provider: new FakeProvider([fakeResponse({ outputText: "{\"n\":1}" })]), recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 1 }), operationId: "op", origin: "shared", requestId: null, sleep: async () => undefined });
     await expect(runner.run(call())).rejects.toMatchObject({ name: "BudgetRefused", limit: "spend" });
   });
   it("treats a recorder throw as an infrastructure failure without retrying: a recordOutcome failure ends the run after exactly one dispatch", async () => {

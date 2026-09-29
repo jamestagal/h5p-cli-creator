@@ -4,7 +4,7 @@ import { storeVersionOf, type AcceptanceRecord, type ActivityRecord, type Alignm
 import { readJson, readJsonl } from "./file-store.js";
 
 /** A phase-2 revision as it was stored: the engine fingerprint was stamped when the revision was produced, and there are no build records. */
-export type LegacyRevisionRecord = Omit<RevisionRecord, "origin" | "requestId"> & { engineFingerprint: string; buildKey: string | null };
+export type LegacyRevisionRecord = Omit<RevisionRecord, "origin" | "requestId" | "currentBuildId"> & { engineFingerprint: string; buildKey: string | null };
 
 export interface LegacyImportView {
   storeVersion: 1;

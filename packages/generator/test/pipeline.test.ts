@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeAll } from "vitest";
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { createRegistry, type LibraryRegistry } from "@leaplearn/engine";
+import { createRegistry, type EngineIdentity, type LibraryRegistry } from "@leaplearn/engine";
 import { MemoryStore } from "../src/store/memory-store.js";
-import { LegacyStoreError, MalformedStoreVersionError, STORE_VERSION, StoreLockedError, UnsupportedStoreVersionError, type ImportRecord } from "../src/store/types.js";
+import { BuildIntegrityError, LegacyStoreError, MalformedStoreVersionError, STORE_VERSION, StoreLockedError, UnsupportedStoreVersionError, type ImportRecord, type ImportStore } from "../src/store/types.js";
+import { buildIdFor, buildKeyFor } from "../src/store/builds.js";
+import { buildRevision } from "../src/pipeline/build.js";
 import { DEFAULT_MAX_ATTEMPT_MS, runImport, SKIPPED_PREFIX, type RunImportDeps, type RunImportInput } from "../src/pipeline/run-import.js";
 import { IncompatibleResumeError, runFingerprint } from "../src/pipeline/fingerprint.js";
 import { FakeProvider, fakeResponse } from "../src/llm/fake-provider.js";
@@ -16,6 +19,7 @@ import { ANTHROPIC_TIMEOUT_MS } from "../src/llm/anthropic-provider.js";
 import { conceptResponses, syntheticDoc, syntheticUnitText, unitOut, planOutFor, SYNTHETIC_CHUNK_TOKENS, sid } from "./helpers/synthetic.js";
 import { crashBefore, CrashError, failOnce, failOutcomeOnce } from "./helpers/crashing-store.js";
 import { RoutedProvider } from "./helpers/routed-provider.js";
+import { IDENTITY_A, IDENTITY_A_NEW_LOCK, IDENTITY_B } from "./helpers/identity.js";
 
 const root = resolve(import.meta.dirname, "../../..");
 let registry: LibraryRegistry;
@@ -46,7 +50,7 @@ async function fullScript(doc: Doc): Promise<Array<ModelResponse | Error>> {
 const callsThroughPlan = (doc: Doc) => 1 + chunkSentences(doc.sentences, SYNTHETIC_CHUNK_TOKENS).length + 2 + 1; // parseUnit, extract per chunk, merge, align, plan
 
 const input = async (importId: string, overrides: Partial<RunImportInput> = {}): Promise<RunImportInput> => ({ importId, name: "Synthetic import", source: await syntheticDoc(), unitText: await syntheticUnitText(), selectedTypes: ["multiChoice", "blanks", "flashcards"] as const, budget: { usdMicro: 5_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null, ...overrides });
-const deps = (store: RunImportDeps["store"], provider: RunImportDeps["provider"], overrides: Partial<RunImportDeps> = {}): RunImportDeps => ({ store, provider, registry, engineFingerprint: "engine@0.1.0+lock:test", concurrency: 1, chunkTokens: SYNTHETIC_CHUNK_TOKENS, rules, sleep: async () => undefined, ...overrides });
+const deps = (store: RunImportDeps["store"], provider: RunImportDeps["provider"], overrides: Partial<RunImportDeps> = {}): RunImportDeps => ({ store, provider, registry, engineIdentity: IDENTITY_A, concurrency: 1, chunkTokens: SYNTHETIC_CHUNK_TOKENS, rules, sleep: async () => undefined, ...overrides });
 const purposes = (p: { requests: Array<{ purpose: string }> }) => p.requests.map((x) => x.purpose);
 
 describe("pipeline defaults", () => {
@@ -70,9 +74,10 @@ describe("runImport", () => {
       const rev = await store.getRevision(a.activityId, 1);
       expect(rev?.state).toBe("promoted");
       expect(rev?.promptVersion).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
-      expect(rev?.engineFingerprint).toBe("engine@0.1.0+lock:test");
       expect(rev?.modelConfig.profiles["claude-sonnet-5"]).toEqual({ temperature: null, thinking: { type: "disabled" } });
-      const build = await store.getBuild(rev!.buildKey!);
+      const record = await store.getBuildRecord(rev!.currentBuildId!);
+      expect(record).toMatchObject({ importId: "imp-1", activityId: a.activityId, revision: 1, engineFingerprint: IDENTITY_A.fingerprint, engineDisplay: IDENTITY_A.display, engineInputs: IDENTITY_A.inputs, nodeVersion: IDENTITY_A.nodeVersion });
+      const build = await store.getBuild(record!.buildKey);
       expect(build?.subarray(0, 2).toString("latin1")).toBe("PK");
     }
     const attempts = await store.listAttempts("imp-1");
@@ -361,8 +366,8 @@ describe("runImport", () => {
     const base = await input("imp-5", { unitText: null, selectedTypes: ["multiChoice"] });
     const fingerprint = runFingerprint({ sourceTextHash: base.source.textHash, unitText: null, selectedTypes: base.selectedTypes, language: base.language, promptConfig: base.promptConfig, customisation: null, chunkTokens: SYNTHETIC_CHUNK_TOKENS, rules });
     await store.putImport({ storeVersion: 2, importId: "imp-5", orgId: "local", name: "n", sourceType: "markdown", status: "generating", customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice"], fingerprint, budget: { usdMicro: 5_000_000, ...DEFAULT_BUDGET_LIMITS }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: "imp-5", createdAt: "2026-09-19T00:00:00Z", updatedAt: "2026-09-19T00:00:00Z" });
-    await store.putOperation({ operationId: "imp-5:produce:act-1:r1", importId: "imp-5", activityId: "act-1", purpose: "produce", status: "running", idempotencyKey: "imp-5:produce:act-1:r1", contentAttempts: 1, outcome: null, billingUncertain: false, startedAt: "2026-09-19T00:00:00Z", completedAt: null });
-    await store.recorderFor("imp-5").recordStart({ event: "start", attemptId: "att-1", operationId: "imp-5:produce:act-1:r1", callKey: "produce:act-1", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: 0, purpose: "produce", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 10, reservedOutputTokens: 10, reservedUsdMicro: 777, startedAt: "2026-09-19T00:00:00Z" });
+    await store.putOperation({ operationId: "imp-5:produce:act-1:r1", importId: "imp-5", activityId: "act-1", purpose: "produce", status: "running", origin: "generate", requestId: null, idempotencyKey: "imp-5:produce:act-1:r1", contentAttempts: 1, outcome: null, billingUncertain: false, startedAt: "2026-09-19T00:00:00Z", completedAt: null });
+    await store.recorderFor("imp-5").recordStart({ event: "start", attemptId: "att-1", operationId: "imp-5:produce:act-1:r1", origin: "generate", requestId: null, callKey: "produce:act-1", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: 0, purpose: "produce", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 10, reservedOutputTokens: 10, reservedUsdMicro: 777, startedAt: "2026-09-19T00:00:00Z" });
     await runImport(base, deps(store, new FakeProvider([]))).catch(() => undefined);
     const op = (await store.listOperations("imp-5")).find((o) => o.operationId === "imp-5:produce:act-1:r1")!;
     expect(op.billingUncertain).toBe(true);
@@ -390,8 +395,8 @@ describe("runImport", () => {
     const base = await input("imp-a", { unitText: null, selectedTypes: ["multiChoice"], budget: { usdMicro: 5_000_000, elapsedMs: 60_000 } });
     const fingerprint = runFingerprint({ sourceTextHash: base.source.textHash, unitText: null, selectedTypes: base.selectedTypes, language: base.language, promptConfig: base.promptConfig, customisation: null, chunkTokens: SYNTHETIC_CHUNK_TOKENS, rules });
     await store.putImport({ storeVersion: 2, importId: "imp-a", orgId: "local", name: "n", sourceType: "markdown", status: "extracting", customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice"], fingerprint, budget: { ...DEFAULT_BUDGET_LIMITS, usdMicro: 5_000_000, elapsedMs: 60_000 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: { startedAt: new Date(T0).toISOString(), elapsedBeforeMs: 0 }, error: null, idempotencyKey: "imp-a", createdAt: "t", updatedAt: "t" });
-    await store.putOperation({ operationId: "imp-a:concepts", importId: "imp-a", activityId: null, purpose: "extract", status: "running", idempotencyKey: "imp-a:concepts", contentAttempts: 1, outcome: null, billingUncertain: false, startedAt: new Date(T0 + 500).toISOString(), completedAt: null });
-    await store.recorderFor("imp-a").recordStart({ event: "start", attemptId: "att-1", operationId: "imp-a:concepts", callKey: "extract:chunk-0", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: T0 + 60_000, purpose: "extract", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 10, reservedOutputTokens: 10, reservedUsdMicro: 1, startedAt: new Date(T0 + 1000).toISOString() }); // killed during this call
+    await store.putOperation({ operationId: "imp-a:concepts", importId: "imp-a", activityId: null, purpose: "extract", status: "running", origin: "shared", requestId: null, idempotencyKey: "imp-a:concepts", contentAttempts: 1, outcome: null, billingUncertain: false, startedAt: new Date(T0 + 500).toISOString(), completedAt: null });
+    await store.recorderFor("imp-a").recordStart({ event: "start", attemptId: "att-1", operationId: "imp-a:concepts", origin: "shared", requestId: null, callKey: "extract:chunk-0", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: T0 + 60_000, purpose: "extract", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 10, reservedOutputTokens: 10, reservedUsdMicro: 1, startedAt: new Date(T0 + 1000).toISOString() }); // killed during this call
     const later = () => new Date(T0 + 100_000); // the resume happens long after the kill
     await runImport(base, deps(store, new FakeProvider([]), { clock: later, maxAttemptMs: 5000 })).catch(() => undefined);
     const after = (await store.getImport("imp-a"))!;
@@ -399,7 +404,7 @@ describe("runImport", () => {
     expect(after.budgetUsed.elapsedMs).toBe(6000); // start at +1000 with no outcome: charged to min(deadline, +1000 + 5000); the fixed clock adds nothing, and reconcile()'s own completedAt stamps were written only after the snapshot was taken
     const snapshotStore = new MemoryStore(); // a run that died during compilation, after a budget snapshot later than every attempt
     await snapshotStore.putImport({ storeVersion: 2, importId: "imp-a", orgId: "local", name: "n", sourceType: "markdown", status: "generating", customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice"], fingerprint, budget: { ...DEFAULT_BUDGET_LIMITS, usdMicro: 5_000_000, elapsedMs: 60_000 }, budgetUsed: { spentUsdMicro: 10, reservedUsdMicro: 0, spentTokens: 10, requests: 1, elapsedMs: 5000 }, currentRun: { startedAt: new Date(T0).toISOString(), elapsedBeforeMs: 0 }, error: null, idempotencyKey: "imp-a", createdAt: "t", updatedAt: new Date(T0 + 5000).toISOString() });
-    await snapshotStore.recorderFor("imp-a").recordStart({ event: "start", attemptId: "att-1", operationId: "imp-a:concepts", callKey: "extract:chunk-0", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: T0 + 60_000, purpose: "extract", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 10, reservedOutputTokens: 10, reservedUsdMicro: 1, startedAt: new Date(T0 + 500).toISOString() });
+    await snapshotStore.recorderFor("imp-a").recordStart({ event: "start", attemptId: "att-1", operationId: "imp-a:concepts", origin: "shared", requestId: null, callKey: "extract:chunk-0", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: T0 + 60_000, purpose: "extract", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 10, reservedOutputTokens: 10, reservedUsdMicro: 1, startedAt: new Date(T0 + 500).toISOString() });
     await snapshotStore.recorderFor("imp-a").recordOutcome({ event: "outcome", attemptId: "att-1", operationId: "imp-a:concepts", providerRequestId: null, rawUsage: null, inputTokens: 5, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, latencyMs: 500, pricingVersion: "v", costUsdMicro: 10, costStatus: "known", stopReason: "end_turn", status: "ok", error: null, reservationExceeded: false, underestimateUsdMicro: 0, completedAt: new Date(T0 + 1000).toISOString() });
     await runImport(base, deps(snapshotStore, new FakeProvider([]), { clock: later, maxAttemptMs: 100 })).catch(() => undefined);
     const kept = (await snapshotStore.getImport("imp-a"))!;
@@ -492,5 +497,114 @@ describe("runImport", () => {
     const resumed = await runImport(await input("imp-f2"), deps(store, new FakeProvider([r(mc), r(bl), r(fc)])));
     expect(resumed.status).toBe("ready");
     expect((await store.listActivities("imp-f2")).map((a) => a.status)).toEqual(["promoted", "promoted", "promoted"]);
+  });
+});
+
+describe("build records", () => {
+  const sha256 = (b: Buffer) => createHash("sha256").update(b).digest("hex");
+
+  /** Runs the synthetic import under `first` until the flashcards activity (act-3) has a saved candidate and its build is refused, then resumes under `second`. */
+  async function candidateBuiltUnder(importId: string, first: EngineIdentity, second: EngineIdentity) {
+    const store = new MemoryStore();
+    const doc = await syntheticDoc();
+    const crashing = crashBefore(store, "putBuild", 1, (args) => args[0].startsWith("builds/act-3-"));
+    await expect(runImport(await input(importId), deps(crashing, new FakeProvider(await fullScript(doc)), { engineIdentity: first }))).rejects.toBeInstanceOf(CrashError);
+    expect((await store.getRevision("act-3", 1))?.state).toBe("candidate");
+    const empty = new FakeProvider([]);
+    const record = await runImport(await input(importId), deps(store, empty, { engineIdentity: second }));
+    return { store, record, empty };
+  }
+
+  async function expectCurrentBuildUnder(store: ImportStore, activityId: string, identity: EngineIdentity) {
+    const rev = (await store.getRevision(activityId, 1))!;
+    expect(rev.state).toBe("promoted");
+    expect(rev.currentBuildId).toBe(buildIdFor(activityId, 1, identity.fingerprint));
+    const build = (await store.getBuildRecord(rev.currentBuildId!))!;
+    expect(build).toMatchObject({ buildId: rev.currentBuildId, buildKey: buildKeyFor(activityId, 1, identity.fingerprint), engineFingerprint: identity.fingerprint, engineDisplay: identity.display, engineInputs: identity.inputs, nodeVersion: identity.nodeVersion });
+    const bytes = (await store.getBuild(build.buildKey))!;
+    expect(sha256(bytes)).toBe(build.sha256);
+    expect(bytes.byteLength).toBe(build.byteLength);
+    return build;
+  }
+
+  it("stamps a candidate produced under engine A but built under engine B with B, making no model call on resume", async () => {
+    const { store, record, empty } = await candidateBuiltUnder("imp-b1", IDENTITY_A, IDENTITY_B);
+    expect(record.status).toBe("ready");
+    expect(empty.requests).toHaveLength(0);
+    await expectCurrentBuildUnder(store, "act-3", IDENTITY_B);
+    await expectCurrentBuildUnder(store, "act-1", IDENTITY_A); // built before the crash, under A
+    expect(await store.listBuilds("act-3")).toHaveLength(1);
+  });
+
+  it("stamps the new identity when only the libraries lock changed", async () => {
+    expect(IDENTITY_A_NEW_LOCK.inputs.engineDist).toEqual(IDENTITY_A.inputs.engineDist);
+    const { store, record, empty } = await candidateBuiltUnder("imp-b2", IDENTITY_A, IDENTITY_A_NEW_LOCK);
+    expect(record.status).toBe("ready");
+    expect(empty.requests).toHaveLength(0);
+    const build = await expectCurrentBuildUnder(store, "act-3", IDENTITY_A_NEW_LOCK);
+    expect(build.buildKey).not.toBe(buildKeyFor("act-3", 1, IDENTITY_A.fingerprint));
+  });
+
+  it("never rewrites history: building a promoted revision again under B adds a record and leaves A's record and bytes unchanged", async () => {
+    const store = new MemoryStore();
+    await runImport(await input("imp-b3"), deps(store, new FakeProvider(await fullScript(await syntheticDoc()))));
+    const underA = await expectCurrentBuildUnder(store, "act-1", IDENTITY_A);
+    const bytesA = (await store.getBuild(underA.buildKey))!;
+    const rev = (await store.getRevision("act-1", 1))!;
+
+    const underB = await buildRevision({ store, registry, engineIdentity: IDENTITY_B }, "imp-b3", rev);
+    await store.putRevision({ ...rev, currentBuildId: underB.buildId });
+
+    expect((await store.listBuilds("act-1")).map((b) => b.buildId).sort()).toEqual([underA.buildId, underB.buildId].sort());
+    expect(await store.getBuildRecord(underA.buildId)).toEqual(underA);
+    expect(await store.getBuild(underA.buildKey)).toEqual(bytesA);
+    await expectCurrentBuildUnder(store, "act-1", IDENTITY_B);
+  });
+
+  it("reuses an existing build record for the same revision and engine instead of writing a second one", async () => {
+    const store = new MemoryStore();
+    await runImport(await input("imp-b4"), deps(store, new FakeProvider(await fullScript(await syntheticDoc()))));
+    const rev = (await store.getRevision("act-1", 1))!;
+    const before = (await store.getBuildRecord(rev.currentBuildId!))!;
+    const again = await buildRevision({ store, registry, engineIdentity: IDENTITY_A, clock: () => new Date("2031-01-01T00:00:00Z") }, "imp-b4", rev);
+    expect(again).toEqual(before);
+    expect(await store.listBuilds("act-1")).toEqual([before]);
+  });
+
+  it("refuses to overwrite a build: different bytes for an existing key throw, identical bytes are a no-op", async () => {
+    const store = new MemoryStore();
+    const bytes = Buffer.from("PK-first");
+    const key = buildKeyFor("act-9", 1, IDENTITY_A.fingerprint);
+    await store.putBuild(key, bytes);
+    await store.putBuild(key, Buffer.from(bytes));
+    expect(await store.getBuild(key)).toEqual(bytes);
+    const other = Buffer.from("PK-other");
+    const refused = await store.putBuild(key, other).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(BuildIntegrityError);
+    expect((refused as Error).message).toContain(key);
+    expect((refused as Error).message).toContain(sha256(bytes));
+    expect((refused as Error).message).toContain(sha256(other));
+    expect(await store.getBuild(key)).toEqual(bytes);
+  });
+
+  it("records origin before dispatch: a produce operation that exhausts its content attempts, with no revision, carries origin generate; shared stages carry shared", async () => {
+    const store = new MemoryStore();
+    const doc = await syntheticDoc();
+    const { script } = conceptResponses(doc);
+    const { bl, fc } = produceResponses(doc);
+    const bad = fakeResponse({ outputText: "{}" });
+    const provider = new FakeProvider([r(unitOut), ...script, r(planOutFor(["multiChoice", "blanks", "flashcards"])), bad, bad, bad, r(bl), r(fc)]);
+    const record = await runImport(await input("imp-b5"), deps(store, provider));
+    expect(record.status).toBe("ready_with_failures");
+    expect(await store.listRevisions("act-1")).toEqual([]);
+    const ops = await store.listOperations("imp-b5");
+    const produceAct1 = ops.filter((o) => o.activityId === "act-1");
+    expect(produceAct1).toEqual([expect.objectContaining({ purpose: "produce", status: "failed", origin: "generate", requestId: null })]);
+    for (const o of ops) expect([o.purpose, o.origin, o.requestId]).toEqual([o.purpose, o.purpose === "produce" ? "generate" : "shared", null]);
+    const starts = (await store.listAttempts("imp-b5")).filter((e): e is AttemptStart => e.event === "start");
+    const act1Starts = starts.filter((s) => s.callKey === "produce:act-1");
+    expect(act1Starts).toHaveLength(3);
+    for (const s of act1Starts) expect([s.origin, s.requestId]).toEqual(["generate", null]);
+    for (const s of starts) expect(s.origin).toBe(s.purpose === "produce" ? "generate" : "shared");
   });
 });

@@ -2,7 +2,7 @@ import { createBudget, type Budget, type BudgetLimits } from "../llm/budget.js";
 import type { ModelProvider } from "../llm/provider.js";
 import { createRunner, type RunnerOptions, type StageRunner } from "../llm/runner.js";
 import type { AttemptEvent, AttemptOutcome, AttemptStart, Purpose } from "../llm/types.js";
-import type { ImportStore, OperationRecord } from "../store/types.js";
+import type { ImportStore, OperationOrigin, OperationRecord } from "../store/types.js";
 
 export interface OperationContext {
   store: ImportStore; provider: ModelProvider; budget: Budget; importId: string; clock: () => Date; sleep?: (ms: number) => Promise<void>;
@@ -78,6 +78,9 @@ export async function reconcile(store: ImportStore, importId: string, clock: () 
 export interface RunOperation<T> {
   purpose: Purpose;
   activityId: string | null;
+  /** Written on the operation record when it starts and passed to every attempt, before any dispatch. */
+  origin: OperationOrigin;
+  requestId: string | null;
   key: string;
   /** A result persisted by an earlier run, or null. Checked first: a persisted result is the source of truth even when the operation record was interrupted. */
   load: () => Promise<T | null>;
@@ -95,20 +98,20 @@ export async function runOperation<T>(ctx: OperationContext, spec: RunOperation<
     if (latest && latest.status === "succeeded") return { result: stored, operation: latest, reused: true };
     const corrected: OperationRecord = latest
       ? { ...latest, status: "succeeded", outcome: `${latest.outcome ?? "interrupted"}; the result had been persisted and was reused on resume`, completedAt: ctx.clock().toISOString() }
-      : { operationId: spec.key, importId: ctx.importId, activityId: spec.activityId, purpose: spec.purpose, status: "succeeded", idempotencyKey: spec.key, contentAttempts: 0, outcome: "result found in the store without an operation record; reused on resume", billingUncertain: false, startedAt: ctx.clock().toISOString(), completedAt: ctx.clock().toISOString() };
+      : { operationId: spec.key, importId: ctx.importId, activityId: spec.activityId, purpose: spec.purpose, status: "succeeded", origin: spec.origin, requestId: spec.requestId, idempotencyKey: spec.key, contentAttempts: 0, outcome: "result found in the store without an operation record; reused on resume", billingUncertain: false, startedAt: ctx.clock().toISOString(), completedAt: ctx.clock().toISOString() };
     await ctx.store.putOperation(corrected);
     return { result: stored, operation: corrected, reused: true };
   }
   const operationId = existing.length === 0 ? spec.key : `${spec.key}#${existing.length + 1}`;
   const note = latest?.status === "succeeded" ? "re-run: the earlier operation succeeded but its result is missing from the store" : null;
-  const op: OperationRecord = { operationId, importId: ctx.importId, activityId: spec.activityId, purpose: spec.purpose, status: "running", idempotencyKey: spec.key, contentAttempts: 0, outcome: note, billingUncertain: false, startedAt: ctx.clock().toISOString(), completedAt: null };
+  const op: OperationRecord = { operationId, importId: ctx.importId, activityId: spec.activityId, purpose: spec.purpose, status: "running", origin: spec.origin, requestId: spec.requestId, idempotencyKey: spec.key, contentAttempts: 0, outcome: note, billingUncertain: false, startedAt: ctx.clock().toISOString(), completedAt: null };
   await ctx.store.putOperation(op);
   const recorder = ctx.store.recorderFor(ctx.importId);
   const counting = {
     recordStart: async (s: AttemptStart) => { op.contentAttempts = Math.max(op.contentAttempts, s.attempt); ctx.attemptsByKey.set(s.callKey, (ctx.attemptsByKey.get(s.callKey) ?? 0) + 1); await recorder.recordStart(s); },
     recordOutcome: async (o: AttemptOutcome) => { await recorder.recordOutcome(o); ctx.onAttempt?.({ purpose: spec.purpose, status: o.status, costUsdMicro: o.costUsdMicro }); }
   };
-  const runnerOptions: RunnerOptions = { provider: ctx.provider, recorder: counting, budget: ctx.budget, operationId, clock: ctx.clock, priorAttempts: (key) => ctx.attemptsByKey.get(key) ?? 0 };
+  const runnerOptions: RunnerOptions = { provider: ctx.provider, recorder: counting, budget: ctx.budget, operationId, origin: spec.origin, requestId: spec.requestId, clock: ctx.clock, priorAttempts: (key) => ctx.attemptsByKey.get(key) ?? 0 };
   if (ctx.sleep) runnerOptions.sleep = ctx.sleep;
   if (ctx.stop) runnerOptions.stop = ctx.stop;
   const runner = createRunner(runnerOptions);

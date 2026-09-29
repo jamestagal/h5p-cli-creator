@@ -1,4 +1,4 @@
-import { compileToBuffer, type LibraryRegistry } from "@leaplearn/engine";
+import type { EngineIdentity, LibraryRegistry } from "@leaplearn/engine";
 import { assertGeneratedProvenance, SCHEMA_VERSION, type ConceptMap, type ImportStatus, type UnitOfCompetency } from "@leaplearn/shared";
 import { parseUnit } from "../competency/parse-unit.js";
 import { extractConceptMap, type ChunkConcept } from "../concepts/index.js";
@@ -13,6 +13,7 @@ import { createProducers } from "../produce/index.js";
 import { PROMPT_VERSION, type PromptConfig } from "../prompts/system.js";
 import { assertWritableStoreVersion, STORE_VERSION, type ActivityRecord, type ImportRecord, type ImportStore, type RevisionRecord } from "../store/types.js";
 import { DEFAULT_CHUNK_TOKENS, IncompatibleResumeError, runFingerprint } from "./fingerprint.js";
+import { buildRevision } from "./build.js";
 import { attemptsByKey, budgetFromLedger, reconcile, reconcileElapsed, runLanes, runOperation, type OperationContext } from "./operations.js";
 
 export interface RunImportInput {
@@ -21,7 +22,9 @@ export interface RunImportInput {
 }
 export type ProgressEvent = { kind: "status"; status: ImportStatus } | { kind: "activity"; activityId: string; status: ActivityRecord["status"]; error?: string } | { kind: "attempt"; purpose: string; status: string; costUsdMicro: number | null };
 export interface RunImportDeps {
-  store: ImportStore; provider: ModelProvider; registry: LibraryRegistry; engineFingerprint: string;
+  store: ImportStore; provider: ModelProvider; registry: LibraryRegistry;
+  /** The engine that builds this run's revisions; stamped on each build record when it builds, never when it produces. */
+  engineIdentity: EngineIdentity;
   concurrency?: number; chunkTokens?: number; rules?: PlanRules; clock?: () => Date; sleep?: (ms: number) => Promise<void>; onProgress?: (event: ProgressEvent) => void;
   /** The longest one provider call can take (the adapter's request timeout); bounds what an interrupted attempt is charged. */
   maxAttemptMs?: number;
@@ -118,7 +121,7 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
     if (input.unitText !== null) {
       const unitText = input.unitText;
       const parsed = await runOperation<UnitOfCompetency>(ctx, {
-        purpose: "parseUnit", activityId: null, key: `${input.importId}:parseUnit`,
+        purpose: "parseUnit", activityId: null, origin: "shared", requestId: null, key: `${input.importId}:parseUnit`,
         load: () => store.getArtifact<UnitOfCompetency>(input.importId, "unit"),
         work: (runner) => parseUnit(unitText, runner),
         persist: (u) => store.putArtifact(input.importId, "unit", u)
@@ -130,7 +133,7 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
     await setStatus("extracting");
     const chunkCache = { get: (i: number) => store.getArtifact<ChunkConcept[]>(input.importId, `chunk-${i}`), put: (i: number, c: ChunkConcept[]) => store.putArtifact(input.importId, `chunk-${i}`, c) };
     const concepts = await runOperation<ConceptMap>(ctx, {
-      purpose: "extract", activityId: null, key: `${input.importId}:concepts`,
+      purpose: "extract", activityId: null, origin: "shared", requestId: null, key: `${input.importId}:concepts`,
       load: () => store.getArtifact<ConceptMap>(input.importId, "conceptMap"),
       work: (runner) => extractConceptMap(input.source, unit, runner, { chunkTokens, promptConfig: input.promptConfig, chunkCache }),
       persist: (m) => store.putArtifact(input.importId, "conceptMap", m)
@@ -139,7 +142,7 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
 
     await setStatus("planning");
     const planned = await runOperation<ActivityPlan[]>(ctx, {
-      purpose: "plan", activityId: null, key: `${input.importId}:plan`,
+      purpose: "plan", activityId: null, origin: "shared", requestId: null, key: `${input.importId}:plan`,
       load: () => store.getArtifact<ActivityPlan[]>(input.importId, "plan"),
       work: (runner) => planActivities(map, [...input.selectedTypes], runner, rules),
       persist: (p) => store.putArtifact(input.importId, "plan", p)
@@ -180,7 +183,7 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
       const revision = saved ? saved.revision : revisions.length + 1;
       if (!saved) await setActivity({ status: "generating", error: null });
       const produced = await runOperation<RevisionRecord>(ctx, {
-        purpose: "produce", activityId: activity.activityId, key: `${input.importId}:produce:${activity.activityId}:r${revision}`,
+        purpose: "produce", activityId: activity.activityId, origin: "generate", requestId: null, key: `${input.importId}:produce:${activity.activityId}:r${revision}`,
         load: () => store.getRevision(activity.activityId, revision),
         work: async (runner) => {
           const producer = producers.get(entry.type);
@@ -189,17 +192,16 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
           const priorTexts = existingTexts(await promotedOfType(activity.type));
           const result = await producer.produce({ plan: entry, map, unit, promptConfig: input.promptConfig, language: input.language, existing: priorTexts, rules }, runner, { registry: deps.registry });
           assertGeneratedProvenance(result.spec);
-          return { activityId: activity.activityId, revision, state: "candidate", spec: result.spec, schemaVersion: SCHEMA_VERSION, promptVersion: PROMPT_VERSION, origin: "generate", requestId: null, modelConfig: { provider: deps.provider.name, models: { ...MODEL_ROLES }, profiles: { ...REQUEST_PROFILES } }, engineFingerprint: deps.engineFingerprint, note: null, buildKey: null, attemptIds: result.attemptIds, createdAt: now() };
+          return { activityId: activity.activityId, revision, state: "candidate", spec: result.spec, schemaVersion: SCHEMA_VERSION, promptVersion: PROMPT_VERSION, origin: "generate", requestId: null, modelConfig: { provider: deps.provider.name, models: { ...MODEL_ROLES }, profiles: { ...REQUEST_PROFILES } }, note: null, currentBuildId: null, attemptIds: result.attemptIds, createdAt: now() };
         },
         persist: (rev) => store.putRevision(rev)
       });
       const candidate = produced.result;
       if (!produced.reused) await setActivity({ status: "generated" });
-      const bytes = await compileToBuffer(candidate.spec, new Map(), { registry: deps.registry, revision: candidate.revision });
-      const buildKey = await store.putBuild(input.importId, activity.activityId, candidate.revision, bytes);
+      const build = await buildRevision({ store, registry: deps.registry, engineIdentity: deps.engineIdentity, clock }, input.importId, candidate);
       await setActivity({ status: "built" });
       for (const prev of await store.listRevisions(activity.activityId)) if (prev.state === "promoted" && prev.revision !== candidate.revision) await store.putRevision({ ...prev, state: "superseded" });
-      await store.putRevision({ ...candidate, state: "promoted", buildKey });
+      await store.putRevision({ ...candidate, state: "promoted", currentBuildId: build.buildId });
       await setActivity({ status: "promoted", currentRevision: candidate.revision, error: null });
     };
 

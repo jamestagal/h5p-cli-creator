@@ -21,7 +21,7 @@ class MemoryRecorder implements AttemptRecorder {
 const CLOCK = new Date("2026-09-19T00:00:00Z");
 const req = (): ModelRequest => ({ purpose: "produce", model: modelForRole("produce"), system: "sys", user: "make one", maxOutputTokens: 500, outputSchema: toProviderSchema(z.object({ ok: z.boolean() })) });
 /** Budget and clock share one time base, so the elapsed deadline is not already past when the test starts. */
-const ctx = (provider: FakeProvider, recorder = new MemoryRecorder(), limitUsdMicro = 10_000_000): CallContext => ({ provider, recorder, budget: createBudget({ usdMicro: limitUsdMicro }, CLOCK.getTime()), operationId: "op-1", callKey: "produce:act-1", retryIndex: 0, retryReason: null, attempt: 1, clock: () => CLOCK, ids: () => "att-1" });
+const ctx = (provider: FakeProvider, recorder = new MemoryRecorder(), limitUsdMicro = 10_000_000): CallContext => ({ provider, recorder, budget: createBudget({ usdMicro: limitUsdMicro }, CLOCK.getTime()), operationId: "op-1", origin: "generate", requestId: null, callKey: "produce:act-1", retryIndex: 0, retryReason: null, attempt: 1, clock: () => CLOCK, ids: () => "att-1" });
 const outcomes = (r: MemoryRecorder) => r.events.filter((e): e is AttemptOutcome => e.event === "outcome");
 
 describe("callModel", () => {
@@ -34,13 +34,20 @@ describe("callModel", () => {
     if (result.kind === "ok") expect(result.json).toEqual({ ok: true });
     expect(recorder.events.map((e) => e.event)).toEqual(["start", "outcome"]);
     const start = recorder.events[0] as AttemptStart;
-    expect(start).toMatchObject({ callKey: "produce:act-1", retryIndex: 0, retryReason: null, attempt: 1, reservedOutputTokens: 500, deadlineMs: CLOCK.getTime() + DEFAULT_BUDGET_LIMITS.elapsedMs });
+    expect(start).toMatchObject({ callKey: "produce:act-1", origin: "generate", requestId: null, retryIndex: 0, retryReason: null, attempt: 1, reservedOutputTokens: 500, deadlineMs: CLOCK.getTime() + DEFAULT_BUDGET_LIMITS.elapsedMs });
     expect(start.reservedUsdMicro).toBeGreaterThan(0);
     const outcome = outcomes(recorder)[0]!;
     expect(outcome).toMatchObject({ status: "ok", providerRequestId: "req_1", inputTokens: 120, outputTokens: 30, costStatus: "known", pricingVersion: expect.any(String), reservationExceeded: false, underestimateUsdMicro: 0 });
     expect(outcome.costUsdMicro).toBe(computeCost(usage, modelForRole("produce")).costUsdMicro);
     expect(recorder.startedBeforeDispatch).toBe(true);
     expect(provider.options[0]).toEqual({ deadlineMs: CLOCK.getTime() + DEFAULT_BUDGET_LIMITS.elapsedMs }); // the provider is told the deadline
+  });
+  it("copies origin and request id from its context onto the attempt start, before dispatch", async () => {
+    const provider = new FakeProvider([fakeResponse({ outputText: "{\"ok\":true}" })]);
+    const recorder = new MemoryRecorder(provider);
+    await callModel(req(), { ...ctx(provider, recorder), origin: "regenerate", requestId: "req-7" });
+    expect(recorder.events[0]).toMatchObject({ event: "start", origin: "regenerate", requestId: "req-7" });
+    expect(recorder.startedBeforeDispatch).toBe(true);
   });
   it("flags an attempt whose actual usage exceeds the reservation and records the underestimate", async () => {
     const usage = { inputTokens: 5_000_000, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 };
@@ -110,7 +117,7 @@ describe("callModel", () => {
     const recorder = new MemoryRecorder();
     const budget = createBudget({ usdMicro: 1e9, elapsedMs: deadlineMs }, base);
     const frozen = new Date(base);
-    const result = await callModel(req(), { provider, recorder, budget, operationId: "op-1", callKey: "produce:act-1", retryIndex: 0, retryReason: null, attempt: 1, clock: () => frozen, ids: () => "att-late" });
+    const result = await callModel(req(), { provider, recorder, budget, operationId: "op-1", origin: "generate", requestId: null, callKey: "produce:act-1", retryIndex: 0, retryReason: null, attempt: 1, clock: () => frozen, ids: () => "att-late" });
     expect(result).toMatchObject({ kind: "transient_error", attemptId: "att-late" });
     const outcome = outcomes(recorder)[0]!;
     expect(outcome).toMatchObject({ status: "transient_error", costStatus: "unavailable", costUsdMicro: null, stopReason: null, completedAt: frozen.toISOString() });

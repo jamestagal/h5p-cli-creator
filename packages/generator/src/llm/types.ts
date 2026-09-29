@@ -1,3 +1,4 @@
+import type { OperationOrigin } from "../store/types.js";
 import type { CostStatus, GenerationUsage } from "@leaplearn/shared";
 import type { ModelId, ModelRole } from "./models.js";
 
@@ -36,6 +37,9 @@ export interface AttemptStart {
   event: "start";
   attemptId: string;
   operationId: string;
+  /** Which command the attempt serves, copied from its operation before dispatch; never inferred. Local metadata, not part of the request. */
+  origin: OperationOrigin;
+  requestId: string | null;
   /** Stable identity of the logical call within the import (e.g. `extract:chunk-2`, `merge`, `produce:act-3`); retries share it. */
   callKey: string;
   /** 0 for the first attempt of a call key in the import; counts every earlier attempt with the same key, across operations and resumptions. */

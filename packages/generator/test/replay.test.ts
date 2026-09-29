@@ -10,6 +10,7 @@ import { MemoryStore } from "../src/store/memory-store.js";
 import { runImport } from "../src/pipeline/run-import.js";
 import { DEFAULT_PROMPT_CONFIG } from "../src/prompts/system.js";
 import type { AttemptOutcome } from "../src/llm/types.js";
+import { testIdentity } from "./helpers/identity.js";
 
 const root = resolve(import.meta.dirname, "../../..");
 const fixtures = resolve(import.meta.dirname, "fixtures");
@@ -42,7 +43,7 @@ describe("end to end over recorded responses", () => {
     const store = new MemoryStore();
     const record = await runImport(
       { importId: "leap-demo", name: "source-electrical-safety.pdf", source, unitText, selectedTypes: ["multiChoice", "blanks", "flashcards"], budget: { usdMicro: 2_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null },
-      { store, provider: new ReplayProvider(replayDir), registry, engineFingerprint: "replay" }
+      { store, provider: new ReplayProvider(replayDir), registry, engineIdentity: testIdentity("replay") }
     );
     expect(["ready", "ready_with_failures"]).toContain(record.status);
     const activities = await store.listActivities("leap-demo");

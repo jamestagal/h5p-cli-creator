@@ -1,5 +1,6 @@
 import type { AttemptEvent, AttemptRecorder } from "../llm/types.js";
-import { StoreLockedError, type AcceptanceRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type ImportRecord, type ImportStore, type OperationRecord, type RevisionRecord, type StoreLock } from "./types.js";
+import { canonicalRecordJson, sha256Hex, sortBuilds } from "./builds.js";
+import { BuildIntegrityError, StoreLockedError, type AcceptanceRecord, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type ImportRecord, type ImportStore, type OperationRecord, type RevisionRecord, type StoreLock } from "./types.js";
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const reviewKey = (r: AlignmentReviewRecord): string => `${r.activityId}/${r.revision}/${r.itemId ?? ""}/${r.criterionId}`;
@@ -12,6 +13,7 @@ export class MemoryStore implements ImportStore {
   private operations = new Map<string, OperationRecord>();
   private attempts = new Map<string, AttemptEvent[]>();
   private builds = new Map<string, Buffer>();
+  private buildRecords = new Map<string, BuildRecord>();
   private acceptances = new Map<string, AcceptanceRecord>();
   private alignmentReviews = new Map<string, AlignmentReviewRecord>();
   private locks = new Set<string>();
@@ -37,8 +39,20 @@ export class MemoryStore implements ImportStore {
     return { recordStart: async (s) => { list.push(clone(s)); }, recordOutcome: async (o) => { list.push(clone(o)); } };
   }
   async listAttempts(importId: string) { return clone(this.attempts.get(importId) ?? []); }
-  async putBuild(importId: string, activityId: string, revision: number, bytes: Buffer) { const key = `${importId}/${activityId}/r${revision}.h5p`; this.builds.set(key, Buffer.from(bytes)); return key; }
+  async putBuild(buildKey: string, bytes: Buffer) {
+    const existing = this.builds.get(buildKey);
+    if (existing) { if (!existing.equals(bytes)) throw new BuildIntegrityError(buildKey, sha256Hex(existing), sha256Hex(bytes)); return; }
+    this.builds.set(buildKey, Buffer.from(bytes));
+  }
   async getBuild(buildKey: string) { const b = this.builds.get(buildKey); return b ? Buffer.from(b) : null; }
+  async putBuildRecord(record: BuildRecord) {
+    const existing = this.buildRecords.get(record.buildId);
+    const text = canonicalRecordJson(record);
+    if (existing) { const before = canonicalRecordJson(existing); if (before !== text) throw new BuildIntegrityError(`build record ${record.buildId}`, sha256Hex(before), sha256Hex(text)); return; }
+    this.buildRecords.set(record.buildId, clone(record));
+  }
+  async getBuildRecord(buildId: string) { const r = this.buildRecords.get(buildId); return r ? clone(r) : null; }
+  async listBuilds(activityId: string) { return sortBuilds([...this.buildRecords.values()].filter((r) => r.activityId === activityId).map(clone)); }
   async listAcceptances(importId: string) { return [...this.acceptances.values()].filter((a) => a.importId === importId).map(clone); }
   async putAcceptance(record: AcceptanceRecord) { this.acceptances.set(`${record.activityId}/${record.revision}`, clone(record)); }
   async listAlignmentReviews(importId: string) { return [...this.alignmentReviews.values()].filter((a) => a.importId === importId).map(clone); }

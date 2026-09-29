@@ -21,7 +21,7 @@ const map: ConceptMap = { sourceId: "src", textHash: "0".repeat(64), concepts: [
 ] }] };
 const input = { plan: { activityId: "act-1", slot: 1, type: "multiChoice" as const, conceptIds: ["c1"], criteriaIds: ["PC2.1"], focus: "who removes a lock" }, map, unit: null, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", existing: { questions: [], passages: [], fronts: [] }, rules: DEFAULT_PLAN_RULES };
 const good = { title: "Removing a lock", question: "Who may remove a lockout device from an isolator?", answers: [{ text: "The worker who applied it", correct: true, feedback: "Only the worker who applied a lock may remove it." }, { text: "Any supervisor", correct: false, feedback: "" }, { text: "The last person to leave", correct: false, feedback: "" }], evidenceIds: ["ev-s1"] };
-const mk = (script: ReturnType<typeof fakeResponse>[]) => { const provider = new FakeProvider(script); return { provider, runner: createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-act-1", sleep: async () => undefined }) }; };
+const mk = (script: ReturnType<typeof fakeResponse>[]) => { const provider = new FakeProvider(script); return { provider, runner: createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-act-1", origin: "generate", requestId: null, sleep: async () => undefined }) }; };
 
 describe("multiChoice producer", () => {
   it("prompts with the cited evidence, converts to a spec with ids and provenance, and passes engine validation", async () => {

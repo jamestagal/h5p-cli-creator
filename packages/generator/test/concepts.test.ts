@@ -51,7 +51,7 @@ describe("extractConceptMap", () => {
     const tempIds = perChunk.flatMap((cs, i) => cs.map((_, j) => `k${i}-${j}`));
     expect(new Set(mergeOut.concepts.flatMap((c) => c.memberIds)).size).toBe(tempIds.length);
     const provider = new FakeProvider(script);
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-concepts", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-concepts", origin: "shared", requestId: null, sleep: async () => undefined });
 
     const map = await extractConceptMap(doc, unit, runner, { chunkTokens: SYNTHETIC_CHUNK_TOKENS });
     expect(map.textHash).toBe(doc.textHash);
@@ -73,7 +73,7 @@ describe("extractConceptMap", () => {
     const doc = await ingestMarkdown("One sentence here. Second sentence here.", { sourceId: "src" });
     const bad = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "x", summary: "y", sentenceIds: ["s99"] }] }) });
     const provider = new FakeProvider([bad, bad, bad]);
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op", origin: "shared", requestId: null, sleep: async () => undefined });
     await expect(extractConceptMap(doc, null, runner, { chunkTokens: 6000 })).rejects.toMatchObject({ name: "ContentFailure" });
     expect(provider.requests[1]?.user).toContain("s99");
   });
@@ -86,7 +86,7 @@ describe("extractConceptMap", () => {
       { name: "Second idea", summary: "About sentence two.", sentenceIds: [s2] }
     ] };
     const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(out) })]);
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-single", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-single", origin: "shared", requestId: null, sleep: async () => undefined });
     const map = await extractConceptMap(doc, null, runner, { chunkTokens: 6000 });
     expect(provider.requests).toHaveLength(1);
     expect(provider.requests[0]?.purpose).toBe("extract");
@@ -97,7 +97,7 @@ describe("extractConceptMap", () => {
     const s1 = sid(doc, "Only sentence");
     const out = { concepts: [{ name: "Idea", summary: "About the sentence.", sentenceIds: [s1] }] };
     const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(out) })]);
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-no-unit", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-no-unit", origin: "shared", requestId: null, sleep: async () => undefined });
     const map = await extractConceptMap(doc, null, runner, { chunkTokens: 6000 });
     expect("alignment" in map).toBe(false);
   });
@@ -113,7 +113,7 @@ describe("extractConceptMap", () => {
       { name: "Extra empty concept", summary: "Should not exist.", memberIds: [] }
     ] }) });
     const provider = new FakeProvider([extract1, extract2, badMerge, badMerge, badMerge]);
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-merge-bad", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-merge-bad", origin: "shared", requestId: null, sleep: async () => undefined });
     await expect(extractConceptMap(doc, null, runner, { chunkTokens: 10 })).rejects.toMatchObject({ name: "ContentFailure", reasons: expect.arrayContaining([expect.stringContaining("Extra empty concept")]) });
   });
   it("rejects an extract reply with an empty summary as a content failure", async () => {
@@ -121,7 +121,7 @@ describe("extractConceptMap", () => {
     const s1 = sid(doc, "Only sentence");
     const bad = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "Idea", summary: "", sentenceIds: [s1] }] }) });
     const provider = new FakeProvider([bad, bad, bad]);
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-extract-bad", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-extract-bad", origin: "shared", requestId: null, sleep: async () => undefined });
     await expect(extractConceptMap(doc, null, runner, { chunkTokens: 6000 })).rejects.toMatchObject({ name: "ContentFailure", reasons: expect.arrayContaining([expect.stringContaining("summary")]) });
   });
 });
@@ -138,7 +138,7 @@ describe("alignConcepts evidence quotes", () => {
     };
     const alignOut = { criteria: [{ criterionId: "PC1.1", conceptIds: ["c1"] }] };
     const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(alignOut) })]);
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-align-quotes", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-align-quotes", origin: "shared", requestId: null, sleep: async () => undefined });
     await alignConcepts([concept], soloUnit, runner);
     const request = provider.requests[0]!;
     const quoteLines = request.user.match(/\[ev-/g) ?? [];

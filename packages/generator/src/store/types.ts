@@ -1,3 +1,4 @@
+import type { EngineIdentityInputs } from "@leaplearn/engine";
 import type { AcceptanceDecision, ActivitySpec, ActivityStatus, AlignmentDecision, ImportStatus, RevisionState } from "@leaplearn/shared";
 import type { SourceKind } from "../ingest/source-document.js";
 import type { BudgetLimits } from "../llm/budget.js";
@@ -27,13 +28,32 @@ export interface ActivityRecord {
 }
 /** Which command produced a revision: the first pass (`generate`) or a reviewer-requested regeneration. */
 export type RevisionOrigin = "generate" | "regenerate";
+/** Which command an operation, and every attempt it dispatches, serves. Stages shared by every activity (parseUnit, extract, merge, align, plan) are `shared`. */
+export type OperationOrigin = RevisionOrigin | "shared";
 export interface RevisionRecord {
   activityId: string; revision: number; state: RevisionState; spec: ActivitySpec; schemaVersion: number; promptVersion: string;
   origin: RevisionOrigin; requestId: string | null;
-  modelConfig: { provider: string; models: Record<string, string>; profiles: Record<string, RequestProfile> }; engineFingerprint: string; note: string | null; buildKey: string | null; attemptIds: string[]; createdAt: string;
+  modelConfig: { provider: string; models: Record<string, string>; profiles: Record<string, RequestProfile> }; note: string | null;
+  /** The build this revision currently points to (a BuildRecord's buildId); null until it is first built. Earlier builds stay in the store. */
+  currentBuildId: string | null;
+  attemptIds: string[]; createdAt: string;
+}
+/**
+ * One build of one revision by one engine: immutable once written. `buildId` and `buildKey` derive from the activity,
+ * revision and engine fingerprint (store/builds.ts), so building the same revision under another engine adds a record
+ * and never replaces one. The engine identity is stamped when the revision is built, not when it is produced.
+ */
+export interface BuildRecord {
+  importId: string; activityId: string; revision: number; buildId: string; buildKey: string; sha256: string; byteLength: number;
+  engineFingerprint: string; engineDisplay: string; engineInputs: EngineIdentityInputs;
+  /** Recorded for diagnosis; not part of the fingerprint. */
+  nodeVersion: string;
+  builtAt: string;
 }
 export interface OperationRecord {
   operationId: string; importId: string; activityId: string | null; purpose: Purpose | "build"; status: "running" | "succeeded" | "failed";
+  /** Written when the operation starts, before any dispatch. */
+  origin: OperationOrigin; requestId: string | null;
   idempotencyKey: string; contentAttempts: number; outcome: string | null; billingUncertain: boolean; startedAt: string; completedAt: string | null;
 }
 /** Spec §4 acceptance_decisions: a human judged the promoted revision good or not. Distinct from promotion. */
@@ -83,6 +103,14 @@ export function assertWritableStoreVersion(record: object, where: string): void 
   if (version > STORE_VERSION) throw new UnsupportedStoreVersionError(where, version);
 }
 
+/** A build key or build record that already exists with different content: builds are never overwritten. */
+export class BuildIntegrityError extends Error {
+  constructor(key: string, existingSha256: string, newSha256: string) {
+    super(`${key} already exists with sha256 ${existingSha256}; refusing to overwrite it with different content (sha256 ${newSha256}). Builds are immutable.`);
+    this.name = "BuildIntegrityError";
+  }
+}
+
 export interface StoreLock { release(): Promise<void>; }
 export class StoreLockedError extends Error {
   constructor(importId: string, holder: string) { super(`import ${importId} is locked by ${holder}; another leap process is using this output directory`); this.name = "StoreLockedError"; }
@@ -103,8 +131,14 @@ export interface ImportStore {
   putOperation(record: OperationRecord): Promise<void>;
   recorderFor(importId: string): AttemptRecorder;
   listAttempts(importId: string): Promise<AttemptEvent[]>;
-  putBuild(importId: string, activityId: string, revision: number, bytes: Buffer): Promise<string>;
+  /** Writes build bytes under `buildKey`. The same bytes again are a no-op; different bytes throw BuildIntegrityError. Never overwrites. */
+  putBuild(buildKey: string, bytes: Buffer): Promise<void>;
   getBuild(buildKey: string): Promise<Buffer | null>;
+  /** Writes a build record. The same record again is a no-op; a different record under the same buildId throws BuildIntegrityError. */
+  putBuildRecord(record: BuildRecord): Promise<void>;
+  getBuildRecord(buildId: string): Promise<BuildRecord | null>;
+  /** Every build record of an activity, by revision then builtAt. */
+  listBuilds(activityId: string): Promise<BuildRecord[]>;
   listAcceptances(importId: string): Promise<AcceptanceRecord[]>;
   putAcceptance(record: AcceptanceRecord): Promise<void>;
   listAlignmentReviews(importId: string): Promise<AlignmentReviewRecord[]>;

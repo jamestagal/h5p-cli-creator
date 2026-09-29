@@ -20,7 +20,7 @@ const map: ConceptMap = { sourceId: "src", textHash: "0".repeat(64), concepts: [
   { evidenceId: "ev-s2", sentenceId: "s2", charStart: 51, charEnd: 101, quote: "A tag names the worker, the date and the reason." }
 ] }] };
 const input = { plan: { activityId: "act-7", slot: 1, type: "flashcards" as const, conceptIds: ["c1"], criteriaIds: ["PC2.1"], focus: "isolation vocabulary" }, map, unit: null, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", existing: { questions: [], passages: [], fronts: [] }, rules: DEFAULT_PLAN_RULES };
-const mk = (script: ReturnType<typeof fakeResponse>[]) => { const provider = new FakeProvider(script); return { provider, runner: createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-act-7", sleep: async () => undefined }) }; };
+const mk = (script: ReturnType<typeof fakeResponse>[]) => { const provider = new FakeProvider(script); return { provider, runner: createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-act-7", origin: "generate", requestId: null, sleep: async () => undefined }) }; };
 
 const card = (front: string, back: string, ev: string) => ({ front, back, tip: null, evidenceIds: [ev] });
 const good = { title: "Key terms", description: "Isolation vocabulary.", cards: [card("Lockout device", "A padlock or hasp that physically prevents an isolator from being closed", "ev-s1"), card("Tag", "A warning label naming the worker, the date and the reason", "ev-s2"), card("Who may remove a lock", "Only the worker who applied it", "ev-s1"), card("Tag without a lock", "A warning, not a control", "ev-s2")] };

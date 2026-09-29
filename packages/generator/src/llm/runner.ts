@@ -1,3 +1,4 @@
+import type { OperationOrigin } from "../store/types.js";
 import type { z } from "zod";
 import { callModel, type CallContext, type CallResult } from "./call-model.js";
 import { remainingMs, type Budget, type BudgetLimitName } from "./budget.js";
@@ -24,6 +25,9 @@ export interface RunnerOptions {
   recorder: AttemptRecorder;
   budget: Budget;
   operationId: string;
+  /** The operation's origin and request id; every attempt start carries them. */
+  origin: OperationOrigin;
+  requestId: string | null;
   maxContentAttempts?: number;
   maxTransientRetries?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -89,7 +93,7 @@ export function createRunner(options: RunnerOptions): StageRunner {
       while (attempt < maxContent) {
         const stopReason = stop();
         if (stopReason !== null) throw new RunStopped(stopReason);
-        const ctx: CallContext = { provider: options.provider, recorder, budget: options.budget, operationId: options.operationId, callKey: call.key, retryIndex, retryReason, attempt: attempt + 1 };
+        const ctx: CallContext = { provider: options.provider, recorder, budget: options.budget, operationId: options.operationId, origin: options.origin, requestId: options.requestId, callKey: call.key, retryIndex, retryReason, attempt: attempt + 1 };
         if (options.ids) ctx.ids = options.ids;
         if (options.clock) ctx.clock = options.clock;
         let result: CallResult;

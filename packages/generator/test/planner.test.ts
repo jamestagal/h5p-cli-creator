@@ -28,7 +28,7 @@ describe("planner", () => {
       { slot: 7, type: "flashcards", conceptIds: ["c1", "c2", "c3"], criteriaIds: ["PC2.1", "PC2.2"], focus: "key terms" }
     ] };
     const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(out) })]);
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-plan", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-plan", origin: "shared", requestId: null, sleep: async () => undefined });
     const plan = await planActivities(map, ["multiChoice", "blanks", "flashcards"], runner);
     expect(plan.map((p) => p.activityId)).toEqual(["act-1", "act-2", "act-3", "act-4", "act-5", "act-6", "act-7"]);
     expect(plan[6]).toMatchObject({ type: "flashcards", conceptIds: ["c1", "c2", "c3"] });
@@ -45,7 +45,7 @@ describe("planner", () => {
       { slot: 4, type: "blanks", conceptIds: ["c1"], criteriaIds: ["PC2.1"], focus: "lock and tag" }
     ] };
     const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(shuffled) })]);
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-plan", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-plan", origin: "shared", requestId: null, sleep: async () => undefined });
     const plan = await planActivities(map, ["multiChoice", "blanks", "flashcards"], runner);
     expect(plan.map((p) => p.activityId)).toEqual(["act-1", "act-2", "act-3", "act-4", "act-5", "act-6", "act-7"]);
     expect(plan.map((p) => p.slot)).toEqual([1, 2, 3, 4, 5, 6, 7]);
@@ -54,7 +54,7 @@ describe("planner", () => {
   it("rejects a plan whose slots or ids do not match", async () => {
     const bad = { activities: [{ slot: 1, type: "multiChoice", conceptIds: ["c9"], criteriaIds: ["PC2.1"], focus: "x" }] };
     const provider = new FakeProvider(Array.from({ length: 3 }, () => fakeResponse({ outputText: JSON.stringify(bad) })));
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-plan", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-plan", origin: "shared", requestId: null, sleep: async () => undefined });
     await expect(planActivities(map, ["multiChoice"], runner)).rejects.toMatchObject({ name: "ContentFailure" });
     expect(provider.requests[1]?.user).toMatch(/unknown concept c9|slot/);
   });

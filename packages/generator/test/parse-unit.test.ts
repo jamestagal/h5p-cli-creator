@@ -10,7 +10,7 @@ describe("parseUnit", () => {
   it("assigns element and criterion ids in code and hashes the unit text", async () => {
     const text = await syntheticUnitText();
     const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(unitOut) })]);
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-unit", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-unit", origin: "shared", requestId: null, sleep: async () => undefined });
     const unit = await parseUnit(text, runner);
     expect(unit.code).toBe("SYNELE001");
     expect(unit.elements.map((e) => e.id)).toEqual(["E1", "E2", "E3"]);
@@ -21,7 +21,7 @@ describe("parseUnit", () => {
   });
   it("rejects an element without criteria as a content failure", async () => {
     const provider = new FakeProvider(Array.from({ length: 3 }, () => fakeResponse({ outputText: JSON.stringify({ ...unitOut, elements: [{ number: "1", text: "x", performanceCriteria: [] }] }) })));
-    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-unit", sleep: async () => undefined });
+    const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-unit", origin: "shared", requestId: null, sleep: async () => undefined });
     await expect(parseUnit("SYNELE001 …", runner)).rejects.toMatchObject({ name: "ContentFailure" });
   });
 });

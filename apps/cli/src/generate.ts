@@ -48,12 +48,12 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
   const importId = importIdFor(outDir);
   const promptConfig = { readingLevel: args.readingLevel as ReadingLevel, tone: args.tone as Tone, language: args.language, ...(args.customisation ? { customisation: args.customisation } : {}) };
   const budget = { usdMicro: Math.round(args.budgetUsd * 1_000_000), requests: args.maxRequests, tokens: args.maxTokens, elapsedMs: Math.round(args.maxSeconds * 1000) };
-  const { fingerprint } = await engineIdentity(resolve(args.libraries));
+  const identity = await engineIdentity(resolve(args.libraries));
   let record: ImportRecord;
   try {
     record = await runImport(
       { importId, name: args.name ?? basename(sourcePath), source, unitText, selectedTypes: types, budget, promptConfig, language: args.language, customisation: args.customisation ?? null },
-      { store, provider: providerFor(args), registry, engineFingerprint: fingerprint, concurrency: args.concurrency, maxAttemptMs: ANTHROPIC_TIMEOUT_MS, onProgress: (e) => io.err(`${e.kind === "status" ? `status: ${e.status}` : e.kind === "activity" ? `${e.activityId}: ${e.status}${e.error ? ` (${e.error})` : ""}` : `${e.purpose}: ${e.status}${e.costUsdMicro === null ? "" : ` ($${(e.costUsdMicro / 1_000_000).toFixed(4)})`}`}\n`) }
+      { store, provider: providerFor(args), registry, engineIdentity: identity, concurrency: args.concurrency, maxAttemptMs: ANTHROPIC_TIMEOUT_MS, onProgress: (e) => io.err(`${e.kind === "status" ? `status: ${e.status}` : e.kind === "activity" ? `${e.activityId}: ${e.status}${e.error ? ` (${e.error})` : ""}` : `${e.purpose}: ${e.status}${e.costUsdMicro === null ? "" : ` ($${(e.costUsdMicro / 1_000_000).toFixed(4)})`}`}\n`) }
     );
   } catch (err) {
     if (err instanceof IncompatibleResumeError || err instanceof StoreLockedError || isStoreVersionError(err)) { io.err(`leap: ${err.message}\n`); return 1; }
