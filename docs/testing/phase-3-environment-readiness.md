@@ -119,3 +119,65 @@ Copying `~/leap-diagnostics/` back (it contains only the synthetic fixture packa
 
 - The baseline at `c078580` lint-passes. Task 1's first verification run was **lint-red** because of two unused variables introduced by Task 1's own new tests (`_dropped` in `packages/generator/test/pipeline.test.ts`, `_v` in `apps/cli/test/review.test.ts`), not because of the baseline.
 - They were fixed and Task 1 was committed as `2174e06` after its named checks passed (build, generator 132 tests, cli 33 tests, typecheck, lint). That commit was pushed in response to a stop hook, before the owner's review. It is **not** accepted as Task 1 completion until the owner reviews it.
+
+---
+
+## 2026-09-29: install and player smoke run (cloud container)
+
+A re-run of the three setup steps at `66154d8` on branch `claude/upbeat-wozniak-wb3s61`, starting from a fresh checkout with no `node_modules`. The lockfile is unchanged (sha256 `fdf559da…9598f6022ef`, the same as `c078580`). Nothing in the repository was changed to make any step pass.
+
+### Environment
+
+| Item | Value |
+|---|---|
+| Node | 20.20.2 (`/opt/node20`, put first on `PATH` to satisfy `engines.node` `>=20.19.0 <21`); the container's default `node` is 22.22.2 |
+| pnpm | `packageManager` pins 10.33.2. The installed pnpm is **10.33.0** (`/opt/node22/bin/pnpm`). It tries to download 10.33.2 before every command, and that download fails (see step 1) |
+| Playwright | `@playwright/test` `^1.63.0` declared in `packages/engine` but **not installed** (no `node_modules`). A global Playwright **1.56.1** (`/opt/node22/bin/playwright`) is on `PATH`, with `chromium-1194`, `chromium_headless_shell-1194` and `ffmpeg-1011` in `/opt/pw-browsers` |
+| OS | Ubuntu 24.04.4 LTS, Linux 6.18.44, `x86_64` |
+
+### Steps
+
+| # | Command | Result | Duration |
+|---|---|---|---|
+| 1 | `pnpm install --frozen-lockfile` (repo root) | **Fail, exit 1** | 1.7 s |
+| 2 | `cd packages/engine && pnpm exec playwright install chromium-headless-shell` | **Fail, exit 1** | < 2 s |
+| 3 | `pnpm --filter @leaplearn/engine test:smoke` (repo root) | **Fail, exit 1**. No test ran | < 2 s |
+
+**Step 1.** pnpm fails before installing anything. It first tries to fetch the pinned pnpm 10.33.2 from the npm registry, and the environment's egress policy denies that host:
+
+```
+ ERR_PNPM_FETCH_403  GET https://registry.npmjs.org/pnpm: Forbidden - 403
+This error happened while installing a direct dependency of /root/.local/share/pnpm/.tools/pnpm/10.33.2_tmp_675_0
+ ERROR  Command failed with exit code 1: pnpm add pnpm@10.33.2 --loglevel=error --ignore-scripts ...
+```
+
+A direct request shows the reason: `curl https://registry.npmjs.org/zod` returns `403` with header `x-deny-reason: host_not_allowed` and body `Host not in allowlist: registry.npmjs.org. Add this host to your network egress settings to allow access.` The agent proxy reports no relay failures, and `registry.npmjs.org` is on its `NO_PROXY` list, so the denial comes from the egress policy, not from the proxy or from TLS. On 28 Sep the same install succeeded in this kind of environment, so the policy has changed since then.
+
+**Step 2.** The first attempt fails with the same pnpm 10.33.2 self-download error. Without step 1 there is no `node_modules/.bin/playwright`, so the pinned Playwright 1.63 cannot run in any case.
+
+**Step 3.** The first attempt fails with the same self-download error. With the workaround below it gets as far as running the script, then fails with `WARN Local package.json exists, but node_modules missing` and `ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL @leaplearn/engine@0.1.0 test:smoke: playwright test -c test/smoke/playwright.config.ts, Exit status 1`.
+
+### Smoke test summary
+
+0 passed, 0 failed, 0 skipped: **no test ran.** The runner could not start because the dependencies were not installed.
+
+### Workarounds tried (none adopted)
+
+- **Skip pnpm's self-download** (`npm_config_manage_package_manager_versions=false`) and **install offline from the local store** (`pnpm install --frozen-lockfile --offline`). pnpm reads the lockfile (528 packages), then exits 1 with `ERR_PNPM_NO_OFFLINE_TARBALL` for `papaparse-5.7.0.tgz`. The local store (`~/.local/share/pnpm/store`, 2.1 MB) does not hold the dependencies, so an offline install is not possible.
+- **Step 2 with the self-download skipped** exits 0, but only because `pnpm exec` found the **global Playwright 1.56.1**. That version's `chromium_headless_shell-1194` is already in `/opt/pw-browsers`, so the command did nothing. It does not install the pinned Playwright 1.63's `chromium_headless_shell-1243`, and it is **not** counted as a pass.
+- **Step 3 with the self-download skipped:** exit 1, as described above.
+
+### Change since 28 Sep
+
+- **`cdn.playwright.dev` now appears reachable.** On 28 Sep it returned `403 ... no rule or allowlist entry allows host "cdn.playwright.dev"`. Today a `HEAD` request for the pinned build (`https://cdn.playwright.dev/builds/cft/153.0.8010.12/linux64/chrome-headless-shell-linux64.zip`) returns `307`, a redirect rather than a denial. The download itself was not attempted, because Playwright 1.63 could not be installed. Whether the pinned browser now installs is **untested**.
+- **`registry.npmjs.org` is now denied** (`host_not_allowed`). On 28 Sep `pnpm install --frozen-lockfile` exited 0 here.
+
+### Open issues and blockers
+
+1. **Blocker:** `registry.npmjs.org` must be allowed in the cloud environment's network settings (Network access: a broader access level, or the host added to the allowed domains). Nothing that needs dependencies can run until it is.
+2. **Unverified:** once dependencies install, re-run step 2 to confirm that `chromium_headless_shell-1243` downloads from `cdn.playwright.dev` (and any redirect target), then run step 3.
+3. **Minor:** the preinstalled pnpm is 10.33.0 rather than the pinned 10.33.2. That only matters while the registry is blocked, because pnpm otherwise downloads the pinned version itself.
+
+### Verdict (29 Sep)
+
+**Not ready.** The npm registry is blocked by the environment's egress policy, so dependencies cannot be installed and no smoke test can run.
