@@ -113,3 +113,4 @@ export { EngineError, ValidationError, SPEC_ATTRIBUTABLE, type ValidationIssue, 
 export { createHandlerRegistry } from "./handlers/index.js";
 export type { ActivityHandler, BuildContext } from "./handlers/handler.js";
 export type { H5PContent, H5PParams } from "./params.js";
+export { engineIdentity, type EngineIdentity, type EngineIdentityInputs, type EngineIdentityOptions } from "./identity.js";

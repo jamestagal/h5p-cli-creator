@@ -1,7 +1,6 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
-import { createRegistry } from "@leaplearn/engine";
+import { createRegistry, engineIdentity } from "@leaplearn/engine";
 import { ANTHROPIC_TIMEOUT_MS, createAnthropicProvider, IncompatibleResumeError, isStoreVersionError, ingestMarkdown, ingestPdf, ingestText, ReplayProvider, RecordingProvider, runImport, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ImportRecord, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
 import { FileStore } from "./file-store.js";
 import { formatCostReport, writeReportsLocked } from "./report.js";
@@ -14,12 +13,6 @@ export interface GenerateArgs {
 
 export function importIdFor(outDir: string): string {
   return basename(resolve(outDir)).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "import";
-}
-
-export async function engineFingerprint(librariesDir: string): Promise<string> {
-  const lock = await readFile(resolve(librariesDir, "libraries.lock.json"));
-  const enginePkg = JSON.parse(await readFile(new URL("../../../packages/engine/package.json", import.meta.url), "utf8")) as { version: string };
-  return `engine@${enginePkg.version}+lock:${createHash("sha256").update(lock).digest("hex").slice(0, 12)}`;
 }
 
 function providerFor(args: GenerateArgs): ModelProvider {
@@ -55,7 +48,7 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
   const importId = importIdFor(outDir);
   const promptConfig = { readingLevel: args.readingLevel as ReadingLevel, tone: args.tone as Tone, language: args.language, ...(args.customisation ? { customisation: args.customisation } : {}) };
   const budget = { usdMicro: Math.round(args.budgetUsd * 1_000_000), requests: args.maxRequests, tokens: args.maxTokens, elapsedMs: Math.round(args.maxSeconds * 1000) };
-  const fingerprint = await engineFingerprint(args.libraries);
+  const { fingerprint } = await engineIdentity(resolve(args.libraries));
   let record: ImportRecord;
   try {
     record = await runImport(

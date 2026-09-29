@@ -1,0 +1,76 @@
+lockfileVersion: '9.0'
+
+importers:
+
+  packages/engine:
+    dependencies:
+      '@leaplearn/shared':
+        specifier: workspace:*
+        version: link:../shared
+      a:
+        specifier: ^1.0.0
+        version: 1.0.0
+      d-alias:
+        specifier: npm:d@^4.0.0
+        version: d@4.0.0
+    devDependencies:
+      dev-only:
+        specifier: ^9.0.0
+        version: 9.0.0
+
+  packages/shared:
+    dependencies:
+      '@scope/p':
+        specifier: ^2.0.0
+        version: 2.0.0(c@3.0.0)
+
+  apps/unrelated:
+    dependencies:
+      unrelated:
+        specifier: ^1.0.0
+        version: 1.0.0
+
+packages:
+
+  '@scope/p@2.0.0':
+    resolution: {integrity: sha512-scopep}
+
+  a@1.0.0:
+    resolution: {integrity: sha512-aaa}
+
+  b@2.1.0:
+    resolution: {integrity: sha512-bbb}
+
+  c@3.0.0:
+    resolution: {integrity: sha512-ccc}
+
+  d@4.0.0:
+    resolution: {integrity: sha512-ddd}
+
+  dev-only@9.0.0:
+    resolution: {integrity: sha512-dev}
+
+  unrelated@1.0.0:
+    resolution: {integrity: sha512-unrelated}
+
+snapshots:
+
+  '@scope/p@2.0.0(c@3.0.0)':
+    dependencies:
+      c: 3.0.0
+
+  a@1.0.0:
+    dependencies:
+      b: 2.1.0
+
+  b@2.1.0:
+    dependencies:
+      c: 3.0.0
+
+  c@3.0.0: {}
+
+  d@4.0.0: {}
+
+  dev-only@9.0.0: {}
+
+  unrelated@1.0.0: {}
