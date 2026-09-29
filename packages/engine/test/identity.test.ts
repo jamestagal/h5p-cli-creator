@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parse } from "yaml";
 import { identityJson, runtimeClosure, type PnpmLockfile } from "../src/identity-closure.js";
-import { engineIdentity } from "../src/identity.js";
+import { computeEngineIdentity } from "../src/identity.js";
+import * as publicApi from "../src/index.js";
 
 const root = resolve(import.meta.dirname, "../../..");
 const fixtureLock = parse(readFileSync(resolve(import.meta.dirname, "fixtures/identity/pnpm-lock.yaml"), "utf8")) as PnpmLockfile;
@@ -82,7 +83,7 @@ describe("engineIdentity sensitivity", () => {
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   it("describes its inputs canonically and displays engine@<version>+<12 hex>", async () => {
-    const id = await engineIdentity(librariesDir, opts());
+    const id = await computeEngineIdentity(librariesDir, opts());
     expect(id.inputs.engineDist.map(([p]) => p)).toEqual(["handlers/mc.js", "identity.json", "index.js"]);
     expect(id.inputs.workspaceDist.map(([p]) => p)).toEqual(["index.js"]);
     expect(id.inputs.zlib).toBe("1.3.1");
@@ -92,12 +93,12 @@ describe("engineIdentity sensitivity", () => {
   });
 
   it("changes when one byte changes in engine dist, shared dist or the libraries lock, or when zlib changes", async () => {
-    const base = (await engineIdentity(librariesDir, opts())).fingerprint;
+    const base = (await computeEngineIdentity(librariesDir, opts())).fingerprint;
     const flip = async (file: string) => {
       const before = readFileSync(file);
       const after = Buffer.from(before); after[0] = after[0]! ^ 1;
       writeFileSync(file, after);
-      const fp = (await engineIdentity(librariesDir, opts())).fingerprint;
+      const fp = (await computeEngineIdentity(librariesDir, opts())).fingerprint;
       writeFileSync(file, before);
       return fp;
     };
@@ -105,34 +106,43 @@ describe("engineIdentity sensitivity", () => {
       await flip(join(engineDistDir, "handlers", "mc.js")),
       await flip(join(workspaceDistDir, "index.js")),
       await flip(join(librariesDir, "libraries.lock.json")),
-      (await engineIdentity(librariesDir, opts({ zlib: "1.2.12" }))).fingerprint
+      (await computeEngineIdentity(librariesDir, opts({ zlib: "1.2.12" }))).fingerprint
     ];
     for (const fp of changed) expect(fp).not.toBe(base);
     expect(new Set(changed).size).toBe(changed.length);
-    expect((await engineIdentity(librariesDir, opts())).fingerprint).toBe(base);
+    expect((await computeEngineIdentity(librariesDir, opts())).fingerprint).toBe(base);
   });
 
   it("does not change with the Node version, which is recorded beside the fingerprint", async () => {
-    const a = await engineIdentity(librariesDir, opts({ nodeVersion: "20.20.1" }));
-    const b = await engineIdentity(librariesDir, opts({ nodeVersion: "20.20.2" }));
+    const a = await computeEngineIdentity(librariesDir, opts({ nodeVersion: "20.20.1" }));
+    const b = await computeEngineIdentity(librariesDir, opts({ nodeVersion: "20.20.2" }));
     expect(b.fingerprint).toBe(a.fingerprint);
     expect([a.nodeVersion, b.nodeVersion]).toEqual(["20.20.1", "20.20.2"]);
   });
 
   it("ignores *.tsbuildinfo files", async () => {
-    const base = (await engineIdentity(librariesDir, opts())).fingerprint;
+    const base = (await computeEngineIdentity(librariesDir, opts())).fingerprint;
     writeFileSync(join(engineDistDir, "tsconfig.tsbuildinfo"), "{}");
     writeFileSync(join(workspaceDistDir, "tsconfig.tsbuildinfo"), "{}");
-    expect((await engineIdentity(librariesDir, opts())).fingerprint).toBe(base);
+    expect((await computeEngineIdentity(librariesDir, opts())).fingerprint).toBe(base);
+  });
+
+  it("exposes only engineIdentity(librariesDir) from the package; the test seams stay internal", async () => {
+    expect(Object.keys(publicApi)).toContain("engineIdentity");
+    expect(Object.keys(publicApi)).not.toContain("computeEngineIdentity");
+    expect(publicApi.engineIdentity.length).toBe(1);
+    const viaPackage = await publicApi.engineIdentity(resolve(root, "libraries"));
+    const defaults = await computeEngineIdentity(resolve(root, "libraries"), {});
+    expect(viaPackage).toEqual(defaults);
   });
 
   it("names the engine build step when dist/identity.json is missing", async () => {
     rmSync(join(engineDistDir, "identity.json"));
-    await expect(engineIdentity(librariesDir, opts())).rejects.toThrow(/identity\.json.*build/);
+    await expect(computeEngineIdentity(librariesDir, opts())).rejects.toThrow(/identity\.json.*build/);
   });
 
   it("uses process.versions for zlib and Node when nothing is injected", async () => {
-    const id = await engineIdentity(librariesDir, { engineDistDir, workspaceDistDir });
+    const id = await computeEngineIdentity(librariesDir, { engineDistDir, workspaceDistDir });
     expect(id.inputs.zlib).toBe(process.versions.zlib);
     expect(id.nodeVersion).toBe(process.versions.node);
   });
@@ -179,8 +189,8 @@ describe("engineIdentity reproducibility", () => {
       const a = cleanBuild(join(dir, "a"));
       const b = cleanBuild(join(dir, "b"));
       const librariesDir = resolve(root, "libraries");
-      const idA = await engineIdentity(librariesDir, a);
-      const idB = await engineIdentity(librariesDir, b);
+      const idA = await computeEngineIdentity(librariesDir, a);
+      const idB = await computeEngineIdentity(librariesDir, b);
       expect(idB.inputs).toEqual(idA.inputs);
       expect(idB.fingerprint).toBe(idA.fingerprint);
 

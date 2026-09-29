@@ -22,7 +22,7 @@ export interface EngineIdentity {
   nodeVersion: string;
 }
 
-/** Test seams. Production callers pass nothing: every directory is located from this module's own URL. */
+/** Test seams, reachable only by importing this module directly; the package exports `engineIdentity(librariesDir)` alone. */
 export interface EngineIdentityOptions { engineDistDir?: string; workspaceDistDir?: string; zlib?: string; nodeVersion?: string }
 
 // src/identity.ts under tests and dist/identity.js when built both sit one level below the package root.
@@ -52,7 +52,12 @@ async function engineVersion(engineDistDir: string): Promise<string> {
  * (through which `dist/identity.json` also carries the runtime dependency closure), the libraries lock and zlib.
  * Reads only under the engine's own directory (including its linked `@leaplearn/shared`) and `librariesDir`.
  */
-export async function engineIdentity(librariesDir: string, options: EngineIdentityOptions = {}): Promise<EngineIdentity> {
+export async function engineIdentity(librariesDir: string): Promise<EngineIdentity> {
+  return computeEngineIdentity(librariesDir, {});
+}
+
+/** `engineIdentity` with its directories and runtime values injectable, for tests. Not exported from the package. */
+export async function computeEngineIdentity(librariesDir: string, options: EngineIdentityOptions): Promise<EngineIdentity> {
   const engineDistDir = options.engineDistDir ?? join(packageRoot, "dist");
   const workspaceDistDir = options.workspaceDistDir ?? join(await realpath(join(packageRoot, "node_modules", "@leaplearn", "shared")), "dist");
   const [version, engineDist, workspaceDist, librariesLock] = await Promise.all([
