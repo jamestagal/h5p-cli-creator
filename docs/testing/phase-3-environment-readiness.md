@@ -181,3 +181,101 @@ A direct request shows the reason: `curl https://registry.npmjs.org/zod` returns
 ### Verdict (29 Sep)
 
 **Not ready.** The npm registry is blocked by the environment's egress policy, so dependencies cannot be installed and no smoke test can run.
+
+## 2026-09-29 (retry): install and player smoke run after the registry was allowlisted
+
+A fresh cloud container, after the owner added `registry.npmjs.org` to the environment's network allowlist. Source revision `30dca41` (branch `claude/upbeat-wozniak-wb3s61`), lockfile sha256 `fdf559da…9598f6022ef`. Nothing in the repository was changed to run these steps, and the lockfile was not touched.
+
+### Environment
+
+| Item | Value |
+|---|---|
+| Node | **22.22.2** is the default `node` on `PATH` (`/opt/node22/bin`), outside `engines.node` `>=20.19.0 <21`. Node **20.20.2** is present at `/opt/node20/bin` and was put first on `PATH` for the workaround runs below |
+| pnpm | **10.33.2** (`/opt/node22/bin/pnpm`), matching the `packageManager` pin, so no self-download was needed |
+| Playwright | `@playwright/test` **1.63.0** (from the lockfile), which wants `chromium_headless_shell-1243` (Chrome Headless Shell 153.0.8010.12). Preinstalled in `/opt/pw-browsers`: `chromium-1194`, `chromium_headless_shell-1194` (Chromium 141.0.7390.37), `ffmpeg-1011` |
+| OS | Ubuntu 24.04.4 LTS, Linux 6.18.44, `x86_64` |
+| Registry check | `curl -sS -o /dev/null -w "%{http_code}" https://registry.npmjs.org/pnpm` → **200** (was 403 in the earlier attempt) |
+
+### Steps
+
+| # | Command | Result | Duration |
+|---|---|---|---|
+| 1 | `pnpm install --frozen-lockfile` (repo root) | **Pass, exit 0** | 11 s |
+| 2 | `cd packages/engine && pnpm exec playwright install chromium-headless-shell` | **Fail, exit 1** | 6 s |
+| 3 | `pnpm --filter @leaplearn/engine test:smoke` (repo root) | **Fail, exit 1**. No test ran | 2 s |
+
+**Step 1.** `Lockfile is up to date, resolution step is skipped`; 529 packages downloaded and added; `Done in 10.4s using pnpm v10.33.2`. Warnings only, none fatal:
+
+- `WARN Unsupported engine: wanted: {"node":">=20.19.0 <21"} (current: {"node":"v22.22.2",...})` for `packages/engine` and `packages/generator`.
+- `WARN Failed to create bin at .../node_modules/.bin/h5p-cli-creator. ENOENT ... apps/cli-legacy/dist/index.js` (the legacy CLI is not built yet; harmless for the smoke test).
+- `Ignored build scripts: @parcel/watcher@2.6.0, esbuild@0.28.2, h5p-standalone@3.8.2, unrs-resolver@1.12.2` (pnpm 10 default; the smoke test passed without them, see below).
+- One slow-tarball warning for `magic-string-0.30.21.tgz` (14 KiB/s).
+
+**Step 2.** Playwright requests `https://cdn.playwright.dev/builds/cft/153.0.8010.12/linux64/chrome-headless-shell-linux64.zip`. That host now answers (`307`), but it redirects to `https://storage.googleapis.com/chrome-for-testing-public/153.0.8010.12/linux64/chrome-headless-shell-linux64.zip`, and the egress policy denies that host. Playwright retries 4 times, each with:
+
+```
+Error: Download failed: server returned code 403 body 'request blocked: no rule or allowlist entry allows host "storage.googleapis.com"'. URL: https://cdn.playwright.dev/builds/cft/153.0.8010.12/linux64/chrome-headless-shell-linux64.zip
+...
+Failed to install browsers
+Error: Failed to download Chrome Headless Shell 153.0.8010.12 (playwright chromium-headless-shell v1243), caused by
+Error: Download failure, code=1
+```
+
+The agent proxy's status (`$HTTPS_PROXY/__agentproxy/status`) lists the same denials as `connect_rejected` for `storage.googleapis.com:443` ("gateway answered 403 to CONNECT"). `registry.npmjs.org` is on the proxy's `NO_PROXY` list, `storage.googleapis.com` is not.
+
+**Step 3.** Fails at test collection, before any browser is needed:
+
+```
+Error: Cannot find module '/home/user/h5p-cli-creator/packages/engine/node_modules/@leaplearn/shared/dist/index.js' imported from .../packages/engine/test/smoke/player.spec.ts
+Error: No tests found
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @leaplearn/engine@0.1.0 test:smoke: `playwright test -c test/smoke/playwright.config.ts`
+```
+
+`@leaplearn/shared` exports only `./dist/index.js`, and a fresh install has no `dist/`. The root `verify` script runs `pnpm -r build` before `test:smoke`, so this is a missing prerequisite in the requested sequence, not an environment fault.
+
+### Diagnosis and workaround runs (recorded separately from the steps above)
+
+Each row adds one change to the previous one. None of them edits a tracked file.
+
+| # | Change | Command | Result |
+|---|---|---|---|
+| 3a | Build the shared package first | `pnpm --filter @leaplearn/shared build` then step 3, Node 22.22.2 | build exit 0 (2 s); smoke **exit 1**: `Error: request for './Parser.js' is from a module not been linked at .../sanitize-html@2.17.7/.../index.js:1:20`, then `No tests found` |
+| 3b | Put Node 20.20.2 first on `PATH` (in the `engines` range) | `PATH=/opt/node20/bin:$PATH pnpm --filter @leaplearn/engine test:smoke` | **exit 1**, 31 s. All 10 tests collected, all 10 fail at launch: `browserType.launch: Executable doesn't exist at /opt/pw-browsers/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell` |
+| 3c | Point Playwright at the preinstalled headless shell | from `packages/engine`, Node 20: `pnpm exec playwright test -c <scratch>/smoke-prebuilt.config.ts` | **exit 0**, 16 s, **10 passed** (13.1 s) |
+
+The scratch config in 3c is a copy of `packages/engine/test/smoke/playwright.config.ts` (same `testMatch`, `timeout` 60 s, `workers: 1`, `headless: true`) with three differences: an absolute `testDir` pointing at `packages/engine/test/smoke`, `outputDir` in the scratch directory, and `use.launchOptions.executablePath: "/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell"` (Chromium 141.0.7390.37). It lived outside the repository and was not committed.
+
+The Node 22 failure in 3a matches the 28 Sep note that newer runtimes cannot load the engine through `sanitize-html` (there as `ERR_REQUIRE_ESM` on Node 21), and it is why the engine pins `<21`.
+
+### Smoke test summary
+
+- **Step 3 as requested:** 0 passed, 0 failed, 0 skipped. No test ran (`@leaplearn/shared` not built).
+- **Workaround 3b** (shared built, Node 20): 0 passed, **10 failed**, 0 skipped. Every failure is the missing `chromium_headless_shell-1243` executable; no test body ran.
+- **Workaround 3c** (shared built, Node 20, preinstalled Chromium 141 headless shell): **10 passed**, 0 failed, 0 skipped:
+
+```
+  ✓   1 renders multi-choice without console errors (1.1s)
+  ✓   2 renders blanks without console errors (602ms)
+  ✓   3 renders flashcards without console errors (332ms)
+  ✓   4 renders question-set-nested without console errors (570ms)
+  ✓   5 renders interactive-book without console errors (303ms)
+  ✓   6 renders interactive-book-nested without console errors (499ms)
+  ✓   7 multi-choice: wrong answer scores 0 of 1, then retry and correct answer scores 1 of 1 (802ms)
+  ✓   8 blanks: one wrong scores 1 of 2, then retry and both correct scores 2 of 2 (1.3s)
+  ✓   9 nested question set: all correct reports 2 of 2 (1.4s)
+  ✓  10 nested question set: all wrong reports 0 of 2 (1.4s)
+  10 passed (13.1s)
+```
+
+The 3c pass shows the engine output renders and scores correctly in a real browser here. It does **not** show that it does so in the pinned browser: Chromium 141 is the build that ships with Playwright 1.56, not the Chrome Headless Shell 153 that Playwright 1.63 expects, so the pinned browser configuration remains untested in this container.
+
+### Open issues and blockers
+
+1. **Blocker (network):** allow **`storage.googleapis.com`** in the cloud environment's network settings. `cdn.playwright.dev` redirects the pinned browser download there. Until it is allowed, step 2 cannot install `chromium_headless_shell-1243`, and step 3 cannot run against the pinned browser.
+2. **Environment:** the container's default `node` is 22.22.2, outside `engines.node` `>=20.19.0 <21`, and the smoke suite cannot load the engine under it. `/opt/node20/bin` must be first on `PATH` (for example in the environment's setup script) for these commands to run as written.
+3. **Sequence:** `test:smoke` needs the workspace built first (at least `@leaplearn/shared`; the root `verify` script uses `pnpm -r build`). The requested three-step sequence omits that step.
+4. **Resolved since the earlier attempt:** `registry.npmjs.org` is reachable, and `pnpm install --frozen-lockfile` succeeds with the pinned pnpm 10.33.2.
+
+### Verdict (29 Sep, retry)
+
+**Not ready.** Dependencies now install, but the pinned Playwright browser cannot be downloaded (`storage.googleapis.com` is blocked), so the smoke suite runs green (10/10) only with a workaround browser, Node 20 on `PATH` and a manual build step.
