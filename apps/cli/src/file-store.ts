@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { appendFile, link, mkdir, readdir, readFile, rename, truncate, unlink, writeFile } from "node:fs/promises";
+import { appendFile, link, mkdir, readFile, rename, truncate, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { assertCurrentLayout, assertWritableStoreVersion, BuildIntegrityError, canonicalRecordJson, sha256Hex, sortBuilds, storeVersionOf, type AcceptanceRecord, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
+import { listIfPresent } from "./list-if-present.js";
 import { acquireDirectoryLock, type HeldLock, type LockOptions } from "./lock.js";
 
 export class StoreCorruptError extends Error {
@@ -122,7 +123,7 @@ export class FileStore implements ImportStore {
   putArtifact(_importId: string, name: ArtifactName, value: unknown) { return this.writeJson(this.p("artifacts", `${name}.json`), value); }
   async listActivities(importId: string) {
     const dir = this.p("activities");
-    const names = await readdir(dir).catch(() => [] as string[]);
+    const names = await listIfPresent(dir); // a new import has no activities directory yet
     const all = await Promise.all(names.filter((n) => n.endsWith(".json")).map((n) => readJson<ActivityRecord>(join(dir, n))));
     return all.filter((a): a is ActivityRecord => a !== null && a.importId === importId).sort((a, b) => a.order - b.order);
   }
@@ -130,7 +131,7 @@ export class FileStore implements ImportStore {
   getRevision(activityId: string, revision: number) { return readJson<RevisionRecord>(this.p("revisions", activityId, `r${revision}.json`)); }
   async listRevisions(activityId: string) {
     const dir = this.p("revisions", activityId);
-    const names = await readdir(dir).catch(() => [] as string[]);
+    const names = await listIfPresent(dir); // an activity may have no revisions yet
     const all = await Promise.all(names.filter((n) => /^r\d+\.json$/.test(n)).map((n) => readJson<RevisionRecord>(join(dir, n))));
     return all.filter((r): r is RevisionRecord => r !== null).sort((a, b) => a.revision - b.revision);
   }
@@ -198,8 +199,7 @@ export class FileStore implements ImportStore {
   getBuildRecord(buildId: string) { checkBuildId(buildId); return readJson<BuildRecord>(this.p("builds", "records", `${buildId}.json`)); }
   async listBuilds(activityId: string) {
     const dir = this.p("builds", "records");
-    let names: string[];
-    try { names = await readdir(dir); } catch (err) { if (isEnoent(err)) return []; throw err; } // no build yet
+    const names = await listIfPresent(dir); // no build yet
     const all = await Promise.all(names.filter((n) => /^[0-9a-f]{16}\.json$/.test(n)).map((n) => readJson<BuildRecord>(join(dir, n))));
     return sortBuilds(all.filter((r): r is BuildRecord => r !== null && r.activityId === activityId));
   }

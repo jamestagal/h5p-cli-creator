@@ -1,7 +1,7 @@
-import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { storeVersionOf, type AcceptanceRecord, type ActivityRecord, type AlignmentReviewRecord, type ImportRecord, type RevisionRecord } from "@leaplearn/generator";
 import { readJson, readJsonl } from "./file-store.js";
+import { listIfPresent } from "./list-if-present.js";
 
 /** A phase-2 revision as it was stored: the engine fingerprint was stamped when the revision was produced, and there are no build records. */
 export type LegacyRevisionRecord = Omit<RevisionRecord, "origin" | "requestId" | "currentBuildId"> & { engineFingerprint: string; buildKey: string | null };
@@ -15,14 +15,6 @@ export interface LegacyImportView {
   engineFingerprintSemantics: "recorded at production (phase 2)";
   acceptances: AcceptanceRecord[];
   alignmentReviews: AlignmentReviewRecord[];
-}
-
-/** Lists a directory, treating only its absence (ENOENT) as empty. Permission errors, a file where a directory belongs (ENOTDIR) and every other failure propagate. */
-async function listIfPresent(dir: string): Promise<string[]> {
-  try { return await readdir(dir); } catch (err) {
-    if ((err as { code?: string }).code === "ENOENT") return [];
-    throw err;
-  }
 }
 
 export class NotALegacyImportError extends Error {
