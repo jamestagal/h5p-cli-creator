@@ -1,11 +1,18 @@
 import { createHash } from "node:crypto";
-import { countCodePoints, normaliseSourceText } from "./admit.js";
+import { admitSource, countCodePoints, NormalisationInvariantError, normaliseSourceText } from "./admit.js";
+import type { Segment } from "./structure/linearize.js";
 
 /**
  * Offsets are UTF-16 code units into the stored normalised text, half-open [charStart, charEnd), so
  * `text.slice(charStart, charEnd)` is the sentence. Source limits count code points instead (admit.ts); the two are never mixed.
  */
-export interface Sentence { sentenceId: string; charStart: number; charEnd: number; text: string; }
+export interface Sentence {
+  sentenceId: string; charStart: number; charEnd: number; text: string;
+  /** Headings the sentence sits under, outermost first; empty for plain text, markdown and PDF sources. */
+  headingPath: string[];
+  /** A table row (or other atomic range): one sentence, never split, and never divided by a chunk boundary. */
+  atomic: boolean;
+}
 export type SourceKind = "text" | "markdown" | "pdf";
 export interface SourceDocument {
   sourceId: string;
@@ -32,15 +39,15 @@ export function textHash(text: string): string {
 const ABBREVIATIONS = new Set(["e.g", "i.e", "etc", "vs", "cf", "no", "fig", "mr", "mrs", "ms", "dr"]);
 const TERMINATOR = /[.!?]+["')\]]?/g;
 
-/** Splits on sentence terminators followed by whitespace (or end), skipping decimals and common abbreviations; also splits on newlines. Offsets index the original text. */
-export function segmentSentences(text: string): Sentence[] {
-  const sentences: Sentence[] = [];
+/** The phase-2 splitter: [start, end) ranges of `text` split on sentence terminators followed by whitespace (or end), skipping decimals and common abbreviations; also split on newlines. */
+function splitRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
   let start = 0;
   const push = (end: number): void => {
     const raw = text.slice(start, end);
     const leading = raw.length - raw.trimStart().length;
     const trimmed = raw.trim();
-    if (trimmed.length > 0) sentences.push({ sentenceId: `s${sentences.length + 1}`, charStart: start + leading, charEnd: start + leading + trimmed.length, text: trimmed });
+    if (trimmed.length > 0) ranges.push([start + leading, start + leading + trimmed.length]);
     start = end;
   };
   for (let i = 0; i < text.length; i++) {
@@ -63,14 +70,49 @@ export function segmentSentences(text: string): Sentence[] {
     }
   }
   push(text.length);
+  return ranges;
+}
+
+/**
+ * Without segments, the phase-2 rules over the whole text (heading paths empty, nothing atomic). With segments, each
+ * atomic range is exactly one sentence and each other range is split by the phase-2 rules; every sentence carries its
+ * range's heading path. Offsets index `text` (UTF-16 code units).
+ */
+export function segmentSentences(text: string, segments?: Segment[]): Sentence[] {
+  const sentences: Sentence[] = [];
+  const add = (charStart: number, charEnd: number, headingPath: string[], atomic: boolean): void => {
+    sentences.push({ sentenceId: `s${sentences.length + 1}`, charStart, charEnd, text: text.slice(charStart, charEnd), headingPath: [...headingPath], atomic });
+  };
+  if (segments === undefined) {
+    for (const [a, b] of splitRanges(text)) add(a, b, [], false);
+    return sentences;
+  }
+  for (const seg of segments) {
+    if (seg.atomic) { add(seg.charStart, seg.charEnd, seg.headingPath, true); continue; }
+    for (const [a, b] of splitRanges(text.slice(seg.charStart, seg.charEnd))) add(seg.charStart + a, seg.charStart + b, seg.headingPath, false);
+  }
   return sentences;
 }
 
-/** Normalises (idempotently) and segments; enforces no limit. The ingest entry points admit the text before calling it. */
-export function buildDocument(kind: SourceKind, text: string, opts: IngestOptions, extra: { pages?: number } = {}): SourceDocument {
-  const normalised = normaliseSourceText(text);
-  const metadata: SourceDocument["metadata"] = { characters: normalised.length, codePoints: countCodePoints(normalised), extractionVersion: EXTRACTION_VERSION };
+function assemble(kind: SourceKind, text: string, segments: Segment[] | undefined, opts: IngestOptions, extra: { pages?: number }): SourceDocument {
+  const metadata: SourceDocument["metadata"] = { characters: text.length, codePoints: countCodePoints(text), extractionVersion: EXTRACTION_VERSION };
   if (opts.fileName !== undefined) metadata.fileName = opts.fileName;
   if (extra.pages !== undefined) metadata.pages = extra.pages;
-  return { sourceId: opts.sourceId, kind, text: normalised, textHash: textHash(normalised), sentences: segmentSentences(normalised), metadata };
+  return { sourceId: opts.sourceId, kind, text, textHash: textHash(text), sentences: segmentSentences(text, segments), metadata };
+}
+
+/**
+ * The only way final text becomes a SourceDocument at an ingest entry point: refuses a text that is not a fixed point of
+ * normaliseSourceText (it never transforms it, so offsets built on it stay valid), segments it (honouring atomic
+ * ranges), admits it (500-400,000 code points), and builds the document. An empty `segments` means a plain source.
+ */
+export function finaliseDocument(kind: SourceKind, text: string, segments: Segment[], opts: IngestOptions, extra: { pages?: number } = {}): SourceDocument {
+  if (normaliseSourceText(text) !== text) throw new NormalisationInvariantError("source text is not normalised (normaliseSourceText would change it), so its offsets would not survive; normalise before building offsets");
+  admitSource(text);
+  return assemble(kind, text, segments.length > 0 ? segments : undefined, opts, extra);
+}
+
+/** Normalises and segments a plain text, enforcing no limit: for tests and callers below the ingest entry points. */
+export function buildDocument(kind: SourceKind, text: string, opts: IngestOptions, extra: { pages?: number } = {}): SourceDocument {
+  return assemble(kind, normaliseSourceText(text), undefined, opts, extra);
 }

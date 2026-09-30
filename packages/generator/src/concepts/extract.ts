@@ -1,6 +1,8 @@
 import { CONCEPT_NAME_MAX, CONCEPT_SUMMARY_MAX, type Evidence } from "@leaplearn/shared";
 import type { SourceDocument } from "../ingest/source-document.js";
-import { modelForRole } from "../llm/models.js";
+import { reserveInputTokens } from "../llm/cost.js";
+import { MAX_INPUT_TOKENS, modelForRole } from "../llm/models.js";
+import type { ModelRequest } from "../llm/types.js";
 import type { StageRunner } from "../llm/runner.js";
 import { buildSystemPrompt, DEFAULT_PROMPT_CONFIG, type PromptConfig } from "../prompts/system.js";
 import { ConceptsOut, ConceptsOutSchema } from "../schemas/model-output.js";
@@ -16,12 +18,56 @@ export function numberedSentences(chunk: Chunk): string {
   return chunk.sentences.map((s) => `[${s.sentenceId}] ${s.text}`).join("\n");
 }
 
+const EXTRACT_MAX_OUTPUT_TOKENS = 3000;
+
+/**
+ * The section each run of sentences sits in, or "" when no sentence in the chunk has a heading path. PDF, text and
+ * markdown sources have none, so their requests stay byte-identical to phase 2 (R12). Documents stored before heading
+ * paths existed have no field at all and are treated the same way.
+ */
+function headingContext(chunk: Chunk): string {
+  const runs: Array<{ path: string; ids: string[] }> = [];
+  for (const s of chunk.sentences) {
+    const path = (s.headingPath ?? []).join(" › ");
+    if (runs.at(-1)?.path === path) runs.at(-1)!.ids.push(s.sentenceId); else runs.push({ path, ids: [s.sentenceId] });
+  }
+  if (runs.every((r) => r.path === "")) return "";
+  return `\n\nHEADING CONTEXT (the section each sentence is in):\n${runs.map((r) => `- ${r.path === "" ? "(no heading)" : r.path}: ${r.ids.length === 1 ? r.ids[0] : `${r.ids[0]} to ${r.ids.at(-1)}`}`).join("\n")}`;
+}
+
+/** The complete extraction request for a chunk, exactly as dispatched: shared by the call and by the size check. */
+export function extractionRequest(chunk: Chunk, options: ExtractOptions): ModelRequest {
+  const max = options.maxConceptsPerChunk ?? 8;
+  return { purpose: "extract", model: modelForRole("extract"), system: buildSystemPrompt(options.promptConfig ?? DEFAULT_PROMPT_CONFIG), user: `${TASK(max)}${headingContext(chunk)}\n\nEVIDENCE:\n${numberedSentences(chunk)}`, maxOutputTokens: EXTRACT_MAX_OUTPUT_TOKENS, outputSchema: ConceptsOutSchema };
+}
+
+/** An extraction request (estimated as the budget reservation estimates it, plus its output allowance) larger than the model's input limit. */
+export class RequestTooLargeError extends Error {
+  constructor(readonly sentenceId: string, readonly estimatedInputTokens: number, readonly maxOutputTokens: number, readonly limit: number) {
+    super(`the extraction request for the chunk holding ${sentenceId} is about ${estimatedInputTokens} input tokens plus ${maxOutputTokens} output tokens, above the model's limit of ${limit}; shorten that sentence in the source`);
+    this.name = "RequestTooLargeError";
+  }
+}
+
+/** Refuses, before any dispatch, a chunk whose complete extraction request would not fit the extract model's input limit (R14). */
+export function assertExtractionRequestsFit(chunks: Chunk[], options: ExtractOptions = {}): void {
+  for (const chunk of chunks) {
+    const request = extractionRequest(chunk, options);
+    const estimatedInputTokens = reserveInputTokens(request);
+    const limit = MAX_INPUT_TOKENS[request.model];
+    if (estimatedInputTokens + request.maxOutputTokens > limit) {
+      const largest = chunk.sentences.reduce((a, b) => (b.text.length > a.text.length ? b : a));
+      throw new RequestTooLargeError(largest.sentenceId, estimatedInputTokens, request.maxOutputTokens, limit);
+    }
+  }
+}
+
 export async function extractChunkConcepts(doc: SourceDocument, chunk: Chunk, runner: StageRunner, options: ExtractOptions = {}): Promise<ChunkConcept[]> {
   const max = options.maxConceptsPerChunk ?? 8;
   const allowed = new Set(chunk.sentences.map((s) => s.sentenceId));
   const { value } = await runner.run({
     key: `extract:chunk-${chunk.chunkIndex}`,
-    request: { purpose: "extract", model: modelForRole("extract"), system: buildSystemPrompt(options.promptConfig ?? DEFAULT_PROMPT_CONFIG), user: `${TASK(max)}\n\nEVIDENCE:\n${numberedSentences(chunk)}`, maxOutputTokens: 3000, outputSchema: ConceptsOutSchema },
+    request: extractionRequest(chunk, options),
     schema: ConceptsOut,
     verify: (out) => {
       const issues: string[] = [];

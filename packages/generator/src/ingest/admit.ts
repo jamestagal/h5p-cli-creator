@@ -17,6 +17,10 @@ export class SourceTooSmallError extends Error {
 export class SourceTooLargeError extends Error {
   constructor(readonly codePoints: number) { super(`source has ${n(codePoints)} code points of text after extraction, above the maximum of ${n(MAX_SOURCE_CODE_POINTS)}; split it rather than truncating`); this.name = "SourceTooLargeError"; }
 }
+/** A text handed on as final was not a fixed point of normaliseSourceText (R11): offsets would not survive normalisation. */
+export class NormalisationInvariantError extends Error {
+  constructor(message: string) { super(message); this.name = "NormalisationInvariantError"; }
+}
 export class PdfTooManyPagesError extends Error {
   constructor(readonly pages: number) { super(`PDF has ${n(pages)} pages, above the limit of ${n(MAX_PDF_PAGES)}; split it rather than truncating`); this.name = "PdfTooManyPagesError"; }
 }

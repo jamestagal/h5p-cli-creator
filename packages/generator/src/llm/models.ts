@@ -14,6 +14,12 @@ export function modelForRole(role: ModelRole): ModelId {
   return MODEL_ROLES[role];
 }
 
+/** Input context limit per model, in tokens, as confirmed by the phase-2 preflight. Every extraction request must fit before dispatch (R14). */
+export const MAX_INPUT_TOKENS: Record<ModelId, number> = {
+  "claude-haiku-4-5-20251001": 200_000,
+  "claude-sonnet-5": 1_000_000
+};
+
 /**
  * Request settings the adapter applies per model; no stage sets them. Sonnet 5 returns 400 for a
  * non-default temperature/top_p/top_k and runs adaptive thinking unless told not to (thinking tokens

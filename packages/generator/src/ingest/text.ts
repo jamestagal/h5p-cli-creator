@@ -1,10 +1,8 @@
-import { admitSource, normaliseSourceText } from "./admit.js";
-import { buildDocument, type IngestOptions, type SourceDocument } from "./source-document.js";
+import { normaliseSourceText } from "./admit.js";
+import { finaliseDocument, type IngestOptions, type SourceDocument } from "./source-document.js";
 
 export async function ingestText(raw: string, opts: IngestOptions): Promise<SourceDocument> {
-  const text = normaliseSourceText(raw);
-  admitSource(text);
-  return buildDocument("text", text, opts);
+  return finaliseDocument("text", normaliseSourceText(raw), [], opts);
 }
 
 /** Keeps the words, drops markdown syntax: ATX headings, list bullets, emphasis markers, inline code ticks, links keep their text. */
@@ -20,7 +18,5 @@ export function markdownToText(md: string): string {
 }
 
 export async function ingestMarkdown(md: string, opts: IngestOptions): Promise<SourceDocument> {
-  const text = normaliseSourceText(markdownToText(md));
-  admitSource(text);
-  return buildDocument("markdown", text, opts);
+  return finaliseDocument("markdown", normaliseSourceText(markdownToText(md)), [], opts);
 }

@@ -1,7 +1,7 @@
 import type { EngineIdentity, LibraryRegistry } from "@leaplearn/engine";
 import { assertGeneratedProvenance, SCHEMA_VERSION, type ConceptMap, type ImportStatus, type UnitOfCompetency } from "@leaplearn/shared";
 import { parseUnit } from "../competency/parse-unit.js";
-import { extractConceptMap, type ChunkConcept } from "../concepts/index.js";
+import { assertExtractionRequestsFit, chunkSentences, extractConceptMap, type ChunkConcept } from "../concepts/index.js";
 import type { SourceDocument } from "../ingest/source-document.js";
 import { ANTHROPIC_TIMEOUT_MS } from "../llm/anthropic-provider.js";
 import { budgetSnapshot, DEFAULT_BUDGET_LIMITS, type BudgetLimits } from "../llm/budget.js";
@@ -117,6 +117,8 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
 
   try {
     await setStatus("ingesting");
+    // Both size checks run before any dispatch, so an oversize table row or request fails the import with no model call.
+    assertExtractionRequestsFit(chunkSentences(input.source.sentences, chunkTokens), { promptConfig: input.promptConfig });
     if (!(await store.getArtifact(input.importId, "source"))) await store.putArtifact(input.importId, "source", input.source);
 
     let unit: UnitOfCompetency | null = null;

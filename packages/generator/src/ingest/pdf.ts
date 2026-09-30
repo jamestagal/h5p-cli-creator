@@ -1,6 +1,6 @@
 import { PDFParse } from "pdf-parse";
-import { admitSource, MAX_PDF_PAGES, normaliseSourceText, PdfTooManyPagesError } from "./admit.js";
-import { buildDocument, type IngestOptions, type SourceDocument } from "./source-document.js";
+import { MAX_PDF_PAGES, normaliseSourceText, PdfTooManyPagesError } from "./admit.js";
+import { finaliseDocument, type IngestOptions, type SourceDocument } from "./source-document.js";
 
 /**
  * Text layer only (spec: no OCR). Scanned PDFs come back empty and are rejected as empty sources. The page count is
@@ -16,9 +16,7 @@ export async function ingestPdf(bytes: Buffer, opts: IngestOptions): Promise<Sou
     // Only the pages' own text: result.text also carries the page labels pdf-parse inserts between pages
     // ("-- 1 of 2 --"), which are not source content and must not count towards admission or become sentences.
     const result = await parser.getText();
-    const text = normaliseSourceText(result.pages.map((page) => page.text).join("\n\n"));
-    admitSource(text);
-    return buildDocument("pdf", text, opts, { pages });
+    return finaliseDocument("pdf", normaliseSourceText(result.pages.map((page) => page.text).join("\n\n")), [], opts, { pages });
   } finally {
     await parser.destroy();
   }
