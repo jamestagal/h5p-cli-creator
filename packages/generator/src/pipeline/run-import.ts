@@ -63,7 +63,7 @@ export async function runImport(rawInput: RunImportInput, deps: RunImportDeps): 
   const input: RunImportInput = { ...rawInput, selectedTypes: canonicalTypes(rawInput.selectedTypes) };
   const chunkTokens = deps.chunkTokens ?? DEFAULT_CHUNK_TOKENS;
   const rules = deps.rules ?? DEFAULT_PLAN_RULES;
-  const fingerprint = runFingerprint({ sourceTextHash: input.source.textHash, unitText: input.unitText, selectedTypes: input.selectedTypes, language: input.language, promptConfig: input.promptConfig, customisation: input.customisation, chunkTokens, rules });
+  const fingerprint = runFingerprint({ sourceTextHash: input.source.textHash, extractionVersion: input.source.metadata.extractionVersion, unitText: input.unitText, selectedTypes: input.selectedTypes, language: input.language, promptConfig: input.promptConfig, customisation: input.customisation, chunkTokens, rules });
   const lock = await deps.store.lock(input.importId);
   try {
     const existing = await deps.store.getImport(input.importId); // read under the lock: a pre-lock read could be stale

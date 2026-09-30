@@ -8,7 +8,10 @@ import { PROMPT_VERSION, type PromptConfig } from "../prompts/system.js";
 export const DEFAULT_CHUNK_TOKENS = 6000;
 
 export interface FingerprintInput {
-  sourceTextHash: string; unitText: string | null; selectedTypes: readonly string[]; language: string;
+  sourceTextHash: string;
+  /** The source document's metadata.extractionVersion: how its text was extracted and normalised. */
+  extractionVersion: string;
+  unitText: string | null; selectedTypes: readonly string[]; language: string;
   promptConfig: PromptConfig; customisation: string | null; chunkTokens: number; rules: PlanRules;
 }
 
@@ -17,6 +20,7 @@ export function runFingerprint(input: FingerprintInput): string {
   const material = {
     v: 1,
     sourceTextHash: input.sourceTextHash,
+    extractionVersion: input.extractionVersion,
     unitTextHash: input.unitText === null ? null : textHash(input.unitText.trim()),
     selectedTypes: [...input.selectedTypes].sort(),
     language: input.language,

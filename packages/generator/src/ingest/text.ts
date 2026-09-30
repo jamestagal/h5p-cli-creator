@@ -1,6 +1,9 @@
+import { admitSource, normaliseSourceText } from "./admit.js";
 import { buildDocument, type IngestOptions, type SourceDocument } from "./source-document.js";
 
-export async function ingestText(text: string, opts: IngestOptions): Promise<SourceDocument> {
+export async function ingestText(raw: string, opts: IngestOptions): Promise<SourceDocument> {
+  const text = normaliseSourceText(raw);
+  admitSource(text);
   return buildDocument("text", text, opts);
 }
 
@@ -17,5 +20,7 @@ export function markdownToText(md: string): string {
 }
 
 export async function ingestMarkdown(md: string, opts: IngestOptions): Promise<SourceDocument> {
-  return buildDocument("markdown", markdownToText(md), opts);
+  const text = normaliseSourceText(markdownToText(md));
+  admitSource(text);
+  return buildDocument("markdown", text, opts);
 }

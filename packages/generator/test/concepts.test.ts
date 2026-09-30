@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ingestMarkdown, ingestText } from "../src/ingest/index.js";
+import { buildDocument, markdownToText } from "../src/ingest/index.js";
 import { alignConcepts, chunkSentences, extractConceptMap, MAX_ALIGN_QUOTES, verifyEvidence, evidenceForSentence } from "../src/concepts/index.js";
 import { createRunner } from "../src/llm/runner.js";
 import { FakeProvider, fakeResponse } from "../src/llm/fake-provider.js";
@@ -29,7 +29,7 @@ describe("chunking and evidence", () => {
     expect(chunkOf(b)).toBe(chunkOf(a) + 1);
   });
   it("builds evidence from a sentence and verifies quotes against offsets", async () => {
-    const doc = await ingestMarkdown("Lock it out. Test for dead.", { sourceId: "src" });
+    const doc = buildDocument("markdown", markdownToText("Lock it out. Test for dead."), { sourceId: "src" });
     const ev = evidenceForSentence(doc, "s2");
     expect(ev).toEqual({ evidenceId: "ev-s2", sentenceId: "s2", charStart: 13, charEnd: 27, quote: "Test for dead." });
     expect(verifyEvidence(doc.text, ev)).toBeNull();
@@ -70,7 +70,7 @@ describe("extractConceptMap", () => {
     expect(alignRequest.user).toContain(`[ev-${tfdB}]`);
   });
   it("rejects sentence ids outside the chunk as a content failure with feedback", async () => {
-    const doc = await ingestMarkdown("One sentence here. Second sentence here.", { sourceId: "src" });
+    const doc = buildDocument("markdown", markdownToText("One sentence here. Second sentence here."), { sourceId: "src" });
     const bad = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "x", summary: "y", sentenceIds: ["s99"] }] }) });
     const provider = new FakeProvider([bad, bad, bad]);
     const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op", origin: "shared", requestId: null, sleep: async () => undefined });
@@ -78,7 +78,7 @@ describe("extractConceptMap", () => {
     expect(provider.requests[1]?.user).toContain("s99");
   });
   it("skips the merge call for a single chunk and numbers concepts c1... in encounter order", async () => {
-    const doc = await ingestText("Sentence one here. Sentence two here.", { sourceId: "src" });
+    const doc = buildDocument("text", "Sentence one here. Sentence two here.", { sourceId: "src" });
     const s1 = sid(doc, "Sentence one");
     const s2 = sid(doc, "Sentence two");
     const out = { concepts: [
@@ -93,7 +93,7 @@ describe("extractConceptMap", () => {
     expect(map.concepts.map((c) => c.conceptId)).toEqual(["c1", "c2"]);
   });
   it("omits the alignment key entirely when no unit is supplied", async () => {
-    const doc = await ingestText("Only sentence here.", { sourceId: "src" });
+    const doc = buildDocument("text", "Only sentence here.", { sourceId: "src" });
     const s1 = sid(doc, "Only sentence");
     const out = { concepts: [{ name: "Idea", summary: "About the sentence.", sentenceIds: [s1] }] };
     const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(out) })]);
@@ -102,7 +102,7 @@ describe("extractConceptMap", () => {
     expect("alignment" in map).toBe(false);
   });
   it("rejects a merge reply that adds an extra members-less concept as a content failure", async () => {
-    const doc = await ingestText("Sentence one here. Sentence two here.", { sourceId: "src" });
+    const doc = buildDocument("text", "Sentence one here. Sentence two here.", { sourceId: "src" });
     const s1 = sid(doc, "Sentence one");
     const s2 = sid(doc, "Sentence two");
     const extract1 = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "First idea", summary: "About sentence one.", sentenceIds: [s1] }] }) });
@@ -117,7 +117,7 @@ describe("extractConceptMap", () => {
     await expect(extractConceptMap(doc, null, runner, { chunkTokens: 10 })).rejects.toMatchObject({ name: "ContentFailure", reasons: expect.arrayContaining([expect.stringContaining("Extra empty concept")]) });
   });
   it("rejects an extract reply with an empty summary as a content failure", async () => {
-    const doc = await ingestText("Only sentence here.", { sourceId: "src" });
+    const doc = buildDocument("text", "Only sentence here.", { sourceId: "src" });
     const s1 = sid(doc, "Only sentence");
     const bad = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "Idea", summary: "", sentenceIds: [s1] }] }) });
     const provider = new FakeProvider([bad, bad, bad]);
@@ -128,7 +128,7 @@ describe("extractConceptMap", () => {
 
 describe("alignConcepts evidence quotes", () => {
   it("shows at most MAX_ALIGN_QUOTES evidence quotes per concept and counts the remainder", async () => {
-    const doc = await ingestText(Array.from({ length: 10 }, (_, i) => `Sentence number ${i + 1} here.`).join(" "), { sourceId: "src" });
+    const doc = buildDocument("text", Array.from({ length: 10 }, (_, i) => `Sentence number ${i + 1} here.`).join(" "), { sourceId: "src" });
     expect(doc.sentences).toHaveLength(10);
     const evidence = doc.sentences.map((s) => evidenceForSentence(doc, s.sentenceId));
     const concept: Concept = { conceptId: "c1", name: "Many sentences", summary: "Ten sentences of evidence.", evidence };

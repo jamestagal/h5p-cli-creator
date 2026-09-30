@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { ingestMarkdown, ingestPdf, ingestText, segmentSentences, textHash, MAX_SOURCE_CHARACTERS } from "../src/ingest/index.js";
+import { ingestMarkdown, ingestPdf, ingestText, segmentSentences, textHash, MAX_SOURCE_CODE_POINTS } from "../src/ingest/index.js";
 
 const fixtures = resolve(import.meta.dirname, "fixtures/synthetic");
 
@@ -20,11 +20,13 @@ describe("sentence segmentation", () => {
 });
 
 describe("ingest", () => {
-  it("text: hashes the stored text and counts characters", async () => {
-    const doc = await ingestText("Alpha. Beta.", { sourceId: "src-1" });
-    expect(doc.textHash).toBe(textHash("Alpha. Beta."));
-    expect(doc.sentences).toHaveLength(2);
-    expect(doc.metadata.characters).toBe(12);
+  it("text: hashes the stored text and counts characters and code points", async () => {
+    const text = Array.from({ length: 30 }, (_, i) => `Sentence ${String(i + 1).padStart(2, "0")} here.`).join(" "); // 30 × 17 + 29 = 539 characters
+    const doc = await ingestText(text, { sourceId: "src-1" });
+    expect(doc.textHash).toBe(textHash(text));
+    expect(doc.sentences).toHaveLength(30);
+    expect(doc.metadata.characters).toBe(539);
+    expect(doc.metadata.codePoints).toBe(539);
   });
   it("markdown: strips heading and list markers but keeps the words and offsets consistent", async () => {
     const md = await readFile(resolve(fixtures, "source-electrical-safety.md"), "utf8");
@@ -46,6 +48,6 @@ describe("ingest", () => {
   });
   it("rejects empty and oversized input with a message, never truncating", async () => {
     await expect(ingestText("   ", { sourceId: "x" })).rejects.toThrow(/empty/);
-    await expect(ingestText("a".repeat(MAX_SOURCE_CHARACTERS + 1), { sourceId: "x" })).rejects.toThrow(/300,000/);
+    await expect(ingestText("a".repeat(MAX_SOURCE_CODE_POINTS + 1), { sourceId: "x" })).rejects.toThrow(/400,000/);
   });
 });

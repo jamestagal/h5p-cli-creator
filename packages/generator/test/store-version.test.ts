@@ -67,7 +67,7 @@ describe("store-version-2 imports from before build records", () => {
     const before = await snapshot(store);
     const empty = new FakeProvider([]);
     const registry = await createRegistry({ lockPath: resolve(root, "libraries/libraries.lock.json"), cacheDir: resolve(root, "libraries/cache") });
-    const source = await ingestText("Lock it out before work starts.", { sourceId: "src-dev" });
+    const source = await ingestText("Lock it out before work starts. ".repeat(20), { sourceId: "src-dev" }); // 640 characters: sources below 500 code points are refused
     const input = { importId: "dev", name: "n", source, unitText: null, selectedTypes: ["multiChoice" as const], budget: { usdMicro: 1_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null };
     await expect(runImport(input, { store, provider: empty, registry, engineIdentity: testIdentity("dev") })).rejects.toBeInstanceOf(ObsoleteStoreLayoutError);
     expect(empty.requests).toHaveLength(0);

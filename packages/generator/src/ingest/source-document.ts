@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
+import { countCodePoints, normaliseSourceText } from "./admit.js";
 
+/**
+ * Offsets are UTF-16 code units into the stored normalised text, half-open [charStart, charEnd), so
+ * `text.slice(charStart, charEnd)` is the sentence. Source limits count code points instead (admit.ts); the two are never mixed.
+ */
 export interface Sentence { sentenceId: string; charStart: number; charEnd: number; text: string; }
 export type SourceKind = "text" | "markdown" | "pdf";
 export interface SourceDocument {
@@ -8,16 +13,13 @@ export interface SourceDocument {
   text: string;
   textHash: string;
   sentences: Sentence[];
-  metadata: { fileName?: string; pages?: number; characters: number };
+  /** `characters` is UTF-16 code units of `text`; `codePoints` is what the source limits count. */
+  metadata: { fileName?: string; pages?: number; characters: number; codePoints: number; extractionVersion: string };
 }
 export interface IngestOptions { sourceId: string; fileName?: string; }
 
-export const MAX_SOURCE_CHARACTERS = 300_000;
-
-export class EmptySourceError extends Error { constructor() { super("source is empty after extraction"); this.name = "EmptySourceError"; } }
-export class SourceTooLargeError extends Error {
-  constructor(characters: number) { super(`source has ${characters.toLocaleString("en-US")} characters, above the limit of ${MAX_SOURCE_CHARACTERS.toLocaleString("en-US")}; split it rather than truncating`); this.name = "SourceTooLargeError"; }
-}
+/** Identifies how source text is extracted and normalised. Part of the run fingerprint: changing extraction changes what a resume must match. */
+export const EXTRACTION_VERSION = "2026-09-28.1";
 
 export function textHash(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
@@ -60,11 +62,10 @@ export function segmentSentences(text: string): Sentence[] {
   return sentences;
 }
 
+/** Normalises (idempotently) and segments; enforces no limit. The ingest entry points admit the text before calling it. */
 export function buildDocument(kind: SourceKind, text: string, opts: IngestOptions, extra: { pages?: number } = {}): SourceDocument {
-  const normalised = text.replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").trim();
-  if (normalised.length === 0) throw new EmptySourceError();
-  if (normalised.length > MAX_SOURCE_CHARACTERS) throw new SourceTooLargeError(normalised.length);
-  const metadata: SourceDocument["metadata"] = { characters: normalised.length };
+  const normalised = normaliseSourceText(text);
+  const metadata: SourceDocument["metadata"] = { characters: normalised.length, codePoints: countCodePoints(normalised), extractionVersion: EXTRACTION_VERSION };
   if (opts.fileName !== undefined) metadata.fileName = opts.fileName;
   if (extra.pages !== undefined) metadata.pages = extra.pages;
   return { sourceId: opts.sourceId, kind, text: normalised, textHash: textHash(normalised), sentences: segmentSentences(normalised), metadata };

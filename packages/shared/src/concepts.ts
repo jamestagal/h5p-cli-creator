@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** Offsets are UTF-16 code units into the stored extracted text, half-open [charStart, charEnd). */
+/** Offsets are UTF-16 code units into the stored normalised (NFC) source text, half-open [charStart, charEnd). Source limits count code points instead; the two are never mixed. */
 export const Evidence = z.object({
   evidenceId: z.string().min(1),
   sentenceId: z.string().min(1),
