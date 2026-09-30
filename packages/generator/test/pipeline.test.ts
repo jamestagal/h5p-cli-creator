@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { createRegistry, type EngineIdentity, type LibraryRegistry } from "@leaplearn/engine";
 import { MemoryStore } from "../src/store/memory-store.js";
-import { BuildIntegrityError, LegacyStoreError, MalformedStoreVersionError, STORE_VERSION, StoreLockedError, UnsupportedStoreVersionError, type ImportRecord, type ImportStore } from "../src/store/types.js";
+import { BuildArtifactError, BuildIntegrityError, LegacyStoreError, MalformedStoreVersionError, STORE_VERSION, StoreLockedError, UnsupportedStoreVersionError, type ImportRecord, type ImportStore } from "../src/store/types.js";
 import { buildIdFor, buildKeyFor } from "../src/store/builds.js";
 import { buildRevision } from "../src/pipeline/build.js";
 import { DEFAULT_MAX_ATTEMPT_MS, runImport, SKIPPED_PREFIX, type RunImportDeps, type RunImportInput } from "../src/pipeline/run-import.js";
@@ -17,7 +17,7 @@ import type { PlanRules } from "../src/plan/planner.js";
 import { ProviderError } from "../src/llm/provider.js";
 import { ANTHROPIC_TIMEOUT_MS } from "../src/llm/anthropic-provider.js";
 import { conceptResponses, syntheticDoc, syntheticUnitText, unitOut, planOutFor, SYNTHETIC_CHUNK_TOKENS, sid } from "./helpers/synthetic.js";
-import { crashBefore, CrashError, failOnce, failOutcomeOnce } from "./helpers/crashing-store.js";
+import { crashBefore, CrashError, failOnce, failOutcomeOnce, withBuildBytes } from "./helpers/crashing-store.js";
 import { RoutedProvider } from "./helpers/routed-provider.js";
 import { IDENTITY_A, IDENTITY_A_NEW_LOCK, IDENTITY_B } from "./helpers/identity.js";
 
@@ -570,6 +570,49 @@ describe("build records", () => {
     expect(again).toEqual(before);
     expect(await store.listBuilds("act-1")).toEqual([before]);
   });
+
+  /** Runs the synthetic import until act-3's build bytes and record are written, then stops before the revision is promoted. */
+  async function builtButNotPromoted(importId: string) {
+    const store = new MemoryStore();
+    const crashing = crashBefore(store, "putActivity", 1, (args) => args[0].activityId === "act-3" && args[0].status === "built");
+    await expect(runImport(await input(importId), deps(crashing, new FakeProvider(await fullScript(await syntheticDoc()))))).rejects.toBeInstanceOf(CrashError);
+    const [record] = await store.listBuilds("act-3");
+    expect(record).toBeDefined();
+    expect((await store.getRevision("act-3", 1))).toMatchObject({ state: "candidate", currentBuildId: null });
+    return { store, record: record! };
+  }
+
+  it("resumes an interrupted build by reusing its verified record: promoted from it, no second record, no model call", async () => {
+    const { store, record } = await builtButNotPromoted("imp-v1");
+    const empty = new FakeProvider([]);
+    expect((await runImport(await input("imp-v1"), deps(store, empty))).status).toBe("ready");
+    expect(empty.requests).toHaveLength(0);
+    expect(await store.getRevision("act-3", 1)).toMatchObject({ state: "promoted", currentBuildId: record.buildId });
+    expect(await store.listBuilds("act-3")).toEqual([record]);
+  });
+
+  const damaged: Array<[string, (bytes: Buffer) => Buffer | null, RegExp]> = [
+    ["missing", () => null, /package file is missing/],
+    ["corrupt (same length, different bytes)", (b) => { const c = Buffer.from(b); c[c.length - 1] = c[c.length - 1]! ^ 0xff; return c; }, /has sha256 [0-9a-f]{64}, but the record says [0-9a-f]{64}/],
+    ["truncated", (b) => b.subarray(0, b.length - 1), /is \d+ bytes, but the record says \d+/]
+  ];
+  for (const [label, damage, message] of damaged) {
+    it(`refuses to reuse a build whose package is ${label}: the revision is not promoted, the record is unchanged, no model call`, async () => {
+      const { store, record } = await builtButNotPromoted(`imp-d-${label.split(" ")[0]}`);
+      const importId = `imp-d-${label.split(" ")[0]}`;
+      const broken = withBuildBytes(store, (key, bytes) => (key === record.buildKey && bytes ? damage(bytes) : bytes));
+      const empty = new FakeProvider([]);
+      const refused = await runImport(await input(importId), deps(broken, empty)).catch((e: unknown) => e);
+      expect(refused).toBeInstanceOf(BuildArtifactError);
+      expect((refused as Error).message).toMatch(message);
+      expect((refused as Error).message).toContain(record.buildKey);
+      expect(empty.requests).toHaveLength(0);
+      expect(await store.getRevision("act-3", 1)).toMatchObject({ state: "candidate", currentBuildId: null });
+      expect((await store.listActivities(importId)).find((a) => a.activityId === "act-3")?.status).not.toBe("promoted");
+      expect(await store.listBuilds("act-3")).toEqual([record]);
+      expect((await store.getImport(importId))?.status).toBe("failed");
+    });
+  }
 
   it("refuses to overwrite a build: different bytes for an existing key throw, identical bytes are a no-op", async () => {
     const store = new MemoryStore();

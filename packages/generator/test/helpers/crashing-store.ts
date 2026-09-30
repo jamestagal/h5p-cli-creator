@@ -71,3 +71,17 @@ export function failOutcomeOnce(inner: ImportStore, matches: (outcome: AttemptOu
     }
   });
 }
+
+/** Wraps a store so `getBuild` returns what `rewrite` makes of the stored bytes (null for a missing file): a lost or damaged package on disk. Nothing in the inner store changes. */
+export function withBuildBytes(inner: ImportStore, rewrite: (buildKey: string, bytes: Buffer | null) => Buffer | null): ImportStore {
+  return new Proxy(inner, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver) as unknown;
+      if (typeof value !== "function") return value;
+      const fn = value as (...args: unknown[]) => unknown;
+      if (prop !== "getBuild") return (...args: unknown[]) => fn.apply(target, args);
+
+      return async (buildKey: string) => rewrite(buildKey, await (fn.apply(target, [buildKey]) as Promise<Buffer | null>));
+    }
+  });
+}

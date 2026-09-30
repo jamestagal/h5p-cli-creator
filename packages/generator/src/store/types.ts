@@ -111,6 +111,14 @@ export class BuildIntegrityError extends Error {
   }
 }
 
+/** A build record whose bytes are missing or do not match it. The record is history and is never rewritten; the build is not reused. */
+export class BuildArtifactError extends Error {
+  constructor(record: { buildId: string; buildKey: string }, problem: string) {
+    super(`build ${record.buildId} (${record.buildKey}) cannot be used: ${problem}. The build record is kept unchanged and the revision is not promoted from it; restore the original file, or use a new output directory.`);
+    this.name = "BuildArtifactError";
+  }
+}
+
 export interface StoreLock { release(): Promise<void>; }
 export class StoreLockedError extends Error {
   constructor(importId: string, holder: string) { super(`import ${importId} is locked by ${holder}; another leap process is using this output directory`); this.name = "StoreLockedError"; }
