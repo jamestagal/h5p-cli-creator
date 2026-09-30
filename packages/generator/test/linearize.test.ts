@@ -91,6 +91,13 @@ describe("list nesting survives, in cells and into extraction requests", () => {
     expect(nestedDoc.sentences.find((x) => x.text.startsWith("This paragraph"))!.listDepth).toBeNull();
   });
 
+  it("a numbered label stays with its item: '1. Agree the scope.' is one sentence, not '1.' and 'Agree the scope.'", () => {
+    const doc = finaliseDocument("text", ...linearizeArgs([FILLER, { kind: "listItem", depth: 0, label: "1.", text: "Agree the scope. Then confirm it." }, { kind: "listItem", depth: 1, label: "2.", text: "Nested item." }]), opts);
+    const listSentences = doc.sentences.filter((x) => x.listDepth !== null).map((x) => [x.text, x.listDepth]);
+    expect(listSentences).toEqual([["1. Agree the scope.", 0], ["Then confirm it.", 0], ["2. Nested item.", 1]]);
+    for (const x of doc.sentences) expect(doc.text.slice(x.charStart, x.charEnd)).toBe(x.text);
+  });
+
   it("plain sources carry no list depth, so their requests are unchanged", () => {
     const plain = segmentSentences("• Not a list item here. Another sentence.");
     expect(plain.map((x) => x.listDepth)).toEqual([null, null]);

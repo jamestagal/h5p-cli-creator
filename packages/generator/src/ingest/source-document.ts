@@ -15,7 +15,7 @@ export interface Sentence {
   /** The list depth of the item the sentence belongs to (0 = top level), or null when it is not in a list. Always null for plain sources. */
   listDepth: number | null;
 }
-export type SourceKind = "text" | "markdown" | "pdf";
+export type SourceKind = "text" | "markdown" | "pdf" | "docx";
 export interface SourceDocument {
   sourceId: string;
   kind: SourceKind;
@@ -23,7 +23,11 @@ export interface SourceDocument {
   textHash: string;
   sentences: Sentence[];
   /** `characters` is UTF-16 code units of `text`; `codePoints` is what the source limits count. */
-  metadata: { fileName?: string; pages?: number; characters: number; codePoints: number; extractionVersion: string };
+  metadata: {
+    fileName?: string; pages?: number; characters: number; codePoints: number; extractionVersion: string;
+    /** Structured sources: the sha256 of the original file's bytes, which are stored unchanged, and the adapter that read it. */
+    originalSha256?: string; extractor?: "docx";
+  };
 }
 export interface IngestOptions { sourceId: string; fileName?: string; }
 
@@ -91,15 +95,26 @@ export function segmentSentences(text: string, segments?: Segment[]): Sentence[]
   }
   for (const seg of segments) {
     if (seg.atomic) { add(seg.charStart, seg.charEnd, seg.headingPath, true, seg.listDepth); continue; }
-    for (const [a, b] of splitRanges(text.slice(seg.charStart, seg.charEnd))) add(seg.charStart + a, seg.charStart + b, seg.headingPath, false, seg.listDepth);
+    // A list label ("1.") is never a sentence of its own: split after it, then give the first sentence its label back.
+    const labelEnd = seg.labelEnd ?? 0;
+    const ranges = splitRanges(text.slice(seg.charStart + labelEnd, seg.charEnd)).map(([a, b]): [number, number] => [a + labelEnd, b + labelEnd]);
+    if (labelEnd > 0) {
+      const lead = text.slice(seg.charStart, seg.charEnd).length - text.slice(seg.charStart, seg.charEnd).trimStart().length;
+      if (ranges.length > 0) ranges[0]![0] = lead; else ranges.push([lead, labelEnd]);
+    }
+    for (const [a, b] of ranges) add(seg.charStart + a, seg.charStart + b, seg.headingPath, false, seg.listDepth);
   }
   return sentences;
 }
 
-function assemble(kind: SourceKind, text: string, segments: Segment[] | undefined, opts: IngestOptions, extra: { pages?: number }): SourceDocument {
+export interface DocumentExtra { pages?: number; originalSha256?: string; extractor?: "docx" }
+
+function assemble(kind: SourceKind, text: string, segments: Segment[] | undefined, opts: IngestOptions, extra: DocumentExtra): SourceDocument {
   const metadata: SourceDocument["metadata"] = { characters: text.length, codePoints: countCodePoints(text), extractionVersion: EXTRACTION_VERSION };
   if (opts.fileName !== undefined) metadata.fileName = opts.fileName;
   if (extra.pages !== undefined) metadata.pages = extra.pages;
+  if (extra.originalSha256 !== undefined) metadata.originalSha256 = extra.originalSha256;
+  if (extra.extractor !== undefined) metadata.extractor = extra.extractor;
   return { sourceId: opts.sourceId, kind, text, textHash: textHash(text), sentences: segmentSentences(text, segments), metadata };
 }
 
@@ -108,7 +123,7 @@ function assemble(kind: SourceKind, text: string, segments: Segment[] | undefine
  * normaliseSourceText (it never transforms it, so offsets built on it stay valid), segments it (honouring atomic
  * ranges), admits it (500-400,000 code points), and builds the document. An empty `segments` means a plain source.
  */
-export function finaliseDocument(kind: SourceKind, text: string, segments: Segment[], opts: IngestOptions, extra: { pages?: number } = {}): SourceDocument {
+export function finaliseDocument(kind: SourceKind, text: string, segments: Segment[], opts: IngestOptions, extra: DocumentExtra = {}): SourceDocument {
   if (normaliseSourceText(text) !== text) throw new NormalisationInvariantError("source text is not normalised (normaliseSourceText would change it), so its offsets would not survive; normalise before building offsets");
   admitSource(text);
   return assemble(kind, text, segments.length > 0 ? segments : undefined, opts, extra);

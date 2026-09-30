@@ -1,0 +1,22 @@
+Audit fundamentals
+Planning the audit
+The auditor plans the engagement before fieldwork begins, and records the plan in the audit file.
+Evidence must be sufficient and appropriate for the opinion given.[1] It is gathered throughout the engagement.
+[Note 1] As defined in the synthetic auditing standard used for these tests.
+The sample size is forty items for each branch.
+1. Agree the scope with management
+  1. Confirm the branches in scope
+  2. Confirm the reporting period
+2. Collect the evidence
+The procedures below are performed in order.
+1. Inspect the records
+2. Reperform the key controls
+The reperformance described in item b) above is required for every branch.
+Recording results
+Kiểm toán viên phải ghi chép đầy đủ bằng chứng kiểm toán.
+[Table 1, row 1] Column 1: Audit scope; Column 2: All branches
+[Table 1, row 2] Column 1: Period; Column 2: FY2026
+[Table 2, row 1] Risk: Missing records; Likelihood: Medium; Impact: Controls: • Monthly check • Manager sign-off
+[Table 2, row 2] Risk: Missing records; Likelihood: Low; Impact: Low
+[Table 2, row 3] Risk: Rủi ro gian lận; Likelihood: High; Impact: Owners: [Table 2.1 row 1: Control: Review, Owner: Finance manager]
+Results are reported to the audit committee within ten business days of the end of fieldwork.

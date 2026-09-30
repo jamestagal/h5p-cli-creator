@@ -6,10 +6,14 @@ import { normaliseBlockText, type Block, type Cell } from "./blocks.js";
  * and is never split. `listDepth` is the depth of a list item (0 = top level), null for anything else: the indentation in
  * the text does not survive sentence trimming, so the depth travels as metadata.
  */
-export interface Segment { charStart: number; charEnd: number; atomic: boolean; headingPath: string[]; listDepth: number | null }
+export interface Segment {
+  charStart: number; charEnd: number; atomic: boolean; headingPath: string[]; listDepth: number | null;
+  /** For a list item: UTF-16 units from charStart to the end of its label (indent included), so the splitter never ends a sentence inside it ("1."). */
+  labelEnd?: number;
+}
 export interface Linearized { text: string; segments: Segment[] }
 
-interface Line { text: string; atomic: boolean; headingPath: string[]; listDepth: number | null }
+interface Line { text: string; atomic: boolean; headingPath: string[]; listDepth: number | null; labelEnd?: number }
 
 const EMPTY = "—";
 
@@ -108,7 +112,7 @@ export function linearize(blocks: Block[]): Linearized {
   const lines: Line[] = [];
   const headings: Array<{ level: number; text: string }> = [];
   const path = (): string[] => headings.map((h) => h.text);
-  const push = (text: string, atomic = false, listDepth: number | null = null): void => { if (text !== "") lines.push({ text, atomic, headingPath: path(), listDepth }); };
+  const push = (text: string, atomic = false, listDepth: number | null = null, labelEnd?: number): void => { if (text !== "") lines.push({ text, atomic, headingPath: path(), listDepth, ...(labelEnd ? { labelEnd } : {}) }); };
 
   for (const b of blocks) {
     switch (b.kind) {
@@ -122,8 +126,10 @@ export function linearize(blocks: Block[]): Linearized {
       }
       case "paragraph": push(assertNormalised(b.text, "paragraph")); break;
       case "listItem": {
-        const body = [assertNormalised(b.label, "list label"), assertNormalised(b.text, "list item")].filter(Boolean).join(" ");
-        if (body !== "") push(lines.length === 0 ? body : `${"  ".repeat(Math.max(0, b.depth))}${body}`, false, Math.max(0, b.depth)); // a leading indent on the first line would not survive trimming; the depth is kept as metadata either way
+        const label = assertNormalised(b.label, "list label");
+        const body = [label, assertNormalised(b.text, "list item")].filter(Boolean).join(" ");
+        const indent = lines.length === 0 ? "" : "  ".repeat(Math.max(0, b.depth));
+        if (body !== "") push(`${indent}${body}`, false, Math.max(0, b.depth), label === "" ? undefined : indent.length + label.length); // a leading indent on the first line would not survive trimming; the depth is kept as metadata either way
         break;
       }
       case "note": push(`[Note ${b.n}] ${assertNormalised(b.text, "note")}`.trimEnd()); break;
@@ -141,7 +147,7 @@ export function linearize(blocks: Block[]): Linearized {
     if (text !== "") text += "\n";
     const charStart = text.length;
     text += line.text;
-    segments.push({ charStart, charEnd: text.length, atomic: line.atomic, headingPath: line.headingPath, listDepth: line.listDepth });
+    segments.push({ charStart, charEnd: text.length, atomic: line.atomic, headingPath: line.headingPath, listDepth: line.listDepth, ...(line.labelEnd ? { labelEnd: line.labelEnd } : {}) });
   }
   return { text, segments };
 }
