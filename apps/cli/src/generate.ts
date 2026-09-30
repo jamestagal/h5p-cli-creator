@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { createRegistry, engineIdentity } from "@leaplearn/engine";
-import { ANTHROPIC_TIMEOUT_MS, createAnthropicProvider, IncompatibleResumeError, isStoreVersionError, ReplayProvider, RecordingProvider, runImport, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ImportRecord, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
+import { ANTHROPIC_TIMEOUT_MS, createAnthropicProvider, IncompatibleResumeError, isStoreVersionError, OriginalSourceError, ReplayProvider, RecordingProvider, runImport, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ImportRecord, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
 import { FileStore } from "./file-store.js";
 import { formatCostReport, writeReportsLocked } from "./report.js";
 import { loadSource, UnsupportedSourceError, warningSummary } from "./source.js";
@@ -53,11 +53,11 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
   let record: ImportRecord;
   try {
     record = await runImport(
-      { importId, name: args.name ?? basename(sourcePath), source, unitText, selectedTypes: types, budget, promptConfig, language: args.language, customisation: args.customisation ?? null },
+      { importId, name: args.name ?? basename(sourcePath), source, unitText, selectedTypes: types, budget, promptConfig, language: args.language, customisation: args.customisation ?? null, ...(source.kind === "docx" || source.kind === "odt" ? { original: { ext: `.${source.kind}` as const, bytes: loaded.bytes } } : {}) },
       { store, provider: providerFor(args), registry, engineIdentity: identity, concurrency: args.concurrency, maxAttemptMs: ANTHROPIC_TIMEOUT_MS, onProgress: (e) => io.err(`${e.kind === "status" ? `status: ${e.status}` : e.kind === "activity" ? `${e.activityId}: ${e.status}${e.error ? ` (${e.error})` : ""}` : `${e.purpose}: ${e.status}${e.costUsdMicro === null ? "" : ` ($${(e.costUsdMicro / 1_000_000).toFixed(4)})`}`}\n`) }
     );
   } catch (err) {
-    if (err instanceof IncompatibleResumeError || err instanceof StoreLockedError || isStoreVersionError(err)) { io.err(`leap: ${err.message}\n`); return 1; }
+    if (err instanceof IncompatibleResumeError || err instanceof StoreLockedError || err instanceof OriginalSourceError || isStoreVersionError(err)) { io.err(`leap: ${err.message}\n`); return 1; }
 
     throw err;
   }

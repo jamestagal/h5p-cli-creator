@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { EXTRACTION_VERSION, htmlToBlocks, ingestDocx, normaliseSourceText } from "../src/ingest/index.js";
 import { linearize } from "../src/ingest/structure/linearize.js";
 import { normaliseBlocks } from "../src/ingest/structure/blocks.js";
-import { ABSTRACT_NUMS, BODY, NUMS, STYLES, heading, item, p, para, run, structureParts, zipDocx } from "./fixtures/structure/docx-builder.mjs";
+import { ABSTRACT_NUMS, BODY, NUMS, STYLES, heading, item, p, para, run, structureParts, tbl, tc, tr, zipDocx } from "./fixtures/structure/docx-builder.mjs";
 
 const dir = resolve(import.meta.dirname, "fixtures/structure");
 const opts = { sourceId: "src-docx", fileName: "structure.docx" };
@@ -14,6 +14,8 @@ const FILLER = para("This paragraph pads the synthetic document so that it passe
 /** A variant of the fixture: `body` replaces the document body (filler added for admission); the other parts default to the fixture's. */
 const variant = async (body: string[], parts: Parameters<typeof structureParts>[0] = {}) => ingestDocx(await zipDocx(structureParts({ ...parts, body: [...body, FILLER] })), opts);
 const linesOf = (text: string) => text.split("\n");
+/** The id of the sentence with exactly this text (the locator's expected firstSentenceId). */
+const idOf = (doc: { sentences: Array<{ sentenceId: string; text: string }> }, text: string) => doc.sentences.find((s) => s.text === text)!.sentenceId;
 
 describe("ingestDocx on the synthetic structure fixture", () => {
   it("matches the golden linearized text exactly", async () => {
@@ -53,7 +55,7 @@ describe("ingestDocx on the synthetic structure fixture", () => {
 
   it("warns about simplified numbering and label-like references, and reports no unsupported numbering", async () => {
     const { result } = await load();
-    expect(result.warnings.listNumberingSimplified).toEqual([{ listIndex: 2, headingPath: ["Audit fundamentals", "Planning the audit"], originalFormats: ["lowerLetter"] }]);
+    expect(result.warnings.listNumberingSimplified).toEqual([{ listIndex: 2, headingPath: ["Audit fundamentals", "Planning the audit"], originalFormats: ["lowerLetter"], itemCount: 2, firstItemText: "Inspect the records", firstSentenceId: idOf(result.document, "1. Inspect the records") }]);
     expect(result.warnings.numberingUnsupported).toEqual([]);
     const ref = result.document.sentences.find((x) => x.text.startsWith("The reperformance described in item b) above"))!;
     expect(result.warnings.labelLikeReferences).toEqual([{ sentenceId: ref.sentenceId, headingPath: ["Audit fundamentals", "Planning the audit"], text: ref.text }]);
@@ -121,7 +123,7 @@ describe("effective numbering (level overrides, paragraph styles, numbering styl
   it("a lowerLetter format supplied by w:lvlOverride is reported as simplified", async () => {
     const r = await variant([heading(1, "Overrides"), item(6, 0, "Inspect"), item(6, 0, "Reperform")], { nums: [...NUMS, letterOverride] });
     expect(linesOf(r.document.text).slice(1, 3)).toEqual(["1. Inspect", "2. Reperform"]);
-    expect(r.warnings.listNumberingSimplified).toEqual([{ listIndex: 1, headingPath: ["Overrides"], originalFormats: ["lowerLetter"] }]);
+    expect(r.warnings.listNumberingSimplified).toEqual([{ listIndex: 1, headingPath: ["Overrides"], originalFormats: ["lowerLetter"], itemCount: 2, firstItemText: "Inspect", firstSentenceId: idOf(r.document, "1. Inspect") }]);
   });
 
   it("a level override is what mammoth renders: a bullet override on a decimal list gives bullets", async () => {
@@ -135,7 +137,7 @@ describe("effective numbering (level overrides, paragraph styles, numbering styl
     const r = await variant([heading(1, "Styled"), styled("LetterList", "Inspect the records"), styled("LetterListChild", "Reperform the key controls"), para("After the list.")], { styles });
     expect(linesOf(r.document.text).slice(0, 4)).toEqual(["Styled", "1. Inspect the records", "2. Reperform the key controls", "After the list."]);
     expect(r.document.sentences.find((s) => s.text === "2. Reperform the key controls")).toMatchObject({ listDepth: 0 });
-    expect(r.warnings.listNumberingSimplified).toEqual([{ listIndex: 1, headingPath: ["Styled"], originalFormats: ["lowerLetter"] }]);
+    expect(r.warnings.listNumberingSimplified).toEqual([{ listIndex: 1, headingPath: ["Styled"], originalFormats: ["lowerLetter"], itemCount: 2, firstItemText: "Inspect the records", firstSentenceId: idOf(r.document, "1. Inspect the records") }]);
     expect(r.warnings.numberingUnsupported).toEqual([]);
   });
 
@@ -153,7 +155,16 @@ describe("effective numbering (level overrides, paragraph styles, numbering styl
     expect(r.document.sentences.find((s) => s.text === "1. Check the permit")).toMatchObject({ listDepth: 1, headingPath: ["Mixed"] });
     expect(r.document.sentences.find((s) => s.text === "2. Brief the team")).toMatchObject({ listDepth: 1 });
     expect(r.warnings.numberingUnsupported).toEqual([]);
-    expect(r.warnings.listNumberingSimplified).toEqual([{ listIndex: 1, headingPath: ["Mixed"], originalFormats: ["lowerLetter"] }]);
+    expect(r.warnings.listNumberingSimplified).toEqual([{ listIndex: 1, headingPath: ["Mixed"], originalFormats: ["lowerLetter"], itemCount: 4, firstItemText: "Prepare", firstSentenceId: idOf(r.document, "1. Prepare") }]);
+  });
+
+  it("locates a simplified list inside a table cell by its atomic row, and a list whose first item is under other headings by its own path", async () => {
+    const r = await variant([heading(1, "Cells"), tbl([tr([tc(para("Steps")), tc(`${item(2, 0, "Inspect the file")}${item(2, 0, "Sign it")}`)])], 2), heading(1, "Body"), item(6, 0, "Inspect the file")], { nums: [...NUMS, `<w:num w:numId="6"><w:abstractNumId w:val="1"/></w:num>`] });
+    const row = r.document.sentences.find((s) => s.text.startsWith("[Table 1, row 1]"))!;
+    expect(r.warnings.listNumberingSimplified).toEqual([
+      { listIndex: 1, headingPath: ["Cells"], originalFormats: ["lowerLetter"], itemCount: 2, firstItemText: "Inspect the file", firstSentenceId: row.sentenceId },
+      { listIndex: 2, headingPath: ["Body"], originalFormats: ["lowerLetter"], itemCount: 1, firstItemText: "Inspect the file", firstSentenceId: idOf(r.document, "1. Inspect the file") }
+    ]);
   });
 
   it("numbering through a numbering style (w:numStyleLink) is followed", async () => {
@@ -162,7 +173,7 @@ describe("effective numbering (level overrides, paragraph styles, numbering styl
     const styles = [...STYLES, `<w:style w:type="numbering" w:styleId="RomanList"><w:name w:val="Roman list"/><w:pPr><w:numPr><w:numId w:val="9"/></w:numPr></w:pPr></w:style>`];
     const r = await variant([item(8, 0, "First"), item(8, 0, "Second")], { abstractNums, nums, styles });
     expect(linesOf(r.document.text).slice(0, 2)).toEqual(["1. First", "2. Second"]);
-    expect(r.warnings.listNumberingSimplified).toEqual([{ listIndex: 1, headingPath: [], originalFormats: ["lowerRoman"] }]);
+    expect(r.warnings.listNumberingSimplified).toEqual([{ listIndex: 1, headingPath: [], originalFormats: ["lowerRoman"], itemCount: 2, firstItemText: "First", firstSentenceId: idOf(r.document, "1. First") }]);
   });
 
   it("reports numbering it cannot render instead of passing it off as ordinary paragraphs: numbered headings and missing definitions", async () => {

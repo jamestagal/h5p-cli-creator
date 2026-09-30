@@ -120,6 +120,16 @@ export class BuildArtifactError extends Error {
   }
 }
 
+/** The extension a structured source's original bytes are stored under. */
+export type OriginalSourceExt = ".docx" | ".odt";
+/**
+ * A structured source's original bytes cannot be kept unchanged: the import already holds a different original, the
+ * stored original no longer matches its recorded hash, or the supplied bytes do not match the document ingested from them.
+ */
+export class OriginalSourceError extends Error {
+  constructor(message: string) { super(message); this.name = "OriginalSourceError"; }
+}
+
 export interface StoreLock { release(): Promise<void>; }
 export class StoreLockedError extends Error {
   constructor(importId: string, holder: string) { super(`import ${importId} is locked by ${holder}; another leap process is using this output directory`); this.name = "StoreLockedError"; }
@@ -148,6 +158,9 @@ export interface ImportStore {
   getBuildRecord(buildId: string): Promise<BuildRecord | null>;
   /** Every build record of an activity, by revision then builtAt. */
   listBuilds(activityId: string): Promise<BuildRecord[]>;
+  /** Stores a structured source's original bytes once (design §4.2). The same bytes again are a no-op; different bytes, or an original under the other extension, throw OriginalSourceError. Never overwrites. */
+  putOriginalSource(importId: string, ext: OriginalSourceExt, bytes: Buffer): Promise<void>;
+  getOriginalSource(importId: string): Promise<{ ext: OriginalSourceExt; bytes: Buffer } | null>;
   listAcceptances(importId: string): Promise<AcceptanceRecord[]>;
   putAcceptance(record: AcceptanceRecord): Promise<void>;
   listAlignmentReviews(importId: string): Promise<AlignmentReviewRecord[]>;

@@ -2,11 +2,11 @@ import { describe, it, expect } from "vitest";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, readdir, readFile, readlink, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { EXTRACTION_VERSION } from "@leaplearn/generator";
-import { outDirRefusal } from "../src/extract.js";
+import { outDirRefusal, publishReports, REPORT_NAMES } from "../src/extract.js";
 
 const root = resolve(import.meta.dirname, "../../..");
 const cliDist = resolve(root, "apps/cli/dist/index.js");
@@ -47,7 +47,7 @@ describe("leap extract on the DOCX fixture", () => {
     expect(tables).toContain("## Note 3, table 1");
 
     const warnings = await readFile(join(out, "warnings.md"), "utf8");
-    expect(warnings).toContain("- List 2 under Audit fundamentals › Planning the audit: the document uses lowerLetter;");
+    expect(warnings).toMatch(/- List 2 under Audit fundamentals › Planning the audit: the document uses lowerLetter; the text shows decimal or bullet labels instead\. 2 items; first item "Inspect the records", sentence s\d+\./);
     expect(warnings).toMatch(/- s\d+ under Audit fundamentals › Planning the audit: "The reperformance described in item b\) above is required for every branch\."/);
 
     const json = JSON.parse(await readFile(join(out, "extract.json"), "utf8")) as Record<string, unknown>;
@@ -168,4 +168,119 @@ describe("leap generate accepts DOCX and ODT sources", () => {
       expect(JSON.parse(await readFile(join(out, "artifacts", "source.json"), "utf8"))).toMatchObject({ kind: format, metadata: { extractor: format, extractionVersion: EXTRACTION_VERSION } });
     });
   }
+});
+
+describe("leap extract never writes through a link or over an existing file", () => {
+  const reportsIn = async (dir: string) => (await readdir(dir)).filter((n) => (REPORT_NAMES as readonly string[]).includes(n) || n.startsWith(".extract-staging-")).sort();
+
+  it("refuses an extracted.txt that is a symbolic link to another file: the target is unchanged and no report is written", async () => {
+    const dir = await temp("leap-extract-");
+    const tracked = join(dir, "tracked.txt");
+    await writeFile(tracked, "tracked content\n");
+    const out = join(dir, "out");
+    await mkdir(out);
+    await symlink(tracked, join(out, "extracted.txt"));
+    const run = await leap(["extract", "--source", docx, "--out", out]);
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain("extracted.txt is a symbolic link; refusing to write a report through it. Nothing was written");
+    expect(await readFile(tracked, "utf8")).toBe("tracked content\n");
+    expect((await lstat(join(out, "extracted.txt"))).isSymbolicLink()).toBe(true);
+    expect(await readlink(join(out, "extracted.txt"))).toBe(tracked);
+    expect(await reportsIn(out)).toEqual(["extracted.txt"]);
+  });
+
+  it("refuses a dangling symbolic link under a report name, creating nothing at its target", async () => {
+    const dir = await temp("leap-extract-");
+    const out = join(dir, "out");
+    await mkdir(out);
+    await symlink(join(dir, "nowhere.md"), join(out, "warnings.md"));
+    expect((await leap(["extract", "--source", docx, "--out", out])).code).toBe(1);
+    expect(existsSync(join(dir, "nowhere.md"))).toBe(false);
+    expect(await reportsIn(out)).toEqual(["warnings.md"]);
+  });
+
+  it("refuses a source named extracted.txt inside --out: the source is unchanged and no report is written", async () => {
+    const dir = await temp("leap-extract-");
+    const out = join(dir, "out");
+    await mkdir(out);
+    const source = join(out, "extracted.txt");
+    const original = `  Padded source text.\r\n${"Lock it out before work starts. ".repeat(20)}\r\n`;
+    await writeFile(source, original);
+    const run = await leap(["extract", "--source", source, "--out", out]);
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain("extracted.txt is the source file itself; refusing to overwrite it. Nothing was written");
+    expect(await readFile(source, "utf8")).toBe(original);
+    expect(await reportsIn(out)).toEqual(["extracted.txt"]);
+  });
+
+  it("refuses to overwrite reports from an earlier run: they stay byte-identical", async () => {
+    const out = join(await temp("leap-extract-"), "out");
+    expect((await leap(["extract", "--source", docx, "--out", out])).code).toBe(0);
+    const before = await Promise.all(REPORT_NAMES.map((n) => readFile(join(out, n), "utf8")));
+    const run = await leap(["extract", "--source", odt, "--out", out]);
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain("already exists; leap extract never overwrites a report. Use a new --out directory");
+    expect(await Promise.all(REPORT_NAMES.map((n) => readFile(join(out, n), "utf8")))).toEqual(before);
+    expect(await reportsIn(out)).toEqual([...REPORT_NAMES].sort());
+  });
+
+  it("publishes all or nothing: a failure while linking the third report removes the two already published and the staging directory", async () => {
+    const out = await temp("leap-publish-");
+    let calls = 0;
+    const failing = { link: async (from: string, to: string) => { if (++calls === 3) throw Object.assign(new Error("EIO: injected"), { code: "EIO" }); const { link } = await import("node:fs/promises"); await link(from, to); } };
+    const files = Object.fromEntries(REPORT_NAMES.map((n) => [n, `${n} body`])) as Record<(typeof REPORT_NAMES)[number], string>;
+    await expect(publishReports(out, files, failing)).rejects.toThrow(/injected/);
+    expect(await readdir(out)).toEqual([]);
+  });
+
+  it("publishes all or nothing: a report name that appears after the check is not replaced, and nothing is kept", async () => {
+    const out = await temp("leap-publish-");
+    const files = Object.fromEntries(REPORT_NAMES.map((n) => [n, `${n} body`])) as Record<(typeof REPORT_NAMES)[number], string>;
+    let calls = 0;
+    const racing = { link: async (from: string, to: string) => { if (++calls === 2) await writeFile(join(out, "tables.md"), "someone else's file"); const { link } = await import("node:fs/promises"); await link(from, to); } };
+    await expect(publishReports(out, files, racing)).rejects.toThrow(/tables\.md appeared while the reports were being written; nothing was kept/);
+    expect(await readdir(out)).toEqual(["tables.md"]);
+    expect(await readFile(join(out, "tables.md"), "utf8")).toBe("someone else's file");
+  });
+});
+
+describe("leap generate keeps the original DOCX or ODT unchanged in the import", () => {
+  it("stores the original before dispatch; it survives changes to the supplied file, and a changed file with the same text is refused on resume", async () => {
+    const dir = await temp("leap-generate-");
+    const supplied = join(dir, "packet.docx");
+    await copyFile(docx, supplied);
+    const bytes = await readFile(supplied);
+    const out = join(dir, "import");
+    await mkdir(join(dir, "fixtures"));
+    const args = ["generate", "--source", supplied, "--out", out, "--types", "multiChoice", "--provider", "replay", "--fixtures", join(dir, "fixtures"), "--libraries", librariesDir];
+    expect((await leap(args)).code).toBe(1); // stops at the replay provider's first call
+    const snapshot = join(out, "source", "original.docx");
+    expect((await readFile(snapshot)).equals(bytes)).toBe(true);
+
+    // Same text, different bytes: the fixture's parts with one extra, unreferenced part.
+    const { structureParts, zipDocx } = await import("../../../packages/generator/test/fixtures/structure/docx-builder.mjs");
+    await writeFile(supplied, await zipDocx({ ...structureParts(), "docProps/custom.xml": "<Properties/>" }));
+    const resumed = await leap(args);
+    expect(resumed.code).toBe(1);
+    expect(resumed.stderr).toContain("the supplied file has sha256");
+    expect(resumed.stderr).toContain("never replaced; use a new output directory");
+    expect((await readFile(snapshot)).equals(bytes)).toBe(true);
+
+    await writeFile(supplied, "not the packet any more");
+    expect((await readFile(snapshot)).equals(bytes)).toBe(true);
+    const json = JSON.parse(await readFile(join(out, "artifacts", "source.json"), "utf8")) as { metadata: { originalSha256: string } };
+    expect(json.metadata.originalSha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+  });
+
+  it("refuses to resume when the stored original was altered, naming it", async () => {
+    const dir = await temp("leap-generate-");
+    const out = join(dir, "import");
+    await mkdir(join(dir, "fixtures"));
+    const args = ["generate", "--source", odt, "--out", out, "--types", "multiChoice", "--provider", "replay", "--fixtures", join(dir, "fixtures"), "--libraries", librariesDir];
+    expect((await leap(args)).code).toBe(1);
+    await writeFile(join(out, "source", "original.odt"), "altered");
+    const resumed = await leap(args);
+    expect(resumed.code).toBe(1);
+    expect(resumed.stderr).toContain("stored original has been altered");
+  });
 });

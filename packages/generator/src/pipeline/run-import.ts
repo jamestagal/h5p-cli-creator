@@ -11,7 +11,9 @@ import { BudgetRefused, ContentFailure, RunStopped } from "../llm/runner.js";
 import { planActivities, DEFAULT_PLAN_RULES, type ActivityPlan, type PlannedType, type PlanRules } from "../plan/planner.js";
 import { createProducers } from "../produce/index.js";
 import { PROMPT_VERSION, type PromptConfig } from "../prompts/system.js";
-import { assertWritableStoreVersion, STORE_VERSION, type ActivityRecord, type ImportRecord, type ImportStore, type RevisionRecord } from "../store/types.js";
+import { assertWritableStoreVersion, OriginalSourceError, STORE_VERSION, type ActivityRecord, type ImportRecord, type ImportStore, type OriginalSourceExt, type RevisionRecord } from "../store/types.js";
+import { sha256Hex } from "../store/builds.js";
+import { assertSameOriginal } from "../store/originals.js";
 import { assertCurrentLayout } from "../store/layout.js";
 import { DEFAULT_CHUNK_TOKENS, IncompatibleResumeError, runFingerprint } from "./fingerprint.js";
 import { buildRevision } from "./build.js";
@@ -20,6 +22,8 @@ import { attemptsByKey, budgetFromLedger, reconcile, reconcileElapsed, runLanes,
 export interface RunImportInput {
   importId: string; name: string; source: SourceDocument; unitText: string | null; selectedTypes: readonly PlannedType[];
   budget: { usdMicro: number } & Partial<BudgetLimits>; promptConfig: PromptConfig; language: string; customisation: string | null; orgId?: string;
+  /** A DOCX or ODT source's original bytes: required for those kinds, stored once and verified before any dispatch (design §4.2). */
+  original?: { ext: OriginalSourceExt; bytes: Buffer };
 }
 export type ProgressEvent = { kind: "status"; status: ImportStatus } | { kind: "activity"; activityId: string; status: ActivityRecord["status"]; error?: string } | { kind: "attempt"; purpose: string; status: string; costUsdMicro: number | null };
 export interface RunImportDeps {
@@ -70,11 +74,34 @@ export async function runImport(rawInput: RunImportInput, deps: RunImportDeps): 
     if (existing) assertWritableStoreVersion(existing, `import ${input.importId}`); // before any write, and before the fingerprint: a phase-2 import is refused as such
     if (existing) await assertCurrentLayout(deps.store, input.importId, `import ${input.importId}`); // a version-2 import from before build records is refused too, before any write
     if (existing && existing.fingerprint !== fingerprint) throw new IncompatibleResumeError(input.importId, existing.fingerprint, fingerprint);
+    await secureOriginal(deps.store, input); // before the import record and any dispatch; a conflicting original is refused with no write
 
     return await runLocked(input, deps, existing, fingerprint, chunkTokens, rules);
   } finally {
     await lock.release();
   }
+}
+
+/**
+ * Keeps a structured source's original bytes unchanged in the import: they must hash to the document's originalSha256,
+ * and on resume to the hash recorded with the stored source and to the stored original itself. The first run stores
+ * them (immutably) and reads them back to verify. Anything else throws OriginalSourceError before any write.
+ */
+async function secureOriginal(store: ImportStore, input: RunImportInput): Promise<void> {
+  const kind = input.source.kind;
+  if (kind !== "docx" && kind !== "odt") return;
+  const expected = input.source.metadata.originalSha256;
+  if (!input.original || expected === undefined) throw new OriginalSourceError(`a ${kind} source is run with its original bytes and their hash; import ${input.importId} was given ${input.original ? "no originalSha256" : "no original bytes"}`);
+  const supplied = sha256Hex(input.original.bytes);
+  if (supplied !== expected) throw new OriginalSourceError(`the supplied original (sha256 ${supplied}) is not the file the ${kind} document was read from (sha256 ${expected})`);
+  const recorded = (await store.getArtifact<SourceDocument>(input.importId, "source"))?.metadata.originalSha256;
+  const stored = await store.getOriginalSource(input.importId);
+  if (stored && recorded !== undefined && sha256Hex(stored.bytes) !== recorded) throw new OriginalSourceError(`import ${input.importId}'s stored original (sha256 ${sha256Hex(stored.bytes)}) no longer matches the hash recorded with its source (${recorded}); the stored original has been altered`);
+  if (recorded !== undefined && supplied !== recorded) throw new OriginalSourceError(`import ${input.importId} was created from an original with sha256 ${recorded}; the supplied file has sha256 ${supplied}. The original is stored once and never replaced; use a new output directory for a changed source`);
+  if (stored) { assertSameOriginal(input.importId, stored, input.original.ext, input.original.bytes); return; }
+  await store.putOriginalSource(input.importId, input.original.ext, input.original.bytes);
+  const readBack = await store.getOriginalSource(input.importId);
+  if (!readBack || sha256Hex(readBack.bytes) !== supplied) throw new OriginalSourceError(`import ${input.importId}'s original did not read back with sha256 ${supplied}`);
 }
 
 async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: ImportRecord | null, fingerprint: string, chunkTokens: number, rules: PlanRules): Promise<ImportRecord> {

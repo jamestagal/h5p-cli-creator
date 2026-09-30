@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createRegistry, type EngineIdentity, type LibraryRegistry } from "@leaplearn/engine";
 import { MemoryStore } from "../src/store/memory-store.js";
 import { EXTRACTION_VERSION, ingestDocx, ingestOdt, ingestPdf, type SourceDocument } from "../src/ingest/index.js";
-import { BuildArtifactError, BuildIntegrityError, LegacyStoreError, MalformedStoreVersionError, STORE_VERSION, StoreLockedError, UnsupportedStoreVersionError, type ImportRecord, type ImportStore } from "../src/store/types.js";
+import { BuildArtifactError, BuildIntegrityError, LegacyStoreError, OriginalSourceError, MalformedStoreVersionError, STORE_VERSION, StoreLockedError, UnsupportedStoreVersionError, type ImportRecord, type ImportStore } from "../src/store/types.js";
 import { buildIdFor, buildKeyFor } from "../src/store/builds.js";
 import { buildRevision } from "../src/pipeline/build.js";
 import { DEFAULT_MAX_ATTEMPT_MS, runImport, SKIPPED_PREFIX, type RunImportDeps, type RunImportInput } from "../src/pipeline/run-import.js";
@@ -716,7 +716,8 @@ describe("DOCX and ODT sources through the pipeline (offline, fake provider)", (
   for (const format of ["docx", "odt"] as const) {
     it(`${format}: runs every stage on the fake provider, with heading context, list levels and table rows in the requests, and compiles every activity`, async () => {
       const opts = { sourceId: `src-electrical.${format}`, fileName: `electrical.${format}` };
-      const doc = format === "docx" ? (await ingestDocx(await electricalDocx(), opts)).document : (await ingestOdt(await electricalOdt(), opts)).document;
+      const bytes = format === "docx" ? await electricalDocx() : await electricalOdt();
+      const doc = format === "docx" ? (await ingestDocx(bytes, opts)).document : (await ingestOdt(bytes, opts)).document;
       expect(doc.kind).toBe(format);
       expect(doc.metadata).toMatchObject({ extractor: format, extractionVersion: EXTRACTION_VERSION });
       const evidence = passageEvidence(doc);
@@ -724,7 +725,7 @@ describe("DOCX and ODT sources through the pipeline (offline, fake provider)", (
       for (const [key, ids] of Object.entries(evidence) as Array<[keyof FixtureEvidence, string[]]>) expect(ids.map(textOf).join(" "), key).toBe(EVIDENCE_PASSAGES[key]);
       const store = new MemoryStore();
       const provider = new FakeProvider(await fullScript(doc, evidence));
-      const record = await runImport(await input(`imp-${format}`, { source: doc }), deps(store, provider));
+      const record = await runImport(await input(`imp-${format}`, { source: doc, original: { ext: `.${format}`, bytes } }), deps(store, provider));
       expect(record.status).toBe("ready");
       expect(await store.getImport(`imp-${format}`)).toMatchObject({ sourceType: format });
       const extracts = provider.requests.filter((q) => q.purpose === "extract").map((q) => q.user);
@@ -734,17 +735,76 @@ describe("DOCX and ODT sources through the pipeline (offline, fake provider)", (
       const activities = await store.listActivities(`imp-${format}`);
       expect(activities.map((a) => a.status)).toEqual(["promoted", "promoted", "promoted"]);
       expect(await store.getArtifact(`imp-${format}`, "source")).toMatchObject({ kind: format, textHash: doc.textHash });
+      expect(await store.getOriginalSource(`imp-${format}`)).toEqual({ ext: `.${format}`, bytes });
     });
   }
 
   it("an import created from DOCX output under the previous extraction version refuses to resume, before any write or model call", async () => {
-    const doc = (await ingestDocx(await electricalDocx(), { sourceId: "src-electrical.docx" })).document;
+    const bytes = await electricalDocx();
+    const doc = (await ingestDocx(bytes, { sourceId: "src-electrical.docx" })).document;
     const store = new MemoryStore();
-    await runImport(await input("imp-old-docx", { source: { ...doc, metadata: { ...doc.metadata, extractionVersion: "2026-09-30.1" } }, unitText: null }), deps(store, new FakeProvider([]))).catch(() => undefined);
+    await runImport(await input("imp-old-docx", { source: { ...doc, metadata: { ...doc.metadata, extractionVersion: "2026-09-30.1" } }, unitText: null, original: { ext: ".docx", bytes } }), deps(store, new FakeProvider([]))).catch(() => undefined);
     const before = JSON.stringify([await store.getImport("imp-old-docx"), await store.listOperations("imp-old-docx"), await store.listAttempts("imp-old-docx")]);
     const provider = new FakeProvider([]);
-    await expect(runImport(await input("imp-old-docx", { source: doc, unitText: null }), deps(store, provider))).rejects.toBeInstanceOf(IncompatibleResumeError);
+    await expect(runImport(await input("imp-old-docx", { source: doc, unitText: null, original: { ext: ".docx", bytes } }), deps(store, provider))).rejects.toBeInstanceOf(IncompatibleResumeError);
     expect(provider.requests).toHaveLength(0);
     expect(JSON.stringify([await store.getImport("imp-old-docx"), await store.listOperations("imp-old-docx"), await store.listAttempts("imp-old-docx")])).toBe(before);
+  });
+
+  describe("the original DOCX or ODT bytes are kept unchanged in the import (design §4.2)", () => {
+    const opts = { sourceId: "src-electrical.docx" };
+    const snapshotState = async (store: MemoryStore, id: string) => JSON.stringify([await store.getImport(id), await store.listOperations(id), await store.listAttempts(id), (await store.getOriginalSource(id))?.bytes.toString("base64")]);
+
+    it("stores the original before any dispatch, so a run stopped at its first call already holds it", async () => {
+      const bytes = await electricalDocx();
+      const doc = (await ingestDocx(bytes, opts)).document;
+      const store = new MemoryStore();
+      const provider = new FakeProvider([]);
+      await expect(runImport(await input("imp-snap", { source: doc, original: { ext: ".docx", bytes } }), deps(store, provider))).rejects.toThrow();
+      expect(provider.requests).toHaveLength(1);
+      expect(await store.getOriginalSource("imp-snap")).toEqual({ ext: ".docx", bytes });
+    });
+
+    it("refuses a structured source run without its original, or with bytes that are not the file it was read from, before any write", async () => {
+      const bytes = await electricalDocx();
+      const doc = (await ingestDocx(bytes, opts)).document;
+      const store = new MemoryStore();
+      await expect(runImport(await input("imp-none", { source: doc }), deps(store, new FakeProvider([])))).rejects.toThrow(/run with its original bytes/);
+      await expect(runImport(await input("imp-wrong", { source: doc, original: { ext: ".docx", bytes: Buffer.concat([bytes, Buffer.from(" ")]) } }), deps(store, new FakeProvider([])))).rejects.toThrow(/is not the file the docx document was read from/);
+      expect(await store.getImport("imp-none")).toBeNull();
+      expect(await store.getImport("imp-wrong")).toBeNull();
+      expect(await store.getOriginalSource("imp-wrong")).toBeNull();
+    });
+
+    it("refuses to resume with a changed original whose text is unchanged (same fingerprint), with no write and no model call", async () => {
+      const bytes = await electricalDocx();
+      const doc = (await ingestDocx(bytes, opts)).document;
+      const store = new MemoryStore();
+      await runImport(await input("imp-changed", { source: doc, unitText: null, original: { ext: ".docx", bytes } }), deps(store, new FakeProvider([]))).catch(() => undefined);
+      const before = await snapshotState(store, "imp-changed");
+      // The same document with one extra, unreferenced part: identical text and fingerprint, different bytes.
+      const changed = Buffer.from(await electricalDocx({ "docProps/custom.xml": "<Properties/>" }));
+      const changedDoc = (await ingestDocx(changed, opts)).document;
+      expect(changedDoc.textHash).toBe(doc.textHash);
+      expect(changed.equals(bytes)).toBe(false);
+      const provider = new FakeProvider([]);
+      const refused = await runImport(await input("imp-changed", { source: changedDoc, unitText: null, original: { ext: ".docx", bytes: changed } }), deps(store, provider)).catch((e: unknown) => e);
+      expect(refused).toBeInstanceOf(OriginalSourceError);
+      expect((refused as Error).message).toMatch(/never replaced; use a new output directory/);
+      expect(provider.requests).toHaveLength(0);
+      expect(await snapshotState(store, "imp-changed")).toBe(before);
+      expect((await store.getOriginalSource("imp-changed"))!.bytes.equals(bytes)).toBe(true);
+    });
+
+    it("resumes with the same original, writing nothing new for it", async () => {
+      const bytes = await electricalDocx();
+      const doc = (await ingestDocx(bytes, opts)).document;
+      const store = new MemoryStore();
+      await runImport(await input("imp-same", { source: doc, unitText: null, original: { ext: ".docx", bytes } }), deps(store, new FakeProvider([]))).catch(() => undefined);
+      const provider = new FakeProvider([]);
+      await runImport(await input("imp-same", { source: doc, unitText: null, original: { ext: ".docx", bytes: Buffer.from(bytes) } }), deps(store, provider)).catch(() => undefined);
+      expect(provider.requests.length).toBeGreaterThan(0); // got past the original check to dispatch
+      expect((await store.getOriginalSource("imp-same"))!.bytes.equals(bytes)).toBe(true);
+    });
   });
 });

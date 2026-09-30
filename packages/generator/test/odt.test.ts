@@ -103,7 +103,7 @@ describe("list labels from the list style", () => {
     const styles = [...AUTOMATIC_STYLES, numberStyle("Greek", level(1, "α, β, γ, ...", ' style:num-suffix="."'))];
     const r = await variant([h(1, "Formats"), list("Greek", ["Alpha", "Beta"]), list("NoSuchStyle", ["Orphan"])], { automaticStyles: styles });
     expect(linesOf(r.document.text).slice(1, 4)).toEqual(["1. Alpha", "2. Beta", "• Orphan"]);
-    expect(r.warnings.listNumberingSimplified).toEqual([{ listIndex: 1, headingPath: ["Formats"], originalFormats: ["α, β, γ, ..."] }]);
+    expect(r.warnings.listNumberingSimplified).toEqual([{ listIndex: 1, headingPath: ["Formats"], originalFormats: ["α, β, γ, ..."], itemCount: 2, firstItemText: "Alpha", firstSentenceId: r.document.sentences.find((s) => s.text === "1. Alpha")!.sentenceId }]);
     expect(r.warnings.numberingUnsupported).toEqual([{ reason: "missing-definition", headingPath: ["Formats"], text: "Orphan", numId: "NoSuchStyle", ilvl: "0" }]);
   });
 

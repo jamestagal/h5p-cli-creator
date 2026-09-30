@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { DOMParser, type Document as XmlDocument, type Element as XmlElement, type Node as XmlNode } from "@xmldom/xmldom";
 import JSZip from "jszip";
-import { labelLikeReferences, type IngestWarnings, type StructuredIngestResult } from "./docx.js";
+import { labelLikeReferences, locateSimplifiedLists, type IngestWarnings, type StructuredIngestResult } from "./docx.js";
 import { finaliseDocument, type IngestOptions } from "./source-document.js";
 import { normaliseBlockText, normaliseBlocks, type Block, type Cell } from "./structure/blocks.js";
 import { linearize } from "./structure/linearize.js";
@@ -98,7 +98,7 @@ function formatNumber(n: number, level: LevelStyle): string | null {
 // ---- walking content.xml ---------------------------------------------------------------------------------------------
 
 /** One numbering sequence: a top-level text:list and every list that continues it. */
-interface Chain { index: number; style: string | undefined; counters: number[]; headingPath: string[]; simplified: string[] }
+interface Chain { index: number; style: string | undefined; counters: number[]; headingPath: string[]; simplified: string[]; firstItemText: string | null; itemCount: number }
 
 interface WalkState {
   styles: Styles;
@@ -168,6 +168,8 @@ function listBlocks(list: XmlElement, depth: number, chain: Chain, style: string
     if (first >= 0) {
       const { text, after } = inline(parts[first]!, state);
       const label = header ? "" : labelFor(chain, own, depth + 1, attr(item, TEXT, "start-value"), text, state);
+      chain.firstItemText ??= text;
+      chain.itemCount++;
       out.push({ kind: "listItem", depth, label, text }, ...after);
     }
     parts.forEach((c, i) => {
@@ -223,7 +225,7 @@ function chainFor(list: XmlElement, state: WalkState): { chain: Chain; style: st
   const style = attr(list, TEXT, "style-name") ?? inheritedListStyle(list, state);
   const continues = attr(list, TEXT, "continue-list");
   let chain = continues !== undefined ? state.chainById.get(continues) : attr(list, TEXT, "continue-numbering") === "true" && style !== undefined ? state.lastChainByStyle.get(style) : undefined;
-  if (!chain) { chain = { index: state.chains.length + 1, style, counters: [], headingPath: headingPath(state), simplified: [] }; state.chains.push(chain); }
+  if (!chain) { chain = { index: state.chains.length + 1, style, counters: [], headingPath: headingPath(state), simplified: [], firstItemText: null, itemCount: 0 }; state.chains.push(chain); }
   const id = attr(list, XML, "id");
   if (id !== undefined) state.chainById.set(id, chain);
   if (style !== undefined) state.lastChainByStyle.set(style, chain);
@@ -318,6 +320,6 @@ export async function ingestOdt(bytes: Buffer, opts: IngestOptions): Promise<Str
   };
   const { text, segments, tables } = linearize(normaliseBlocks(walk(elements(officeText), state, false)));
   const document = finaliseDocument("odt", text, segments, opts, { originalSha256: createHash("sha256").update(bytes).digest("hex"), extractor: "odt" });
-  const listNumberingSimplified = state.chains.filter((c) => c.simplified.length > 0).map((c) => ({ listIndex: c.index, headingPath: c.headingPath, originalFormats: c.simplified }));
+  const listNumberingSimplified = locateSimplifiedLists(document, state.chains.filter((c) => c.simplified.length > 0).map((c) => ({ listIndex: c.index, headingPath: c.headingPath, originalFormats: c.simplified, itemCount: c.itemCount, firstItemText: normaliseBlockText(c.firstItemText ?? ""), firstSentenceId: null })));
   return { document, tables, warnings: { listNumberingSimplified, numberingUnsupported: state.warnings.numberingUnsupported, labelLikeReferences: labelLikeReferences(document) } };
 }

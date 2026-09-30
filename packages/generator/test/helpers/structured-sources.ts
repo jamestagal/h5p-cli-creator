@@ -21,10 +21,11 @@ async function sections(): Promise<Array<{ level: 1 | 2; text: string } | { para
   });
 }
 
-export async function electricalDocx(): Promise<Buffer> {
+/** `extraParts` adds files to the package without changing its text (for tests of changed originals). */
+export async function electricalDocx(extraParts: Record<string, string> = {}): Promise<Buffer> {
   const body = (await sections()).map((s) => ("para" in s ? D.para(s.para) : D.heading(s.level, s.text)));
   body.push(...PPE_LIST.map((t) => D.item(3, 0, t)), D.tbl(PPE_TABLE.map((cells, i) => D.tr(cells.map((c) => D.tc(D.para(c))), i === 0)), 2));
-  return D.zipDocx(D.structureParts({ body }));
+  return D.zipDocx({ ...D.structureParts({ body }), ...extraParts });
 }
 
 export async function electricalOdt(): Promise<Buffer> {

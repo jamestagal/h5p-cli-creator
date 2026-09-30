@@ -1,6 +1,7 @@
 import type { AttemptEvent, AttemptRecorder } from "../llm/types.js";
 import { canonicalRecordJson, sha256Hex, sortBuilds } from "./builds.js";
-import { BuildIntegrityError, StoreLockedError, type AcceptanceRecord, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type ImportRecord, type ImportStore, type OperationRecord, type RevisionRecord, type StoreLock } from "./types.js";
+import { assertSameOriginal } from "./originals.js";
+import { BuildIntegrityError, StoreLockedError, type AcceptanceRecord, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "./types.js";
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const reviewKey = (r: AlignmentReviewRecord): string => `${r.activityId}/${r.revision}/${r.itemId ?? ""}/${r.criterionId}`;
@@ -14,6 +15,7 @@ export class MemoryStore implements ImportStore {
   private attempts = new Map<string, AttemptEvent[]>();
   private builds = new Map<string, Buffer>();
   private buildRecords = new Map<string, BuildRecord>();
+  private originals = new Map<string, { ext: OriginalSourceExt; bytes: Buffer }>();
   private acceptances = new Map<string, AcceptanceRecord>();
   private alignmentReviews = new Map<string, AlignmentReviewRecord>();
   private locks = new Set<string>();
@@ -45,6 +47,12 @@ export class MemoryStore implements ImportStore {
     this.builds.set(buildKey, Buffer.from(bytes));
   }
   async getBuild(buildKey: string) { const b = this.builds.get(buildKey); return b ? Buffer.from(b) : null; }
+  async putOriginalSource(importId: string, ext: OriginalSourceExt, bytes: Buffer) {
+    const existing = this.originals.get(importId);
+    if (existing) { assertSameOriginal(importId, existing, ext, bytes); return; }
+    this.originals.set(importId, { ext, bytes: Buffer.from(bytes) });
+  }
+  async getOriginalSource(importId: string) { const o = this.originals.get(importId); return o ? { ext: o.ext, bytes: Buffer.from(o.bytes) } : null; }
   async putBuildRecord(record: BuildRecord) {
     const existing = this.buildRecords.get(record.buildId);
     const text = canonicalRecordJson(record);

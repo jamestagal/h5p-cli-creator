@@ -18,7 +18,8 @@ export interface LoadedSource {
   /** Structured sources (DOCX, ODT) report numbering and label-reference warnings and their tables; other sources have none. */
   warnings: IngestWarnings;
   tables: TableSummary[];
-  /** The sha256 of the file's bytes, for every source type. */
+  /** The file's bytes as read (the original a DOCX or ODT import stores), and their sha256, for every source type. */
+  bytes: Buffer;
   originalSha256: string;
   /** The adapter that read the file: "docx", "odt", "pdf", "markdown" or "text". */
   extractor: string;
@@ -36,10 +37,10 @@ export async function loadSource(path: string): Promise<LoadedSource> {
   const originalSha256 = createHash("sha256").update(bytes).digest("hex");
   if (ext === ".docx" || ext === ".odt") {
     const { document, warnings, tables } = ext === ".docx" ? await ingestDocx(bytes, opts) : await ingestOdt(bytes, opts);
-    return { document, warnings, tables, originalSha256, extractor: ext.slice(1) };
+    return { document, warnings, tables, bytes, originalSha256, extractor: ext.slice(1) };
   }
   const document = ext === ".pdf" ? await ingestPdf(bytes, opts) : ext === ".md" ? await ingestMarkdown(bytes.toString("utf8"), opts) : await ingestText(bytes.toString("utf8"), opts);
-  return { document, warnings: NO_WARNINGS(), tables: [], originalSha256, extractor: document.kind };
+  return { document, warnings: NO_WARNINGS(), tables: [], bytes, originalSha256, extractor: document.kind };
 }
 
 /** One line summarising a structured source's warnings, or null when there are none. */

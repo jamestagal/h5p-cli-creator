@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { link as fsLink, lstat, mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -44,6 +44,58 @@ export function outDirRefusal(out: string, repoRoot: string | null): string | nu
   return `--out ${out} is inside the repository (${root}) but not under docs/uoc/; extracted text is real material and must stay out of git. Use a directory outside the repository or under docs/uoc/`;
 }
 
+/** The four reports, by name. They are published only into names that do not exist yet: nothing is ever overwritten. */
+export const REPORT_NAMES = ["extracted.txt", "tables.md", "extract.json", "warnings.md"] as const;
+export type ReportName = (typeof REPORT_NAMES)[number];
+
+/** A report cannot be published safely; nothing was written. */
+export class ReportPublicationError extends Error {
+  constructor(message: string) { super(message); this.name = "ReportPublicationError"; }
+}
+
+const exists = async (path: string) => { try { return await lstat(path); } catch (err) { if ((err as { code?: string }).code === "ENOENT") return null; throw err; } };
+
+/**
+ * Checks, before anything is written, that every report name in `outDir` is free: an existing file (the source among
+ * them) or a symbolic link, even a dangling one, is refused, so no write can follow a link or replace a file.
+ */
+export async function assertReportNamesFree(outDir: string, sourcePath: string): Promise<void> {
+  const source = await exists(resolve(sourcePath));
+  for (const name of REPORT_NAMES) {
+    const target = join(outDir, name);
+    const st = await exists(target);
+    if (!st) continue;
+    if (st.isSymbolicLink()) throw new ReportPublicationError(`${target} is a symbolic link; refusing to write a report through it. Nothing was written`);
+    if (source && st.dev === source.dev && st.ino === source.ino) throw new ReportPublicationError(`${target} is the source file itself; refusing to overwrite it. Nothing was written`);
+    throw new ReportPublicationError(`${target} already exists; leap extract never overwrites a report. Use a new --out directory. Nothing was written`);
+  }
+}
+
+/**
+ * Publishes the reports all or nothing. They are written into a fresh staging directory inside `outDir`, then each is
+ * hard-linked to its final name, which fails rather than replace anything that appeared since the check. On any
+ * failure the reports already linked are removed; the staging directory is always removed.
+ */
+export async function publishReports(outDir: string, files: Record<ReportName, string>, ops: { link: (from: string, to: string) => Promise<void> } = { link: fsLink }): Promise<void> {
+  const stage = await mkdtemp(join(outDir, ".extract-staging-"));
+  const published: string[] = [];
+  try {
+    for (const name of REPORT_NAMES) await writeFile(join(stage, name), files[name], { flag: "wx" });
+    for (const name of REPORT_NAMES) {
+      try { await ops.link(join(stage, name), join(outDir, name)); } catch (err) {
+        if ((err as { code?: string }).code === "EEXIST") throw new ReportPublicationError(`${join(outDir, name)} appeared while the reports were being written; nothing was kept`);
+        throw err;
+      }
+      published.push(join(outDir, name));
+    }
+  } catch (err) {
+    for (const p of published) await unlink(p).catch(() => undefined);
+    throw err;
+  } finally {
+    await rm(stage, { recursive: true, force: true });
+  }
+}
+
 const isAdmissionOrFormatError = (err: unknown): err is Error =>
   err instanceof EmptySourceError || err instanceof SourceTooSmallError || err instanceof SourceTooLargeError || err instanceof PdfTooManyPagesError || err instanceof OdtFormatError || err instanceof UnsupportedSourceError;
 
@@ -70,7 +122,7 @@ export function warningsMarkdown(fileName: string, w: IngestWarnings): string {
   return [
     `# Warnings for ${fileName}`, "",
     "Check every entry against the original (Checkpoint B). A label-like reference must still point unambiguously at the right item after list numbering is rendered as decimal or bullet labels.", "",
-    section("Lists with simplified numbering", w.listNumberingSimplified.map((l) => `- List ${l.listIndex} under ${pathText(l.headingPath)}: the document uses ${l.originalFormats.join(", ")}; the text shows decimal or bullet labels instead.`)), "",
+    section("Lists with simplified numbering", w.listNumberingSimplified.map((l) => `- List ${l.listIndex} under ${pathText(l.headingPath)}: the document uses ${l.originalFormats.join(", ")}; the text shows decimal or bullet labels instead. ${l.itemCount} item${l.itemCount === 1 ? "" : "s"}; first item ${JSON.stringify(l.firstItemText)}, ${l.firstSentenceId === null ? "not matched to a sentence" : `sentence ${l.firstSentenceId}`}.`)), "",
     section("Numbering that is not rendered", w.numberingUnsupported.map((u) => `- ${u.reason === "numbered-heading" ? "Numbered heading" : "Numbering with no definition"} under ${pathText(u.headingPath)} (list ${u.numId || "(none)"}, level ${Number(u.ilvl) + 1}): ${JSON.stringify(u.text)}`)), "",
     section("Sentences that look like list-label references", w.labelLikeReferences.map((r) => `- ${r.sentenceId} under ${pathText(r.headingPath)}: ${JSON.stringify(r.text)}`)), ""
   ].join("\n");
@@ -93,7 +145,9 @@ export function extractJson(loaded: LoadedSource, chunkTokens: number): Record<s
 /**
  * `leap extract`: ingests a source exactly as `leap generate` would and writes what a reviewer needs to check it before
  * any paid run — extracted.txt, tables.md, extract.json and warnings.md. No model call, API key or ledger is involved.
- * Request sizes use the default prompt configuration. Exits 1 when the source is refused (admission, format or type).
+ * Request sizes use the default prompt configuration. Exits 1, writing nothing, when the source is refused (admission,
+ * format or type) or a report name in --out is already taken (a file, the source, or a symbolic link): reports are
+ * never overwritten and are published all or nothing (publishReports).
  */
 export async function extract(args: ExtractArgs, io: { out: (s: string) => void; err: (s: string) => void }): Promise<number> {
   if (!Number.isInteger(args.chunkTokens) || args.chunkTokens <= 0) { io.err(`leap: --chunk-tokens must be a positive integer, not ${args.chunkTokens}\n`); return 1; }
@@ -106,11 +160,20 @@ export async function extract(args: ExtractArgs, io: { out: (s: string) => void;
   const fileName = basename(args.source);
   const outDir = resolve(args.out);
   const json = extractJson(loaded, args.chunkTokens);
-  await mkdir(outDir, { recursive: true });
-  await writeFile(join(outDir, "extracted.txt"), loaded.document.text);
-  await writeFile(join(outDir, "tables.md"), tablesMarkdown(fileName, loaded.extractor, loaded.tables));
-  await writeFile(join(outDir, "extract.json"), `${JSON.stringify(json, null, 2)}\n`);
-  await writeFile(join(outDir, "warnings.md"), warningsMarkdown(fileName, loaded.warnings));
+  const files: Record<ReportName, string> = {
+    "extracted.txt": loaded.document.text,
+    "tables.md": tablesMarkdown(fileName, loaded.extractor, loaded.tables),
+    "extract.json": `${JSON.stringify(json, null, 2)}\n`,
+    "warnings.md": warningsMarkdown(fileName, loaded.warnings)
+  };
+  try {
+    await assertReportNamesFree(outDir, args.source);
+    await mkdir(outDir, { recursive: true });
+    await publishReports(outDir, files);
+  } catch (err) {
+    if (err instanceof ReportPublicationError) { io.err(`leap: ${err.message}\n`); return 1; }
+    throw err;
+  }
   const w = loaded.warnings;
   io.out(`${fileName}: ${loaded.extractor}, ${loaded.document.metadata.codePoints} code points, ${loaded.document.sentences.length} sentences, ${loaded.tables.length} tables, ${(json["oversizeAtomicSegments"] as unknown[]).length} oversize rows, ${(json["oversizeRequests"] as unknown[]).length} oversize requests, ${w.listNumberingSimplified.length + w.numberingUnsupported.length + w.labelLikeReferences.length} warnings\n`);
   io.out(`wrote extracted.txt, tables.md, extract.json and warnings.md to ${outDir}\n`);

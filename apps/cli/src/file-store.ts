@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFile, link, mkdir, readFile, rename, truncate, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { assertCurrentLayout, assertWritableStoreVersion, BuildIntegrityError, canonicalRecordJson, sha256Hex, sortBuilds, storeVersionOf, type AcceptanceRecord, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
+import { assertCurrentLayout, assertSameOriginal, assertWritableStoreVersion, BuildIntegrityError, canonicalRecordJson, sha256Hex, sortBuilds, storeVersionOf, type AcceptanceRecord, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
 import { listIfPresent } from "./list-if-present.js";
 import { acquireDirectoryLock, type HeldLock, type LockOptions } from "./lock.js";
 
@@ -190,6 +190,21 @@ export class FileStore implements ImportStore {
     await this.putImmutable(this.p(buildKey), bytes, buildKey, (existing) => existing.equals(bytes), sha256Hex);
   }
   async getBuild(buildKey: string) { checkBuildKey(buildKey); return readIfPresent(this.p(buildKey)); }
+  /** The original bytes live at source/original.docx or source/original.odt, written once through putImmutable. */
+  async putOriginalSource(importId: string, ext: OriginalSourceExt, bytes: Buffer) {
+    const existing = await this.getOriginalSource(importId);
+    if (existing) { assertSameOriginal(importId, existing, ext, bytes); return; }
+    try {
+      await this.putImmutable(this.p("source", `original${ext}`), bytes, `source/original${ext}`, (b) => b.equals(bytes), sha256Hex);
+    } catch (err) {
+      if (!(err instanceof BuildIntegrityError)) throw err;
+      assertSameOriginal(importId, (await this.getOriginalSource(importId))!, ext, bytes);
+    }
+  }
+  async getOriginalSource(_importId: string) {
+    for (const ext of [".docx", ".odt"] as const) { const bytes = await readIfPresent(this.p("source", `original${ext}`)); if (bytes) return { ext, bytes }; }
+    return null;
+  }
   async putBuildRecord(record: BuildRecord) {
     checkBuildId(record.buildId);
     const canonical = canonicalRecordJson(record);

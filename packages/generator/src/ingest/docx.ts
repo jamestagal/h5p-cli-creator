@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import mammoth from "mammoth";
 import { resolveNumbering, type SimplifiedNumbering, type UnsupportedNumbering } from "./docx-numbering.js";
 import { finaliseDocument, type IngestOptions, type SourceDocument } from "./source-document.js";
-import { normaliseBlocks, type Block, type Cell } from "./structure/blocks.js";
+import { normaliseBlocks, normaliseBlockText, type Block, type Cell } from "./structure/blocks.js";
 import { linearize, type TableSummary } from "./structure/linearize.js";
 
 export type { SimplifiedNumbering, UnsupportedNumbering } from "./docx-numbering.js";
@@ -15,6 +15,25 @@ export interface IngestWarnings { listNumberingSimplified: SimplifiedNumbering[]
 export interface StructuredIngestResult { document: SourceDocument; warnings: IngestWarnings; tables: TableSummary[] }
 
 const LABEL_LIKE = [/\bitem [a-z]\)/i, /\([a-z]\)/, /\([ivx]+\)/i, /\b[a-z]\) (?:above|below)\b/i];
+
+/**
+ * The sentence a list's first item became: a list sentence under the same headings whose text, after its label, is the
+ * start of the item's text (or begins with it), else an atomic row that contains it (a list in a table cell). Null when
+ * none matches.
+ */
+export function locateListItem(doc: SourceDocument, headingPath: string[], itemText: string): string | null {
+  const item = normaliseBlockText(itemText);
+  if (item === "") return null;
+  const samePath = (p: string[]) => p.length === headingPath.length && p.every((x, i) => x === headingPath[i]);
+  const unlabelled = (t: string) => t.replace(/^\S+\s+/, "");
+  const listed = doc.sentences.find((s) => s.listDepth !== null && samePath(s.headingPath) && (item.startsWith(unlabelled(s.text)) || unlabelled(s.text).startsWith(item)));
+  return (listed ?? doc.sentences.find((s) => s.atomic && samePath(s.headingPath) && s.text.includes(item)))?.sentenceId ?? null;
+}
+
+/** Fills each simplified list's firstSentenceId from the finished document. */
+export function locateSimplifiedLists(doc: SourceDocument, lists: SimplifiedNumbering[]): SimplifiedNumbering[] {
+  return lists.map((l) => ({ ...l, firstSentenceId: locateListItem(doc, l.headingPath, l.firstItemText) }));
+}
 
 /** Sentences that look like references to list labels, for the Checkpoint B review (R13). */
 export function labelLikeReferences(doc: SourceDocument): LabelLikeReference[] {
@@ -178,5 +197,5 @@ export async function ingestDocx(bytes: Buffer, opts: IngestOptions): Promise<St
   const { value: html } = await mammoth.convertToHtml({ buffer: converted });
   const { text, segments, tables } = linearize(normaliseBlocks(htmlToBlocks(html)));
   const document = finaliseDocument("docx", text, segments, opts, { originalSha256: createHash("sha256").update(bytes).digest("hex"), extractor: "docx" });
-  return { document, tables, warnings: { listNumberingSimplified: numbering.simplified, numberingUnsupported: numbering.unsupported, labelLikeReferences: labelLikeReferences(document) } };
+  return { document, tables, warnings: { listNumberingSimplified: locateSimplifiedLists(document, numbering.simplified), numberingUnsupported: numbering.unsupported, labelLikeReferences: labelLikeReferences(document) } };
 }

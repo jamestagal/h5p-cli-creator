@@ -2,8 +2,12 @@ import { DOMParser, XMLSerializer, type Document as XmlDocument, type Element as
 import type JSZip from "jszip";
 import { normaliseBlockText } from "./structure/blocks.js";
 
-/** A list whose numbering was rendered as decimal or bullet although the document uses another format (R13). */
-export interface SimplifiedNumbering { listIndex: number; headingPath: string[]; originalFormats: string[] }
+/**
+ * A list whose numbering was rendered as decimal or bullet although the document uses another format (R13). The locator
+ * finds it at Checkpoint B: how many items it has, its first item's text as written, and the sentence that item became
+ * (null when no sentence could be matched to it).
+ */
+export interface SimplifiedNumbering { listIndex: number; headingPath: string[]; originalFormats: string[]; itemCount: number; firstItemText: string; firstSentenceId: string | null }
 /**
  * A numbered paragraph whose numbering the adapter cannot render, so its label is missing from the source text:
  * a heading with numbering (mammoth renders headings without labels), or numbering that points at a list definition
@@ -145,7 +149,7 @@ export async function resolveNumbering(zip: JSZip): Promise<NumberingResolution>
   }
 
   // Paragraphs: the effective numbering of each, written back as a complete w:numPr where it was inherited.
-  const lists = new Map<string, { headingPath: string[]; formats: string[] }>();
+  const lists = new Map<string, { headingPath: string[]; formats: string[]; firstItemText: string; itemCount: number }>();
   const unsupported: UnsupportedNumbering[] = [];
   for (const part of PARTS) {
     const xml = await read(part);
@@ -179,16 +183,17 @@ export async function resolveNumbering(zip: JSZip): Promise<NumberingResolution>
         if (old) props.replaceChild(numPr, old); else props.appendChild(numPr);
         changed = true;
       }
-      const list = lists.get(numId) ?? { headingPath: path, formats: [] };
+      const list = lists.get(numId) ?? { headingPath: path, formats: [], firstItemText: text(), itemCount: 0 };
       const fmt = formatOf(lvl);
       if (!list.formats.includes(fmt)) list.formats.push(fmt);
+      list.itemCount++;
       lists.set(numId, list);
     }
     if (changed) rewrittenParts.set(part, new XMLSerializer().serializeToString(xml));
   }
 
   const simplified = [...lists.values()]
-    .map((l, i) => ({ listIndex: i + 1, headingPath: l.headingPath, originalFormats: l.formats.filter((f) => f !== "decimal" && f !== "bullet") }))
+    .map((l, i) => ({ listIndex: i + 1, headingPath: l.headingPath, originalFormats: l.formats.filter((f) => f !== "decimal" && f !== "bullet"), itemCount: l.itemCount, firstItemText: l.firstItemText, firstSentenceId: null }))
     .filter((l) => l.originalFormats.length > 0);
   return { rewrittenParts, simplified, unsupported };
 }
