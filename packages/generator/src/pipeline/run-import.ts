@@ -12,6 +12,7 @@ import { planActivities, DEFAULT_PLAN_RULES, type ActivityPlan, type PlannedType
 import { createProducers } from "../produce/index.js";
 import { PROMPT_VERSION, type PromptConfig } from "../prompts/system.js";
 import { assertWritableStoreVersion, STORE_VERSION, type ActivityRecord, type ImportRecord, type ImportStore, type RevisionRecord } from "../store/types.js";
+import { assertCurrentLayout } from "../store/layout.js";
 import { DEFAULT_CHUNK_TOKENS, IncompatibleResumeError, runFingerprint } from "./fingerprint.js";
 import { buildRevision } from "./build.js";
 import { attemptsByKey, budgetFromLedger, reconcile, reconcileElapsed, runLanes, runOperation, type OperationContext } from "./operations.js";
@@ -67,6 +68,7 @@ export async function runImport(rawInput: RunImportInput, deps: RunImportDeps): 
   try {
     const existing = await deps.store.getImport(input.importId); // read under the lock: a pre-lock read could be stale
     if (existing) assertWritableStoreVersion(existing, `import ${input.importId}`); // before any write, and before the fingerprint: a phase-2 import is refused as such
+    if (existing) await assertCurrentLayout(deps.store, input.importId, `import ${input.importId}`); // a version-2 import from before build records is refused too, before any write
     if (existing && existing.fingerprint !== fingerprint) throw new IncompatibleResumeError(input.importId, existing.fingerprint, fingerprint);
 
     return await runLocked(input, deps, existing, fingerprint, chunkTokens, rules);

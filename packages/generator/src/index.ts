@@ -21,4 +21,5 @@ export * from "./produce/index.js";
 export * from "./store/types.js";
 export * from "./store/memory-store.js";
 export * from "./store/builds.js";
+export * from "./store/layout.js";
 export * from "./pipeline/index.js";

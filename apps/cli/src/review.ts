@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { criteriaOf, type AcceptanceDecision, type AlignmentDecision, type UnitOfCompetency } from "@leaplearn/shared";
-import { assertWritableStoreVersion, isStoreVersionError, StoreLockedError, type AcceptanceRecord, type AlignmentReviewRecord, type ImportStore } from "@leaplearn/generator";
+import { assertCurrentLayout, assertWritableStoreVersion, isStoreVersionError, StoreLockedError, type AcceptanceRecord, type AlignmentReviewRecord, type ImportStore } from "@leaplearn/generator";
 import { FileStore } from "./file-store.js";
 import { importIdFor } from "./generate.js";
 import { formatCostReport, writeReports } from "./report.js";
@@ -24,6 +24,7 @@ export async function recordReview(store: ImportStore, importId: string, input: 
   const importRecord = await store.getImport(importId);
   if (!importRecord) throw new ReviewError(`import ${importId} is not in this directory`);
   assertWritableStoreVersion(importRecord, `import ${importId}`);
+  await assertCurrentLayout(store, importId, `import ${importId}`);
   const activity = (await store.listActivities(importId)).find((a) => a.activityId === input.activityId);
   if (!activity) throw new ReviewError(`activity ${input.activityId} is not in import ${importId}`);
   if (activity.currentRevision === null) throw new ReviewError(`activity ${input.activityId} has no promoted revision (status ${activity.status}); only promoted activities can be reviewed`);

@@ -1,4 +1,5 @@
 import type { EngineIdentityInputs } from "@leaplearn/engine";
+import { ObsoleteStoreLayoutError } from "./layout.js";
 import type { AcceptanceDecision, ActivitySpec, ActivityStatus, AlignmentDecision, ImportStatus, RevisionState } from "@leaplearn/shared";
 import type { SourceKind } from "../ingest/source-document.js";
 import type { BudgetLimits } from "../llm/budget.js";
@@ -92,9 +93,9 @@ export class MalformedStoreVersionError extends Error {
 export class UnsupportedStoreVersionError extends Error {
   constructor(where: string, version: number) { super(`${where} has store version ${version}, which this build does not know (it writes version ${STORE_VERSION}); use a matching build of leap`); this.name = "UnsupportedStoreVersionError"; }
 }
-/** The refusals a store-version check can raise; commands report them as a plain message and exit 1. */
-export function isStoreVersionError(err: unknown): err is LegacyStoreError | UnsupportedStoreVersionError | MalformedStoreVersionError {
-  return err instanceof LegacyStoreError || err instanceof UnsupportedStoreVersionError || err instanceof MalformedStoreVersionError;
+/** The refusals a store-version or store-layout check can raise; commands report them as a plain message and exit 1. */
+export function isStoreVersionError(err: unknown): err is LegacyStoreError | UnsupportedStoreVersionError | MalformedStoreVersionError | ObsoleteStoreLayoutError {
+  return err instanceof LegacyStoreError || err instanceof UnsupportedStoreVersionError || err instanceof MalformedStoreVersionError || err instanceof ObsoleteStoreLayoutError;
 }
 /** Refuses any write to an import that is not at the current store version, including a malformed one. Callers run it under the import's lock, before their first write. */
 export function assertWritableStoreVersion(record: object, where: string): void {

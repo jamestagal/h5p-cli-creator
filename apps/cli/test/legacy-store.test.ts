@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import { FileStore } from "../src/file-store.js";
@@ -158,5 +158,71 @@ describe("readLegacyImport propagates filesystem errors other than a missing dir
     await mkdir(join(out, "revisions"), { recursive: true });
     await writeFile(join(out, "revisions", "act-1"), "not a directory\n");
     await expect(readLegacyImport(out)).rejects.toMatchObject({ code: "ENOTDIR" });
+  });
+});
+
+/**
+ * A store-version-2 directory as a phase-3 development build wrote it before build records (Tasks 1-2): the revision
+ * has origin and requestId but still engineFingerprint and buildKey and no currentBuildId, and operations and attempt
+ * starts have no origin. "interrupted" adds a run anchor, a running operation and an attempt start without an outcome.
+ */
+async function devStoreCopy(state: "ready" | "interrupted"): Promise<string> {
+  const out = join(await mkdtemp(join(tmpdir(), "leap-dev-")), "dev-store");
+  await cp(fixture, out, { recursive: true });
+  const importRecord = JSON.parse(await readFile(join(out, "import.json"), "utf8")) as Record<string, unknown>;
+  await writeFile(join(out, "import.json"), JSON.stringify({ ...importRecord, importId: "dev-store", storeVersion: 2, ...(state === "interrupted" ? { status: "generating", currentRun: { startedAt: "2026-09-29T01:00:00.000Z", elapsedBeforeMs: 0 } } : {}) }, null, 2));
+  for (const file of ["activities/act-1.json"]) {
+    const record = JSON.parse(await readFile(join(out, file), "utf8")) as Record<string, unknown>;
+    await writeFile(join(out, file), JSON.stringify({ ...record, importId: "dev-store" }, null, 2));
+  }
+  const rev = JSON.parse(await readFile(join(out, "revisions/act-1/r1.json"), "utf8")) as Record<string, unknown>;
+  await writeFile(join(out, "revisions/act-1/r1.json"), JSON.stringify({ ...rev, origin: "generate", requestId: null }, null, 2));
+  const retag = async (file: string): Promise<void> => {
+    const text = await readFile(join(out, file), "utf8");
+    await writeFile(join(out, file), text.replaceAll("\"phase2-store", "\"dev-store"));
+  };
+  for (const file of ["operations.jsonl", "attempts.jsonl", "acceptances.jsonl", "alignment-reviews.jsonl"]) await retag(file);
+  if (state === "interrupted") {
+    await appendFile(join(out, "operations.jsonl"), `${JSON.stringify({ operationId: "dev-store:produce:act-2:r1", importId: "dev-store", activityId: "act-2", purpose: "produce", status: "running", idempotencyKey: "dev-store:produce:act-2:r1", contentAttempts: 1, outcome: null, billingUncertain: false, startedAt: "2026-09-29T01:01:00.000Z", completedAt: null })}\n`);
+    await appendFile(join(out, "attempts.jsonl"), `${JSON.stringify({ event: "start", attemptId: "a9", operationId: "dev-store:produce:act-2:r1", callKey: "produce:act-2", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: 0, purpose: "produce", provider: "anthropic", model: "claude-sonnet-5", credentialOwner: "server", reservedInputTokens: 1000, reservedOutputTokens: 1000, reservedUsdMicro: 20000, startedAt: "2026-09-29T01:01:00.000Z" })}\n`);
+  }
+  return out;
+}
+
+const OBSOLETE_MESSAGE = /^leap: .*dev-store was written by an earlier phase-3 development build, before build records and attempt attribution \(.*revision act-1 r1 has no currentBuildId.*\)\. It is kept unchanged and is not migrated, because its build and attempt attribution cannot be reconstructed\. Use a new output directory\.$/m;
+
+describe("store-version-2 directories from before build records are refused, not migrated", () => {
+  for (const state of ["ready", "interrupted"] as const) {
+    it(`${state}: generate (resume), review --decision and review --criterion exit 1 with instructions, make no model call, and leave the directory byte-identical`, async () => {
+      expect(existsSync(cliDist), `${cliDist} must be built before this test`).toBe(true);
+      const out = await devStoreCopy(state);
+      const fixtures = await mkdtemp(join(tmpdir(), "leap-no-fixtures-"));
+      const before = await treeHash(out);
+
+      const resumed = await leap(["generate", "--source", sourceMd, "--unit", unitTxt, "--out", out, "--provider", "replay", "--fixtures", fixtures, "--libraries", librariesDir]);
+      expect(resumed.stderr, resumed.stderr).toMatch(OBSOLETE_MESSAGE);
+      expect(resumed.stderr).not.toMatch(/dispatch|replay miss|no recorded response/i);
+      expect(resumed.code).toBe(1);
+      expect(resumed.stdout).toBe("");
+      if (state === "interrupted") expect(resumed.stderr).toMatch(/operation dev-store:produce:act-1:r1 has no origin/);
+
+      const accepted = await leap(["review", "--out", out, "--activity", "act-1", "--reviewer", "owner", "--decision", "accepted"]);
+      expect(accepted.stderr, accepted.stderr).toMatch(OBSOLETE_MESSAGE);
+      expect(accepted.code).toBe(1);
+
+      const aligned = await leap(["review", "--out", out, "--activity", "act-1", "--reviewer", "owner", "--criterion", "PC2.1", "--alignment", "confirmed"]);
+      expect(aligned.stderr, aligned.stderr).toMatch(OBSOLETE_MESSAGE);
+      expect(aligned.code).toBe(1);
+
+      expect(await readdir(fixtures)).toEqual([]); // nothing recorded or replayed
+      expect(await treeHash(out)).toBe(before);
+    }, 60_000);
+  }
+
+  it("FileStore.assertWritableAt refuses the obsolete layout without writing", async () => {
+    const out = await devStoreCopy("interrupted");
+    const before = await treeHash(out);
+    await expect(FileStore.assertWritableAt(out)).rejects.toMatchObject({ name: "ObsoleteStoreLayoutError" });
+    expect(await treeHash(out)).toBe(before);
   });
 });
