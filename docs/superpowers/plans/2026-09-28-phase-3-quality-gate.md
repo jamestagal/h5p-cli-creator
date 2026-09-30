@@ -396,21 +396,24 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 **Answers:** design §4.2, R4.
 
-**Files:** `packages/generator/src/ingest/odt.ts`, `test/fixtures/structure/make-odt.mjs` and the generated `.odt`, tests.
+**Files:** `packages/generator/src/ingest/odt.ts`, `test/fixtures/structure/make-odt.mjs` (from `odt-builder.mjs`, as for DOCX) and the generated `.odt`, tests.
 
 **Contract:**
 - `ingestOdt(bytes, opts)` opens the zip with jszip, parses `content.xml` with xmldom, and walks `office:body/office:text` in document order:
   - `text:h` (`text:outline-level`) → heading; `text:p` → paragraph;
   - `text:list` / `text:list-item` → nested listItem, with labels from the list style in `office:automatic-styles` or `styles.xml` (number format and suffix), falling back to decimal or bullet;
+    *(Amended 30 Sep, Task 7.)* Labels use the level's `style:num-format` (`1`, `a`, `A`, `i`, `I`, or none), `style:num-prefix`/`num-suffix`, `text:start-value`, `text:display-levels` and `style:num-letter-sync`; items' `text:start-value`, `text:list-header` (no label), `text:continue-numbering` and `text:continue-list` are followed; a list naming no style takes its first paragraph's style's list style. Every bullet reads `•` (bullet glyphs are font-specific, often private-use code points), as in DOCX. A number format outside that set is rendered decimal and reported in `listNumberingSimplified`; a list whose style or level is missing is labelled `•` and reported in `numberingUnsupported` (`missing-definition`), as are headings the outline style numbers (`numbered-heading`);
   - `table:table` → table: `table:table-header-rows` counts toward `headerRows`; `table:number-columns-spanned` and `table:number-rows-spanned` are kept; `table:covered-table-cell` is skipped because the span expansion fills it;
-  - `text:note` → note block after its paragraph;
+  - `text:note` → note block after its paragraph, with the note body's paragraphs, lists and tables (the Task 6 note form); footnotes and endnotes are numbered together in order of reference;
+  - *(Amended 30 Sep, Task 7.)* repeated cells and rows (`table:number-columns-repeated`, `table:number-rows-repeated`) are expanded and row groups read; text-box content in `draw:frame`, `text:section` content and index bodies are kept; a rendered `text:number` is not read as text;
   - `text:s` (with `text:c`), `text:tab` and `text:line-break` → space, tab and newline;
   - `office:annotation` is skipped, and `text:tracked-changes` deletions are dropped.
-- Then linearize, `buildDocument("odt", …)` and `admitSource`, with the same metadata as DOCX.
+- Then linearize and `finaliseDocument("odt", …)` (the single admission path, as amended for Task 5), with the same metadata as DOCX (`extractor: "odt"`). A file that is not an ODF text document is refused with `OdtFormatError`.
 
 **Fixture contents:** the same structures as the DOCX fixture, expressed in ODF, including the NFD Vietnamese before and inside a table and the leading and trailing whitespace, so the linearized goldens can be compared structurally. Block texts go through `normaliseBlockText` before linearizing (R11). ODT list labels come from the list style, so the `a)` list keeps its real labels; `labelLikeReferences` is still reported.
 
 **Tests (write first):**
+- [ ] *(Added 30 Sep.)* The fixture regenerated from `odt-builder.mjs` is byte-identical to the committed file; list-label formats, continuation, repeated cells, unsupported formats and missing styles have variant tests.
 - [ ] A golden linearized text for the ODT fixture.
 - [ ] A cross-format test: the DOCX and ODT fixtures give the same table and list lines (headings and notes may differ in whitespace only, after normalisation).
 - [ ] `text:s text:c="3"` inside a sentence gives one space after block normalisation, and an annotation's text is absent.

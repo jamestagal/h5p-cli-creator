@@ -15,7 +15,7 @@ export interface Sentence {
   /** The list depth of the item the sentence belongs to (0 = top level), or null when it is not in a list. Always null for plain sources. */
   listDepth: number | null;
 }
-export type SourceKind = "text" | "markdown" | "pdf" | "docx";
+export type SourceKind = "text" | "markdown" | "pdf" | "docx" | "odt";
 export interface SourceDocument {
   sourceId: string;
   kind: SourceKind;
@@ -26,7 +26,7 @@ export interface SourceDocument {
   metadata: {
     fileName?: string; pages?: number; characters: number; codePoints: number; extractionVersion: string;
     /** Structured sources: the sha256 of the original file's bytes, which are stored unchanged, and the adapter that read it. */
-    originalSha256?: string; extractor?: "docx";
+    originalSha256?: string; extractor?: "docx" | "odt";
   };
 }
 export interface IngestOptions { sourceId: string; fileName?: string; }
@@ -107,7 +107,7 @@ export function segmentSentences(text: string, segments?: Segment[]): Sentence[]
   return sentences;
 }
 
-export interface DocumentExtra { pages?: number; originalSha256?: string; extractor?: "docx" }
+export interface DocumentExtra { pages?: number; originalSha256?: string; extractor?: "docx" | "odt" }
 
 function assemble(kind: SourceKind, text: string, segments: Segment[] | undefined, opts: IngestOptions, extra: DocumentExtra): SourceDocument {
   const metadata: SourceDocument["metadata"] = { characters: text.length, codePoints: countCodePoints(text), extractionVersion: EXTRACTION_VERSION };
