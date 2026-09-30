@@ -12,6 +12,8 @@ export interface Sentence {
   headingPath: string[];
   /** A table row (or other atomic range): one sentence, never split, and never divided by a chunk boundary. */
   atomic: boolean;
+  /** The list depth of the item the sentence belongs to (0 = top level), or null when it is not in a list. Always null for plain sources. */
+  listDepth: number | null;
 }
 export type SourceKind = "text" | "markdown" | "pdf";
 export interface SourceDocument {
@@ -76,20 +78,20 @@ function splitRanges(text: string): Array<[number, number]> {
 /**
  * Without segments, the phase-2 rules over the whole text (heading paths empty, nothing atomic). With segments, each
  * atomic range is exactly one sentence and each other range is split by the phase-2 rules; every sentence carries its
- * range's heading path. Offsets index `text` (UTF-16 code units).
+ * range's heading path and list depth. Offsets index `text` (UTF-16 code units).
  */
 export function segmentSentences(text: string, segments?: Segment[]): Sentence[] {
   const sentences: Sentence[] = [];
-  const add = (charStart: number, charEnd: number, headingPath: string[], atomic: boolean): void => {
-    sentences.push({ sentenceId: `s${sentences.length + 1}`, charStart, charEnd, text: text.slice(charStart, charEnd), headingPath: [...headingPath], atomic });
+  const add = (charStart: number, charEnd: number, headingPath: string[], atomic: boolean, listDepth: number | null): void => {
+    sentences.push({ sentenceId: `s${sentences.length + 1}`, charStart, charEnd, text: text.slice(charStart, charEnd), headingPath: [...headingPath], atomic, listDepth });
   };
   if (segments === undefined) {
-    for (const [a, b] of splitRanges(text)) add(a, b, [], false);
+    for (const [a, b] of splitRanges(text)) add(a, b, [], false, null);
     return sentences;
   }
   for (const seg of segments) {
-    if (seg.atomic) { add(seg.charStart, seg.charEnd, seg.headingPath, true); continue; }
-    for (const [a, b] of splitRanges(text.slice(seg.charStart, seg.charEnd))) add(seg.charStart + a, seg.charStart + b, seg.headingPath, false);
+    if (seg.atomic) { add(seg.charStart, seg.charEnd, seg.headingPath, true, seg.listDepth); continue; }
+    for (const [a, b] of splitRanges(text.slice(seg.charStart, seg.charEnd))) add(seg.charStart + a, seg.charStart + b, seg.headingPath, false, seg.listDepth);
   }
   return sentences;
 }

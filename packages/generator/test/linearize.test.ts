@@ -3,6 +3,7 @@ import { linearize } from "../src/ingest/structure/linearize.js";
 import { normaliseBlocks, normaliseBlockText, type Block, type Cell } from "../src/ingest/structure/blocks.js";
 import { finaliseDocument, NormalisationInvariantError, normaliseSourceText, segmentSentences, SourceTooSmallError } from "../src/ingest/index.js";
 import { chunkSentences, OversizeAtomicSegmentError } from "../src/concepts/chunk.js";
+import { extractionRequest } from "../src/concepts/extract.js";
 
 const cell = (text: string, span: Partial<Pick<Cell, "colSpan" | "rowSpan">> = {}, blocks?: Block[]): Cell => ({ text, colSpan: span.colSpan ?? 1, rowSpan: span.rowSpan ?? 1, ...(blocks ? { blocks } : {}) });
 const row = (...texts: string[]): Cell[] => texts.map((t) => cell(t));
@@ -61,6 +62,41 @@ function linearizeArgs(blocks: Block[]): [string, ReturnType<typeof linearize>["
   const { text, segments } = linearize(blocks);
   return [text, segments];
 }
+
+describe("list nesting survives, in cells and into extraction requests", () => {
+  const item = (depth: number, text: string): Block => ({ kind: "listItem", depth, label: "•", text });
+  const inCell = (items: Block[]): Block => ({ kind: "table", index: 9, headerRows: 1, rows: [row("Task", "Steps"), [cell("Isolate"), cell("", {}, items)]] });
+
+  it("a nested child in a cell is written as a sub-list of its parent, not as a sibling", () => {
+    const nested = lines([inCell([item(0, "Lock"), item(1, "Padlock"), item(1, "Hasp"), item(0, "Tag")])]);
+    const flat = lines([inCell([item(0, "Lock"), item(0, "Padlock"), item(0, "Hasp"), item(0, "Tag")])]);
+    expect(nested).toEqual(["[Table 9, row 1] Task: Isolate; Steps: • Lock [sub-list: • Padlock • Hasp] • Tag"]);
+    expect(flat).toEqual(["[Table 9, row 1] Task: Isolate; Steps: • Lock • Padlock • Hasp • Tag"]);
+    expect(lines([inCell([item(0, "A"), item(1, "B"), item(2, "C"), item(0, "D")])])).toEqual(["[Table 9, row 1] Task: Isolate; Steps: • A [sub-list: • B [sub-list: • C]] • D"]);
+  });
+
+  it("outside tables, each list sentence records its depth, which the extraction request shows", () => {
+    const listOf = (depths: number[]): Block[] => [FILLER, ...depths.map((d, i) => item(d, `Step ${i + 1} of the isolation.`))];
+    const nestedDoc = finaliseDocument("text", ...linearizeArgs(listOf([0, 1, 1, 0])), opts);
+    const flatDoc = finaliseDocument("text", ...linearizeArgs(listOf([0, 0, 0, 0])), opts);
+    expect(nestedDoc.text).not.toBe(flatDoc.text);
+    const steps = (d: typeof nestedDoc) => d.sentences.filter((x) => x.text.startsWith("• Step")).map((x) => [x.text, x.listDepth]);
+    expect(steps(nestedDoc)).toEqual([["• Step 1 of the isolation.", 0], ["• Step 2 of the isolation.", 1], ["• Step 3 of the isolation.", 1], ["• Step 4 of the isolation.", 0]]);
+    expect(steps(flatDoc).map(([, d]) => d)).toEqual([0, 0, 0, 0]);
+    for (const x of nestedDoc.sentences) expect(nestedDoc.text.slice(x.charStart, x.charEnd)).toBe(x.text);
+    const request = (d: typeof nestedDoc) => extractionRequest(chunkSentences(d.sentences, 6000)[0]!, {}).user;
+    expect(request(nestedDoc)).not.toBe(request(flatDoc));
+    expect(request(nestedDoc)).toContain("(list level 2) • Step 2 of the isolation.");
+    expect(request(flatDoc)).toContain("(list level 1) • Step 2 of the isolation.");
+    expect(nestedDoc.sentences.find((x) => x.text.startsWith("This paragraph"))!.listDepth).toBeNull();
+  });
+
+  it("plain sources carry no list depth, so their requests are unchanged", () => {
+    const plain = segmentSentences("• Not a list item here. Another sentence.");
+    expect(plain.map((x) => x.listDepth)).toEqual([null, null]);
+    expect(extractionRequest(chunkSentences(plain, 6000)[0]!, {}).user).not.toContain("list level");
+  });
+});
 
 describe("linearize: lists, notes and headings", () => {
   it("keeps list depth and labels", () => {
@@ -130,7 +166,7 @@ describe("normalise before offsets (R11)", () => {
   });
 
   it("finaliseDocument admits the source (the only structured-path admission)", () => {
-    expect(() => finaliseDocument("text", "Too short.", [{ charStart: 0, charEnd: 10, atomic: false, headingPath: [] }], opts)).toThrow(SourceTooSmallError);
+    expect(() => finaliseDocument("text", "Too short.", [{ charStart: 0, charEnd: 10, atomic: false, headingPath: [], listDepth: null }], opts)).toThrow(SourceTooSmallError);
   });
 });
 
@@ -142,7 +178,7 @@ describe("segmentSentences with segments", () => {
 
   it("never splits an atomic range and splits the others by the phase-2 rules", () => {
     const text = "First one. Second one.\n[Table 1, row 1] A: x. y; B: z";
-    const s = segmentSentences(text, [{ charStart: 0, charEnd: 22, atomic: false, headingPath: ["H"] }, { charStart: 23, charEnd: text.length, atomic: true, headingPath: ["H"] }]);
+    const s = segmentSentences(text, [{ charStart: 0, charEnd: 22, atomic: false, headingPath: ["H"], listDepth: null }, { charStart: 23, charEnd: text.length, atomic: true, headingPath: ["H"], listDepth: null }]);
     expect(s.map((x) => [x.sentenceId, x.text, x.atomic, x.headingPath])).toEqual([["s1", "First one.", false, ["H"]], ["s2", "Second one.", false, ["H"]], ["s3", "[Table 1, row 1] A: x. y; B: z", true, ["H"]]]);
   });
 });

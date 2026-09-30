@@ -1,11 +1,15 @@
 import { NormalisationInvariantError } from "../admit.js";
 import { normaliseBlockText, type Block, type Cell } from "./blocks.js";
 
-/** A range of the linearized text. Offsets are UTF-16 code units into `text`, half-open. An atomic range is one sentence and is never split. */
-export interface Segment { charStart: number; charEnd: number; atomic: boolean; headingPath: string[] }
+/**
+ * A range of the linearized text. Offsets are UTF-16 code units into `text`, half-open. An atomic range is one sentence
+ * and is never split. `listDepth` is the depth of a list item (0 = top level), null for anything else: the indentation in
+ * the text does not survive sentence trimming, so the depth travels as metadata.
+ */
+export interface Segment { charStart: number; charEnd: number; atomic: boolean; headingPath: string[]; listDepth: number | null }
 export interface Linearized { text: string; segments: Segment[] }
 
-interface Line { text: string; atomic: boolean; headingPath: string[] }
+interface Line { text: string; atomic: boolean; headingPath: string[]; listDepth: number | null }
 
 const EMPTY = "—";
 
@@ -48,9 +52,15 @@ function tableRows(table: Extract<Block, { kind: "table" }>, name: string): Arra
   let nested = 0;
   const render = (cell: Cell): string => {
     const parts = [assertNormalised(cell.text, `Table ${name} cell`)];
-    for (const b of cell.blocks ?? []) {
-      if (b.kind === "table") parts.push(inlineTable(b, `${name}.${++nested}`));
-      else if (b.kind === "listItem") parts.push([assertNormalised(b.label, `Table ${name} list label`), assertNormalised(b.text, `Table ${name} list item`)].filter(Boolean).join(" "));
+    const blocks = cell.blocks ?? [];
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i]!;
+      if (b.kind === "listItem") {
+        const run: Array<Extract<Block, { kind: "listItem" }>> = [];
+        while (blocks[i]?.kind === "listItem") run.push(blocks[i++] as Extract<Block, { kind: "listItem" }>);
+        i--;
+        parts.push(inlineList(run, `Table ${name}`));
+      } else if (b.kind === "table") parts.push(inlineTable(b, `${name}.${++nested}`));
       else if (b.kind === "note") parts.push(`[Note ${b.n}] ${assertNormalised(b.text, `Table ${name} note`)}`);
       else parts.push(assertNormalised(b.text, `Table ${name} cell ${b.kind}`));
     }
@@ -61,6 +71,25 @@ function tableRows(table: Extract<Block, { kind: "table" }>, name: string): Arra
   const width = grid[0]?.length ?? 0;
   const labels = labelsFor(grid.slice(0, headerCount), width);
   return grid.slice(headerCount).map((cells, i) => ({ n: i + 1, pairs: cells.map((v, c) => `${labels[c]}: ${v === "" ? EMPTY : v}`) }));
+}
+
+/**
+ * Consecutive list items inside a cell, on one line. Nesting is explicit: the children of an item follow it inside
+ * `[sub-list: …]`, so a nested child can never read as a sibling: `• Lock [sub-list: • Padlock • Hasp] • Tag`.
+ */
+function inlineList(items: Array<Extract<Block, { kind: "listItem" }>>, where: string): string {
+  const base = Math.min(...items.map((b) => Math.max(0, b.depth)));
+  let out = "";
+  let level = base;
+  for (const b of items) {
+    const depth = Math.max(0, b.depth);
+    while (level < depth) { out += " [sub-list:"; level++; }
+    while (level > depth) { out += "]"; level--; }
+    const body = [assertNormalised(b.label, `${where} list label`), assertNormalised(b.text, `${where} list item`)].filter(Boolean).join(" ");
+    if (body !== "") out += ` ${body}`;
+  }
+  while (level > base) { out += "]"; level--; }
+  return out.trim();
 }
 
 /** A table inside a cell, written on one line: `[Table 4.1 row 1: A: x, B: y; row 2: …]`. */
@@ -79,7 +108,7 @@ export function linearize(blocks: Block[]): Linearized {
   const lines: Line[] = [];
   const headings: Array<{ level: number; text: string }> = [];
   const path = (): string[] => headings.map((h) => h.text);
-  const push = (text: string, atomic = false): void => { if (text !== "") lines.push({ text, atomic, headingPath: path() }); };
+  const push = (text: string, atomic = false, listDepth: number | null = null): void => { if (text !== "") lines.push({ text, atomic, headingPath: path(), listDepth }); };
 
   for (const b of blocks) {
     switch (b.kind) {
@@ -94,7 +123,7 @@ export function linearize(blocks: Block[]): Linearized {
       case "paragraph": push(assertNormalised(b.text, "paragraph")); break;
       case "listItem": {
         const body = [assertNormalised(b.label, "list label"), assertNormalised(b.text, "list item")].filter(Boolean).join(" ");
-        if (body !== "") push(lines.length === 0 ? body : `${"  ".repeat(Math.max(0, b.depth))}${body}`); // a leading indent on the first line would not survive trimming
+        if (body !== "") push(lines.length === 0 ? body : `${"  ".repeat(Math.max(0, b.depth))}${body}`, false, Math.max(0, b.depth)); // a leading indent on the first line would not survive trimming; the depth is kept as metadata either way
         break;
       }
       case "note": push(`[Note ${b.n}] ${assertNormalised(b.text, "note")}`.trimEnd()); break;
@@ -112,7 +141,7 @@ export function linearize(blocks: Block[]): Linearized {
     if (text !== "") text += "\n";
     const charStart = text.length;
     text += line.text;
-    segments.push({ charStart, charEnd: text.length, atomic: line.atomic, headingPath: line.headingPath });
+    segments.push({ charStart, charEnd: text.length, atomic: line.atomic, headingPath: line.headingPath, listDepth: line.listDepth });
   }
   return { text, segments };
 }

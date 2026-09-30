@@ -14,8 +14,13 @@ export interface ExtractOptions { promptConfig?: PromptConfig; maxConceptsPerChu
 
 const TASK = (max: number) => `Read the numbered EVIDENCE sentences. Identify the distinct concepts a learner must understand (at most ${max}). For each concept give a short name, a one-sentence summary in your own words, and the ids of the sentences that state or explain it. Choose only ids from the list. A sentence may support more than one concept.`;
 
+/**
+ * `[s3] text` per sentence. A sentence in a list gets `(list level n) ` before its text (n = depth + 1), because the
+ * indentation that shows nesting in the stored text is trimmed from sentences. Plain sources have no list depth (and
+ * documents stored before the field existed have none at all), so their lines are unchanged from phase 2.
+ */
 export function numberedSentences(chunk: Chunk): string {
-  return chunk.sentences.map((s) => `[${s.sentenceId}] ${s.text}`).join("\n");
+  return chunk.sentences.map((s) => `[${s.sentenceId}] ${typeof s.listDepth === "number" ? `(list level ${s.listDepth + 1}) ` : ""}${s.text}`).join("\n");
 }
 
 const EXTRACT_MAX_OUTPUT_TOKENS = 3000;
