@@ -51,25 +51,30 @@ function labelsFor(header: string[][], width: number): string[] {
   });
 }
 
+/**
+ * Structured content on one line, for a table cell or a note inside one: `text`, then paragraphs, list runs (inlineList),
+ * nested tables (inlineTable, named by `nestedName`) and notes (`[Note n] …`) in order.
+ */
+function inlineContent(text: string, blocks: Block[], where: string, nestedName: () => string): string {
+  const parts = [assertNormalised(text, where)];
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i]!;
+    if (b.kind === "listItem") {
+      const run: Array<Extract<Block, { kind: "listItem" }>> = [];
+      while (blocks[i]?.kind === "listItem") run.push(blocks[i++] as Extract<Block, { kind: "listItem" }>);
+      i--;
+      parts.push(inlineList(run, where));
+    } else if (b.kind === "table") parts.push(inlineTable(b, nestedName()));
+    else if (b.kind === "note") parts.push(`[Note ${b.n}] ${inlineContent(b.text, b.blocks ?? [], `${where} note`, nestedName)}`.trimEnd());
+    else parts.push(assertNormalised(b.text, `${where} ${b.kind}`));
+  }
+  return parts.filter((p) => p !== "").join(" ");
+}
+
 /** A table as data rows of `label: value` pairs, one entry per data row. `name` is its number: "4", or "4.1" when nested. */
 function tableRows(table: Extract<Block, { kind: "table" }>, name: string): Array<{ n: number; pairs: string[] }> {
   let nested = 0;
-  const render = (cell: Cell): string => {
-    const parts = [assertNormalised(cell.text, `Table ${name} cell`)];
-    const blocks = cell.blocks ?? [];
-    for (let i = 0; i < blocks.length; i++) {
-      const b = blocks[i]!;
-      if (b.kind === "listItem") {
-        const run: Array<Extract<Block, { kind: "listItem" }>> = [];
-        while (blocks[i]?.kind === "listItem") run.push(blocks[i++] as Extract<Block, { kind: "listItem" }>);
-        i--;
-        parts.push(inlineList(run, `Table ${name}`));
-      } else if (b.kind === "table") parts.push(inlineTable(b, `${name}.${++nested}`));
-      else if (b.kind === "note") parts.push(`[Note ${b.n}] ${assertNormalised(b.text, `Table ${name} note`)}`);
-      else parts.push(assertNormalised(b.text, `Table ${name} cell ${b.kind}`));
-    }
-    return parts.filter((p) => p !== "").join(" ");
-  };
+  const render = (cell: Cell): string => inlineContent(cell.text, cell.blocks ?? [], `Table ${name} cell`, () => `${name}.${++nested}`);
   const grid = expandGrid(table.rows, render);
   const headerCount = Math.min(Math.max(0, table.headerRows), grid.length);
   const width = grid[0]?.length ?? 0;
@@ -103,9 +108,35 @@ function inlineTable(table: Extract<Block, { kind: "table" }>, name: string): st
 }
 
 /**
+ * A note's lines. Every line starts `[Note n]`, so its content never reads as body text: the note's text and paragraphs,
+ * its list items indented by depth with their labels (depth kept as metadata, as in the body), and each data row of a
+ * table in it as an atomic line `[Note n, table k, row r] …`. Anything else in it is written inline.
+ */
+function noteLines(note: Extract<Block, { kind: "note" }>, push: (text: string, atomic?: boolean, listDepth?: number | null, labelEnd?: number) => void): void {
+  const prefix = `[Note ${note.n}]`;
+  let count = 0;
+  let tables = 0;
+  const line = (text: string, atomic = false, listDepth: number | null = null, labelEnd?: number): void => { if (text === "") return; push(`${prefix} ${text}`, atomic, listDepth, labelEnd === undefined ? undefined : prefix.length + 1 + labelEnd); count++; };
+  line(assertNormalised(note.text, "note"));
+  for (const b of note.blocks ?? []) {
+    if (b.kind === "listItem") {
+      const label = assertNormalised(b.label, "note list label");
+      const body = [label, assertNormalised(b.text, "note list item")].filter(Boolean).join(" ");
+      const indent = "  ".repeat(Math.max(0, b.depth));
+      line(body === "" ? "" : `${indent}${body}`, false, Math.max(0, b.depth), label === "" ? undefined : indent.length + label.length);
+    } else if (b.kind === "table") {
+      const k = ++tables;
+      for (const r of tableRows(b, `note ${note.n}.${k}`)) { push(`[Note ${note.n}, table ${k}, row ${r.n}] ${r.pairs.join("; ")}`, true); count++; }
+    } else if (b.kind === "note") line(inlineContent("", [b], `Note ${note.n}`, () => `${note.n}.${++tables}`));
+    else line(assertNormalised(b.text, `note ${b.kind}`));
+  }
+  if (count === 0) push(prefix);
+}
+
+/**
  * Blocks → source text and segments. Headings are lines of their own and set the heading path; list items are
  * indented by depth with their label; each table data row is one atomic line `[Table n, row r] label: value; …`;
- * notes are `[Note n] text`. Empty blocks produce no line, lines are joined with "\n", and every piece of text must
+ * notes are lines starting `[Note n]` (noteLines). Empty blocks produce no line, lines are joined with "\n", and every piece of text must
  * already be normalised, so the result is a fixed point of normaliseSourceText.
  */
 export function linearize(blocks: Block[]): Linearized {
@@ -132,7 +163,7 @@ export function linearize(blocks: Block[]): Linearized {
         if (body !== "") push(`${indent}${body}`, false, Math.max(0, b.depth), label === "" ? undefined : indent.length + label.length); // a leading indent on the first line would not survive trimming; the depth is kept as metadata either way
         break;
       }
-      case "note": push(`[Note ${b.n}] ${assertNormalised(b.text, "note")}`.trimEnd()); break;
+      case "note": noteLines(b, push); break;
       case "table": {
         const name = String(b.index);
         for (const r of tableRows(b, name)) push(`[Table ${name}, row ${r.n}] ${r.pairs.join("; ")}`, true);

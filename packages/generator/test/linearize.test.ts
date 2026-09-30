@@ -117,6 +117,26 @@ describe("linearize: lists, notes and headings", () => {
     expect(lines([{ kind: "paragraph", text: "Records are kept for seven years.1" }, { kind: "note", n: 1, text: "Under the retention policy." }])).toEqual(["Records are kept for seven years.1", "[Note 1] Under the retention policy."]);
   });
 
+  it("writes a note's structured content on lines of its own, each starting [Note n], keeping list nesting and table rows", () => {
+    const note: Block = { kind: "note", n: 2, text: "", blocks: [
+      { kind: "paragraph", text: "The permit requires:" },
+      { kind: "listItem", depth: 0, label: "1.", text: "Isolation" }, { kind: "listItem", depth: 1, label: "•", text: "Lock" }, { kind: "listItem", depth: 0, label: "2.", text: "Testing" },
+      { kind: "table", index: 0, headerRows: 1, rows: [[{ text: "Step", colSpan: 1, rowSpan: 1 }, { text: "Owner", colSpan: 1, rowSpan: 1 }], [{ text: "Test", colSpan: 1, rowSpan: 1 }, { text: "Electrician", colSpan: 1, rowSpan: 1 }]] },
+      { kind: "paragraph", text: "See the procedure." }
+    ] };
+    const { text, segments } = linearize([note]);
+    expect(text.split("\n")).toEqual(["[Note 2] The permit requires:", "[Note 2] 1. Isolation", "[Note 2]   • Lock", "[Note 2] 2. Testing", "[Note 2, table 1, row 1] Step: Test; Owner: Electrician", "[Note 2] See the procedure."]);
+    expect(segments.map((s) => [s.listDepth, s.atomic])).toEqual([[null, false], [0, false], [1, false], [0, false], [null, true], [null, false]]);
+    expect(text.slice(segments[2]!.charStart, segments[2]!.charStart + segments[2]!.labelEnd!)).toBe("[Note 2]   •");
+    expect(lines([{ kind: "note", n: 3, text: "" }])).toEqual(["[Note 3]"]);
+  });
+
+  it("writes a note cited in a table cell inline in its row, with its list nesting explicit", () => {
+    const cellNote: Block = { kind: "note", n: 1, text: "", blocks: [{ kind: "paragraph", text: "Applies to:" }, { kind: "listItem", depth: 0, label: "•", text: "Plant" }, { kind: "listItem", depth: 1, label: "•", text: "Pumps" }] };
+    expect(lines([{ kind: "table", index: 1, headerRows: 0, rows: [[{ text: "Scope", colSpan: 1, rowSpan: 1 }, { text: "", colSpan: 1, rowSpan: 1, blocks: [{ kind: "paragraph", text: "All sites[1]" }, cellNote] }]] }]))
+      .toEqual(["[Table 1, row 1] Column 1: Scope; Column 2: All sites[1] [Note 1] Applies to: • Plant [sub-list: • Pumps]"]);
+  });
+
   it("gives each sentence its heading path; a new H2 replaces the old one", () => {
     const blocks: Block[] = [
       { kind: "heading", level: 1, text: "Topic 1" }, { kind: "paragraph", text: "Intro sentence." },

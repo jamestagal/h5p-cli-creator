@@ -17,7 +17,8 @@ export type Block =
   | { kind: "listItem"; depth: number; label: string; text: string }
   /** `rows` lists, per row, the cells that start in it (as in HTML): a span covers later positions. `headerRows` counts rows the format marks as headers. */
   | { kind: "table"; index: number; headerRows: number; rows: Cell[][] }
-  | { kind: "note"; n: number; text: string };
+  /** A footnote or endnote. `blocks` holds its structured content (paragraphs, list items, tables), written after `text` in order. */
+  | { kind: "note"; n: number; text: string; blocks?: Block[] };
 
 /** NFC; internal newlines become spaces; runs of spaces and tabs collapse to one space; trimmed. */
 export function normaliseBlockText(text: string): string {
@@ -29,6 +30,7 @@ export function normaliseBlocks(blocks: Block[]): Block[] {
   return blocks.map((b): Block => {
     if (b.kind === "table") return { ...b, rows: b.rows.map((r) => r.map((c) => ({ ...c, text: normaliseBlockText(c.text), ...(c.blocks ? { blocks: normaliseBlocks(c.blocks) } : {}) }))) };
     if (b.kind === "listItem") return { ...b, label: normaliseBlockText(b.label), text: normaliseBlockText(b.text) };
+    if (b.kind === "note") return { ...b, text: normaliseBlockText(b.text), ...(b.blocks ? { blocks: normaliseBlocks(b.blocks) } : {}) };
     return { ...b, text: normaliseBlockText(b.text) };
   });
 }
