@@ -55,9 +55,22 @@ These rules override the design where the two differ.
 | R9 | Regeneration recovery before eligibility | A `running` request is inspected and reconciled **first**. If its target revision was already produced, built or promoted, the same request is finished without a model call. The reviewed-decision and two-request checks apply only when creating a new request | 13 |
 | R10 | Failures without revisions | First-pass vs regeneration is recorded on the **operation and attempt-start records before dispatch**. Outcome counts and costs derive from the saved plan, activity records, operations and attempts, even when no revision exists. The reported categories **partition** the planned activities, and a test asserts the sum | 3, 13, 14 |
 | R11 | Normalise before offsets | **Invariant:** structural segments and sentence offsets are built against the final stored normalised text, and nothing transforms that text afterwards without rebuilding its offsets. Adapters normalise block text before linearizing; `finaliseDocument` asserts the text is a fixed point of `normaliseSourceText` and never transforms it | 4, 5, 6, 7 |
-| R12 | S1 matches every replay consumer | S1 records one named fixture pair (the PDF path) with pinned settings in a shared `S1_SETTINGS` constant, which both replay consumers import. DOCX and ODT pipeline paths run on FakeProvider. Tasks 1–9 keep every existing replay request byte-identical (heading context is emitted only when a chunk has headings, and PDF and text sources have none); Task 10 is the first task that changes requests | 5, 10, 15 |
+| R12 | S1 matches every replay consumer | S1 records one named fixture pair (the PDF path) with pinned settings in a shared `S1_SETTINGS` constant, which both replay consumers import. DOCX and ODT pipeline paths run on FakeProvider. Tasks 1–9 keep every existing replay request byte-identical (heading context is emitted only when a chunk has headings, and PDF and text sources have none); Task 10 is the first task that changes requests. **Amended 30 Sep 2026** (see below): historical replay runs from a frozen source document; current PDF ingestion is tested offline until S1 | 4, 5, 10, 15 |
 | R13 | Simplified DOCX numbering | Acceptable only with a warning. `leap extract` lists every list that uses a non-decimal, non-bullet format, and every text reference that looks like a list label (for example "item b)", "(ii)"). Checkpoint B confirms those references still make sense; if not, the adapter renders the real formats before P1 | 6, 8 |
 | R14 | Oversize ordinary sentences | They may stay whole, but the complete provider request that carries them must fit the model's input limit. Otherwise the run is refused before dispatch, naming the sentence and the sizes | 5 |
+
+## Amendment to R12 (30 Sep 2026): historical replay and current PDF ingestion are tested separately
+
+Benjamin's review of Task 4 (`841bfd7`) found that the PDF adapter stored pdf-parse's page labels (`-- 1 of 2 --`) as source text, so they counted towards admission and became sentences. The fix stores the pages' own text. That changes the PDF path's stored text and therefore the recorded extraction request, which R12 required to stay byte-identical until Task 10. Resolution, approved on 30 Sep 2026:
+
+1. Every recorded request and response in `packages/generator/test/fixtures/replay/synthetic/` stays unchanged. They are valid evidence of the pipeline as it was recorded.
+2. The source document the pre-fix extractor at `841bfd7` produces from the synthetic PDF is frozen in `packages/generator/test/fixtures/historical/`. It was reconstructed from that revision and the PDF on 30 Sep 2026, not saved during the original paid run; its README records the provenance and hashes.
+3. The replay test runs from that frozen document and is labelled **historical pipeline compatibility**. It is not coverage of current PDF ingestion. Its existing assertions are kept.
+4. Current PDF ingestion is covered offline: the synthetic PDF → `ingestPdf` → `runImport` on FakeProvider → compiled activities, plus the PDF page-label regression tests.
+5. `EXTRACTION_VERSION` becomes `2026-09-30.1`, so an import created from the pre-fix PDF text refuses to resume (tested).
+6. The planned S1 run (Task 10, Checkpoint C) records the current PDF path and restores current-PDF replay coverage. There is no earlier paid run. Old responses are never re-keyed against new requests, their evidence ids are never adjusted, and production code has no compatibility switch.
+
+Until S1, "replay requests stay byte-identical" (R12, Global constraints) means: the historical replay test passes unchanged from the frozen document at every commit.
 
 ## Paid runs and authorisation
 
@@ -106,7 +119,7 @@ Phase 2's global constraints continue to apply, unchanged: the engine boundary, 
 - **The decision is derived in code** (`deriveDecision`) and nowhere else. No command accepts a decision as input except to check it against the derived one.
 - **Offsets vs counts**, as in C7. Every function that takes or returns an offset says so in its doc comment.
 - **Normalise before offsets** (R11). Offsets are only ever computed on the final stored text, and no function transforms stored text after offsets exist.
-- **Replay wire compatibility** (R12). Until Task 10, every change keeps existing replay requests byte-identical; the unchanged phase-2 replay test passing at each commit is the check.
+- **Replay wire compatibility** (R12, amended 30 Sep 2026). Until Task 10, every change keeps existing replay requests byte-identical; the historical replay test, run from the frozen pre-fix source document with unchanged recordings, passing at each commit is the check. Current PDF ingestion is tested offline until S1 records it.
 - **Every planned activity is accounted for** (R10). Any report that counts activities partitions the plan, and its tests assert the sum.
 - **Claims:** unreviewed output is described as "source citations" and "suggested alignment". "Verified" and "reviewed" are used only for a revision whose current build has a counted, accepted scored review. Nothing claims competency or satisfaction of an RTO's assessment requirements.
 
@@ -467,7 +480,7 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 ### Task 10: Knowledge Evidence tree, assessment conditions, source authority and KE alignment
 
-**Answers:** design §4.3–4.4, R12. This is the first task that changes model requests, so the synthetic replay fixtures are re-recorded here (run S1).
+**Answers:** design §4.3–4.4, R12. This is the first task that changes model requests, so the synthetic replay fixtures are re-recorded here (run S1). S1 records the **current** PDF ingestion path, restoring current-PDF replay coverage (R12 amendment, 30 Sep 2026); the historical replay and its frozen source document stay as they are.
 
 **Branching:** the offline part (steps 1–3) is committed on a task branch, `phase-3/task-10`, so its intermediate state can be reviewed. After Checkpoint C and a successful S1 (step 4), the offline work and the recording are **squashed into one commit** and that commit is added to the phase branch. A fast-forward would keep only the head green and carry the temporarily failing checkpoint into history; squashing keeps every commit on the phase branch green. The task branch is kept until the squashed commit is reviewed.
 

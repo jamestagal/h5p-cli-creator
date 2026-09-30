@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createRegistry, type EngineIdentity, type LibraryRegistry } from "@leaplearn/engine";
 import { MemoryStore } from "../src/store/memory-store.js";
+import { EXTRACTION_VERSION, ingestPdf, type SourceDocument } from "../src/ingest/index.js";
 import { BuildArtifactError, BuildIntegrityError, LegacyStoreError, MalformedStoreVersionError, STORE_VERSION, StoreLockedError, UnsupportedStoreVersionError, type ImportRecord, type ImportStore } from "../src/store/types.js";
 import { buildIdFor, buildKeyFor } from "../src/store/builds.js";
 import { buildRevision } from "../src/pipeline/build.js";
@@ -649,5 +651,48 @@ describe("build records", () => {
     expect(act1Starts).toHaveLength(3);
     for (const s of act1Starts) expect([s.origin, s.requestId]).toEqual(["generate", null]);
     for (const s of starts) expect(s.origin).toBe(s.purpose === "produce" ? "generate" : "shared");
+  });
+});
+
+describe("current PDF ingestion through the pipeline (offline; replay of the current PDF path returns with S1)", () => {
+  const pdfPath = resolve(import.meta.dirname, "fixtures/synthetic/source-electrical-safety.pdf");
+  const pdfOpts = { sourceId: "src-source-electrical-safety.pdf", fileName: "source-electrical-safety.pdf" };
+
+  it("ingests the synthetic PDF without page labels, runs every stage on the fake provider and compiles every activity", async () => {
+    const doc = await ingestPdf(await readFile(pdfPath), pdfOpts);
+    expect(doc.text).not.toMatch(/^-- \d+ of \d+ --$/m);
+    expect(doc.sentences.some((x) => /^-- \d+ of \d+ --$/.test(x.text))).toBe(false);
+    expect(doc.metadata.extractionVersion).toBe(EXTRACTION_VERSION);
+    const store = new MemoryStore();
+    const provider = new FakeProvider(await fullScript(doc));
+    const record = await runImport(await input("imp-pdf", { source: doc }), deps(store, provider));
+    expect(record.status).toBe("ready");
+    expect(provider.requests.every((req) => !/-- \d+ of \d+ --/.test(req.user))).toBe(true); // no page label reaches a model request
+    const activities = await store.listActivities("imp-pdf");
+    expect(activities.map((a) => a.status)).toEqual(["promoted", "promoted", "promoted"]);
+    for (const a of activities) {
+      const rev = (await store.getRevision(a.activityId, a.currentRevision!))!;
+      const build = (await store.getBuildRecord(rev.currentBuildId!))!;
+      expect((await store.getBuild(build.buildKey))?.subarray(0, 2).toString("latin1")).toBe("PK");
+    }
+    expect(await store.getArtifact("imp-pdf", "source")).toMatchObject({ textHash: doc.textHash, metadata: { extractionVersion: EXTRACTION_VERSION } });
+  });
+
+  it("refuses to resume an import created from the pre-fix PDF text, before any write or model call", async () => {
+    const frozen = JSON.parse(await readFile(resolve(import.meta.dirname, "fixtures/historical/source-electrical-safety.pdf.841bfd7.source.json"), "utf8")) as SourceDocument;
+    const store = new MemoryStore();
+    await runImport(await input("imp-old-pdf", { source: frozen, unitText: null }), deps(store, new FakeProvider([]))).catch(() => undefined); // created under 2026-09-28.1, then stopped
+    const before = JSON.stringify([await store.getImport("imp-old-pdf"), await store.listOperations("imp-old-pdf"), await store.listAttempts("imp-old-pdf")]);
+    const current = await ingestPdf(await readFile(pdfPath), pdfOpts);
+    const empty = new FakeProvider([]);
+    await expect(runImport(await input("imp-old-pdf", { source: current, unitText: null }), deps(store, empty))).rejects.toBeInstanceOf(IncompatibleResumeError);
+    expect(empty.requests).toHaveLength(0);
+    expect(JSON.stringify([await store.getImport("imp-old-pdf"), await store.listOperations("imp-old-pdf"), await store.listAttempts("imp-old-pdf")])).toBe(before);
+
+    // The version alone decides it too: the same text recorded under the old extraction version is incompatible.
+    const relabelled: SourceDocument = { ...current, metadata: { ...current.metadata, extractionVersion: "2026-09-28.1" } };
+    const other = new MemoryStore();
+    await runImport(await input("imp-v", { source: relabelled, unitText: null }), deps(other, new FakeProvider([]))).catch(() => undefined);
+    await expect(runImport(await input("imp-v", { source: current, unitText: null }), deps(other, new FakeProvider([])))).rejects.toBeInstanceOf(IncompatibleResumeError);
   });
 });

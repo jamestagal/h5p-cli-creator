@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createRegistry, type LibraryRegistry } from "@leaplearn/engine";
-import { ingestPdf } from "../src/ingest/index.js";
+import { ingestPdf, textHash, type SourceDocument } from "../src/ingest/index.js";
 import { computeCost } from "../src/llm/cost.js";
 import { ReplayProvider } from "../src/llm/replay-provider.js";
 import { MemoryStore } from "../src/store/memory-store.js";
@@ -16,6 +16,8 @@ const root = resolve(import.meta.dirname, "../../..");
 const fixtures = resolve(import.meta.dirname, "fixtures");
 const replayDir = resolve(fixtures, "replay/synthetic");
 const MISSING_FIXTURES = "record the fixtures with `leap generate --provider record` first (Task 17 step 1)";
+/** The source document the recordings were made from, reconstructed from 841bfd7 (see fixtures/historical/README.md). */
+const historicalSource = resolve(fixtures, "historical/source-electrical-safety.pdf.841bfd7.source.json");
 
 /** The shape `RecordingProvider` writes: the recorded response plus enough of the request to attribute it. */
 interface RecordedFixture {
@@ -35,10 +37,27 @@ async function readRecordedFixtures(dir: string): Promise<RecordedFixture[]> {
 let registry: LibraryRegistry;
 beforeAll(async () => { registry = await createRegistry({ lockPath: resolve(root, "libraries/libraries.lock.json"), cacheDir: resolve(root, "libraries/cache") }); });
 
-describe("end to end over recorded responses", () => {
-  it("replays the demo import from the synthetic PDF and unit without network access", async () => {
+/**
+ * Historical pipeline compatibility (plan R12, amended 30 Sep 2026): the recorded requests and responses are kept
+ * unchanged and replayed from the frozen source document they were made from. This is NOT coverage of current PDF
+ * ingestion, which no longer stores the parser's page labels; that path is tested offline in pipeline.test.ts, and
+ * current-PDF replay coverage returns when S1 records it.
+ */
+describe("historical pipeline compatibility: recorded responses over the frozen pre-fix source document", () => {
+  it("the frozen document is the pre-fix extraction (page labels included), not what current ingestion produces", async () => {
+    const frozen = JSON.parse(await readFile(historicalSource, "utf8")) as SourceDocument;
+    expect(frozen.textHash).toBe(textHash(frozen.text));
+    expect(frozen.metadata.extractionVersion).toBe("2026-09-28.1");
+    expect(frozen.text).toMatch(/^-- 1 of 2 --$/m);
+    for (const s of frozen.sentences) expect(frozen.text.slice(s.charStart, s.charEnd)).toBe(s.text);
+    const current = await ingestPdf(await readFile(resolve(fixtures, "synthetic/source-electrical-safety.pdf")), { sourceId: "src-source-electrical-safety.pdf", fileName: "source-electrical-safety.pdf" });
+    expect(current.textHash).not.toBe(frozen.textHash);
+    expect(current.metadata.extractionVersion).not.toBe(frozen.metadata.extractionVersion);
+  });
+
+  it("replays the demo import from the frozen source document and the unit without network access", async () => {
     expect(existsSync(replayDir), MISSING_FIXTURES).toBe(true);
-    const source = await ingestPdf(await readFile(resolve(fixtures, "synthetic/source-electrical-safety.pdf")), { sourceId: "src-source-electrical-safety.pdf", fileName: "source-electrical-safety.pdf" });
+    const source = JSON.parse(await readFile(historicalSource, "utf8")) as SourceDocument;
     const unitText = await readFile(resolve(fixtures, "synthetic/unit-synele001.txt"), "utf8");
     const store = new MemoryStore();
     const record = await runImport(

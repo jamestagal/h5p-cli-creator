@@ -18,8 +18,12 @@ export interface SourceDocument {
 }
 export interface IngestOptions { sourceId: string; fileName?: string; }
 
-/** Identifies how source text is extracted and normalised. Part of the run fingerprint: changing extraction changes what a resume must match. */
-export const EXTRACTION_VERSION = "2026-09-28.1";
+/**
+ * Identifies how source text is extracted and normalised. Part of the run fingerprint: changing extraction changes what
+ * a resume must match. History: 2026-09-28.1 NFC normalisation and code-point admission; 2026-09-30.1 PDF text is the
+ * pages' own text, without pdf-parse's page labels.
+ */
+export const EXTRACTION_VERSION = "2026-09-30.1";
 
 export function textHash(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");

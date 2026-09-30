@@ -22,8 +22,9 @@ export async function syntheticDoc(): Promise<SourceDocument> {
 }
 export async function syntheticUnitText(): Promise<string> { return readFile(resolve(fixtures, "unit-synele001.txt"), "utf8"); }
 
+/** The sentence that starts with `startsWith`; in PDF text a line wrap can end a sentence early, so failing that, the sentence that is an opening fragment of it (12+ characters). */
 export function sid(doc: SourceDocument, startsWith: string): string {
-  const s = doc.sentences.find((x) => x.text.startsWith(startsWith));
+  const s = doc.sentences.find((x) => x.text.startsWith(startsWith)) ?? doc.sentences.find((x) => x.text.length >= 12 && startsWith.startsWith(x.text));
   if (!s) throw new Error(`no sentence starting "${startsWith}"`);
   return s.sentenceId;
 }

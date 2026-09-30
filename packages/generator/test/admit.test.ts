@@ -110,6 +110,43 @@ describe("the PDF page limit, read before any text is extracted", () => {
     expect(getText).not.toHaveBeenCalled();
   }, 60_000);
 
+  /** One page per entry, each line drawn on its own row of a wide page so pdf.js extracts it exactly. */
+  async function pdfWithText(pages: string[][]): Promise<Buffer> {
+    const pdf = await PDFDocument.create();
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    for (const lines of pages) {
+      const page = pdf.addPage([4000, 400]);
+      lines.forEach((line, i) => page.drawText(line, { x: 10, y: 380 - i * 20, size: 6, font }));
+    }
+    return Buffer.from(await pdf.save());
+  }
+  const body = (n: number): string => `${"Lock it out before work starts. ".repeat(20).slice(0, n - 1)}.`;
+
+  it("does not count parser page labels as content: 50 blank pages are an empty source", async () => {
+    await expect(ingestPdf(await pdfWithText(Array.from({ length: 50 }, () => [])), opts)).rejects.toThrow(EmptySourceError);
+  }, 60_000);
+
+  it("admits PDF text on its own length: 490 and 499 code points are refused, 500 is admitted with no page label in the stored text", async () => {
+    await expect(ingestPdf(await pdfWithText([[body(490)]]), opts)).rejects.toThrow(/490 code points/);
+    await expect(ingestPdf(await pdfWithText([[body(499)]]), opts)).rejects.toThrow(/499 code points/);
+    const doc = await ingestPdf(await pdfWithText([[body(500)]]), opts);
+    expect(doc.text).toBe(body(500));
+    expect(doc.metadata.codePoints).toBe(500);
+    expect(doc.sentences.map((x) => x.text).join(" ")).not.toMatch(/-- \d+ of \d+ --/);
+  }, 60_000);
+
+  it("joins pages with a blank line and keeps source text that merely looks like a page label", async () => {
+    const doc = await ingestPdf(await pdfWithText([[body(300)], ["-- 1 of 2 --", body(300)]]), opts);
+    expect(doc.text).toBe(`${body(300)}\n\n-- 1 of 2 --\n${body(300)}`);
+    expect(doc.metadata.pages).toBe(2);
+  }, 60_000);
+
+  it("stores the synthetic PDF's text without the parser's page labels", async () => {
+    const doc = await ingestPdf(await readFile(resolve(import.meta.dirname, "fixtures/synthetic/source-electrical-safety.pdf")), opts);
+    expect(doc.text).not.toMatch(/^-- \d+ of \d+ --$/m);
+    expect(doc.text).toContain("Only the worker who applied a lock may remove it.");
+  });
+
   it("reads the same page count from getInfo as getText reports, on the synthetic PDF", async () => {
     const bytes = await readFile(resolve(import.meta.dirname, "fixtures/synthetic/source-electrical-safety.pdf"));
     const parser = new PDFParse({ data: bytes });
@@ -150,7 +187,7 @@ describe("the limit applies only to the submitted source", () => {
 
 describe("the extraction version", () => {
   it("is recorded on every ingested document and is part of the run fingerprint", async () => {
-    expect(EXTRACTION_VERSION).toBe("2026-09-28.1");
+    expect(EXTRACTION_VERSION).toBe("2026-09-30.1");
     const doc = await ingestText("a".repeat(500), opts);
     expect(doc.metadata.extractionVersion).toBe(EXTRACTION_VERSION);
     const base: FingerprintInput = { sourceTextHash: doc.textHash, extractionVersion: EXTRACTION_VERSION, unitText: null, selectedTypes: ["multiChoice"], language: "en", promptConfig: DEFAULT_PROMPT_CONFIG, customisation: null, chunkTokens: 6000, rules: DEFAULT_PLAN_RULES };

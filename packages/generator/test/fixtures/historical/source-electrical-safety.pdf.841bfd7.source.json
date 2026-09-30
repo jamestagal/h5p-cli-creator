@@ -1,0 +1,483 @@
+{
+  "sourceId": "src-source-electrical-safety.pdf",
+  "kind": "pdf",
+  "text": "Working safely around electrical equipment (synthetic training text)\n1. Why electrical isolation matters\nElectricity can injure or kill a worker in less than a second. Most serious electrical injuries at work\nhappen when someone touches a part that they believed was de-energised. Isolation is the\nprocess of disconnecting equipment from every source of electrical energy before work begins. A\nworker who isolates correctly removes the hazard instead of managing it. Every site procedure in\nthis text assumes that isolation comes first and that nobody relies on a switch position alone.\n2. Lockout and tagout\nLockout and tagout is the method used to keep isolated equipment isolated. A lockout device is a\npadlock or hasp that physically prevents an isolator from being closed. A tag is a warning label\nattached to the lockout device that names the worker, the date and the reason for the isolation.\nOnly the worker who applied a lock may remove it. If several workers are involved, each worker\napplies their own lock to a multi-lock hasp so that the equipment cannot be re-energised until the\nlast lock is removed. A tag without a lock is a warning, not a control, and must never be used on its\nown where a lock can be fitted.\n3. Identifying hazards before work starts\nBefore isolating, the worker inspects the work area and the equipment. Typical hazards are\ndamaged insulation, exposed conductors, moisture near live parts, stored energy in capacitors, and\nequipment fed from more than one supply. Equipment with two supplies is dangerous because\nisolating one supply leaves the other live. The worker records the hazards found and the controls\nchosen on the isolation permit. A permit is signed by the worker and by a supervisor before any\nconductor is touched. After the isolator is opened and locked, the worker must test for dead at the\npoint of work using a voltage tester rated for the circuit.\n4. Testing for dead\nTesting for dead confirms that the conductors to be worked on carry no voltage. The tester is\nproved on a known live source immediately before the test and again immediately after it. If the\ntester fails either proving check, the test result is discarded and the tester is replaced. The worker\ntests between every pair of conductors and between each conductor and earth. A reading of zero\non an unproved tester proves nothing. The result of the test is written on the permit before work\nbegins.\n5. Working and restoring supply\nWork proceeds only inside the boundary described on the permit. When the work is complete, the\nworker removes tools and materials, checks that guards and covers are refitted, and confirms that\neveryone has left the isolated zone. Each worker then removes only their own lock from the hasp.\nThe last lock removed is the lock of the worker who holds the permit, and only after the supervisor\nhas countersigned the completion section. Lockout and tagout ends when the permit is closed,\nnever before. Restoring supply while a tag is still fitted is a serious breach because it means a lock\nhas been removed without authority.\n6. Personal protective equipment\nInsulated gloves are inspected for pinholes by rolling them to trap air before each use. Safety\nglasses protect against arc flash particles. Non-conductive footwear is worn whenever a floor may\n\n-- 1 of 2 --\n\nbe damp. Personal protective equipment reduces the severity of an injury; it does not replace\nisolation. Rings, watches and metal jewellery are removed before electrical work because they\nconduct current and can cause deep burns.\n\n-- 2 of 2 --",
+  "textHash": "99fe17fc5d2ef510a1622fac5fb7682702ea69b4ebbbd306e9e0d473e627520f",
+  "sentences": [
+    {
+      "sentenceId": "s1",
+      "charStart": 0,
+      "charEnd": 68,
+      "text": "Working safely around electrical equipment (synthetic training text)"
+    },
+    {
+      "sentenceId": "s2",
+      "charStart": 69,
+      "charEnd": 71,
+      "text": "1."
+    },
+    {
+      "sentenceId": "s3",
+      "charStart": 72,
+      "charEnd": 104,
+      "text": "Why electrical isolation matters"
+    },
+    {
+      "sentenceId": "s4",
+      "charStart": 105,
+      "charEnd": 167,
+      "text": "Electricity can injure or kill a worker in less than a second."
+    },
+    {
+      "sentenceId": "s5",
+      "charStart": 168,
+      "charEnd": 208,
+      "text": "Most serious electrical injuries at work"
+    },
+    {
+      "sentenceId": "s6",
+      "charStart": 209,
+      "charEnd": 280,
+      "text": "happen when someone touches a part that they believed was de-energised."
+    },
+    {
+      "sentenceId": "s7",
+      "charStart": 281,
+      "charEnd": 297,
+      "text": "Isolation is the"
+    },
+    {
+      "sentenceId": "s8",
+      "charStart": 298,
+      "charEnd": 391,
+      "text": "process of disconnecting equipment from every source of electrical energy before work begins."
+    },
+    {
+      "sentenceId": "s9",
+      "charStart": 392,
+      "charEnd": 393,
+      "text": "A"
+    },
+    {
+      "sentenceId": "s10",
+      "charStart": 394,
+      "charEnd": 466,
+      "text": "worker who isolates correctly removes the hazard instead of managing it."
+    },
+    {
+      "sentenceId": "s11",
+      "charStart": 467,
+      "charEnd": 490,
+      "text": "Every site procedure in"
+    },
+    {
+      "sentenceId": "s12",
+      "charStart": 491,
+      "charEnd": 586,
+      "text": "this text assumes that isolation comes first and that nobody relies on a switch position alone."
+    },
+    {
+      "sentenceId": "s13",
+      "charStart": 587,
+      "charEnd": 589,
+      "text": "2."
+    },
+    {
+      "sentenceId": "s14",
+      "charStart": 590,
+      "charEnd": 608,
+      "text": "Lockout and tagout"
+    },
+    {
+      "sentenceId": "s15",
+      "charStart": 609,
+      "charEnd": 683,
+      "text": "Lockout and tagout is the method used to keep isolated equipment isolated."
+    },
+    {
+      "sentenceId": "s16",
+      "charStart": 684,
+      "charEnd": 705,
+      "text": "A lockout device is a"
+    },
+    {
+      "sentenceId": "s17",
+      "charStart": 706,
+      "charEnd": 777,
+      "text": "padlock or hasp that physically prevents an isolator from being closed."
+    },
+    {
+      "sentenceId": "s18",
+      "charStart": 778,
+      "charEnd": 802,
+      "text": "A tag is a warning label"
+    },
+    {
+      "sentenceId": "s19",
+      "charStart": 803,
+      "charEnd": 899,
+      "text": "attached to the lockout device that names the worker, the date and the reason for the isolation."
+    },
+    {
+      "sentenceId": "s20",
+      "charStart": 900,
+      "charEnd": 949,
+      "text": "Only the worker who applied a lock may remove it."
+    },
+    {
+      "sentenceId": "s21",
+      "charStart": 950,
+      "charEnd": 994,
+      "text": "If several workers are involved, each worker"
+    },
+    {
+      "sentenceId": "s22",
+      "charStart": 995,
+      "charEnd": 1093,
+      "text": "applies their own lock to a multi-lock hasp so that the equipment cannot be re-energised until the"
+    },
+    {
+      "sentenceId": "s23",
+      "charStart": 1094,
+      "charEnd": 1115,
+      "text": "last lock is removed."
+    },
+    {
+      "sentenceId": "s24",
+      "charStart": 1116,
+      "charEnd": 1195,
+      "text": "A tag without a lock is a warning, not a control, and must never be used on its"
+    },
+    {
+      "sentenceId": "s25",
+      "charStart": 1196,
+      "charEnd": 1227,
+      "text": "own where a lock can be fitted."
+    },
+    {
+      "sentenceId": "s26",
+      "charStart": 1228,
+      "charEnd": 1230,
+      "text": "3."
+    },
+    {
+      "sentenceId": "s27",
+      "charStart": 1231,
+      "charEnd": 1269,
+      "text": "Identifying hazards before work starts"
+    },
+    {
+      "sentenceId": "s28",
+      "charStart": 1270,
+      "charEnd": 1340,
+      "text": "Before isolating, the worker inspects the work area and the equipment."
+    },
+    {
+      "sentenceId": "s29",
+      "charStart": 1341,
+      "charEnd": 1360,
+      "text": "Typical hazards are"
+    },
+    {
+      "sentenceId": "s30",
+      "charStart": 1361,
+      "charEnd": 1459,
+      "text": "damaged insulation, exposed conductors, moisture near live parts, stored energy in capacitors, and"
+    },
+    {
+      "sentenceId": "s31",
+      "charStart": 1460,
+      "charEnd": 1500,
+      "text": "equipment fed from more than one supply."
+    },
+    {
+      "sentenceId": "s32",
+      "charStart": 1501,
+      "charEnd": 1549,
+      "text": "Equipment with two supplies is dangerous because"
+    },
+    {
+      "sentenceId": "s33",
+      "charStart": 1550,
+      "charEnd": 1593,
+      "text": "isolating one supply leaves the other live."
+    },
+    {
+      "sentenceId": "s34",
+      "charStart": 1594,
+      "charEnd": 1647,
+      "text": "The worker records the hazards found and the controls"
+    },
+    {
+      "sentenceId": "s35",
+      "charStart": 1648,
+      "charEnd": 1679,
+      "text": "chosen on the isolation permit."
+    },
+    {
+      "sentenceId": "s36",
+      "charStart": 1680,
+      "charEnd": 1743,
+      "text": "A permit is signed by the worker and by a supervisor before any"
+    },
+    {
+      "sentenceId": "s37",
+      "charStart": 1744,
+      "charEnd": 1765,
+      "text": "conductor is touched."
+    },
+    {
+      "sentenceId": "s38",
+      "charStart": 1766,
+      "charEnd": 1843,
+      "text": "After the isolator is opened and locked, the worker must test for dead at the"
+    },
+    {
+      "sentenceId": "s39",
+      "charStart": 1844,
+      "charEnd": 1903,
+      "text": "point of work using a voltage tester rated for the circuit."
+    },
+    {
+      "sentenceId": "s40",
+      "charStart": 1904,
+      "charEnd": 1906,
+      "text": "4."
+    },
+    {
+      "sentenceId": "s41",
+      "charStart": 1907,
+      "charEnd": 1923,
+      "text": "Testing for dead"
+    },
+    {
+      "sentenceId": "s42",
+      "charStart": 1924,
+      "charEnd": 2003,
+      "text": "Testing for dead confirms that the conductors to be worked on carry no voltage."
+    },
+    {
+      "sentenceId": "s43",
+      "charStart": 2004,
+      "charEnd": 2017,
+      "text": "The tester is"
+    },
+    {
+      "sentenceId": "s44",
+      "charStart": 2018,
+      "charEnd": 2107,
+      "text": "proved on a known live source immediately before the test and again immediately after it."
+    },
+    {
+      "sentenceId": "s45",
+      "charStart": 2108,
+      "charEnd": 2114,
+      "text": "If the"
+    },
+    {
+      "sentenceId": "s46",
+      "charStart": 2115,
+      "charEnd": 2206,
+      "text": "tester fails either proving check, the test result is discarded and the tester is replaced."
+    },
+    {
+      "sentenceId": "s47",
+      "charStart": 2207,
+      "charEnd": 2217,
+      "text": "The worker"
+    },
+    {
+      "sentenceId": "s48",
+      "charStart": 2218,
+      "charEnd": 2294,
+      "text": "tests between every pair of conductors and between each conductor and earth."
+    },
+    {
+      "sentenceId": "s49",
+      "charStart": 2295,
+      "charEnd": 2312,
+      "text": "A reading of zero"
+    },
+    {
+      "sentenceId": "s50",
+      "charStart": 2313,
+      "charEnd": 2350,
+      "text": "on an unproved tester proves nothing."
+    },
+    {
+      "sentenceId": "s51",
+      "charStart": 2351,
+      "charEnd": 2410,
+      "text": "The result of the test is written on the permit before work"
+    },
+    {
+      "sentenceId": "s52",
+      "charStart": 2411,
+      "charEnd": 2418,
+      "text": "begins."
+    },
+    {
+      "sentenceId": "s53",
+      "charStart": 2419,
+      "charEnd": 2421,
+      "text": "5."
+    },
+    {
+      "sentenceId": "s54",
+      "charStart": 2422,
+      "charEnd": 2450,
+      "text": "Working and restoring supply"
+    },
+    {
+      "sentenceId": "s55",
+      "charStart": 2451,
+      "charEnd": 2514,
+      "text": "Work proceeds only inside the boundary described on the permit."
+    },
+    {
+      "sentenceId": "s56",
+      "charStart": 2515,
+      "charEnd": 2545,
+      "text": "When the work is complete, the"
+    },
+    {
+      "sentenceId": "s57",
+      "charStart": 2546,
+      "charEnd": 2643,
+      "text": "worker removes tools and materials, checks that guards and covers are refitted, and confirms that"
+    },
+    {
+      "sentenceId": "s58",
+      "charStart": 2644,
+      "charEnd": 2680,
+      "text": "everyone has left the isolated zone."
+    },
+    {
+      "sentenceId": "s59",
+      "charStart": 2681,
+      "charEnd": 2740,
+      "text": "Each worker then removes only their own lock from the hasp."
+    },
+    {
+      "sentenceId": "s60",
+      "charStart": 2741,
+      "charEnd": 2840,
+      "text": "The last lock removed is the lock of the worker who holds the permit, and only after the supervisor"
+    },
+    {
+      "sentenceId": "s61",
+      "charStart": 2841,
+      "charEnd": 2882,
+      "text": "has countersigned the completion section."
+    },
+    {
+      "sentenceId": "s62",
+      "charStart": 2883,
+      "charEnd": 2933,
+      "text": "Lockout and tagout ends when the permit is closed,"
+    },
+    {
+      "sentenceId": "s63",
+      "charStart": 2934,
+      "charEnd": 2947,
+      "text": "never before."
+    },
+    {
+      "sentenceId": "s64",
+      "charStart": 2948,
+      "charEnd": 3036,
+      "text": "Restoring supply while a tag is still fitted is a serious breach because it means a lock"
+    },
+    {
+      "sentenceId": "s65",
+      "charStart": 3037,
+      "charEnd": 3072,
+      "text": "has been removed without authority."
+    },
+    {
+      "sentenceId": "s66",
+      "charStart": 3073,
+      "charEnd": 3075,
+      "text": "6."
+    },
+    {
+      "sentenceId": "s67",
+      "charStart": 3076,
+      "charEnd": 3105,
+      "text": "Personal protective equipment"
+    },
+    {
+      "sentenceId": "s68",
+      "charStart": 3106,
+      "charEnd": 3194,
+      "text": "Insulated gloves are inspected for pinholes by rolling them to trap air before each use."
+    },
+    {
+      "sentenceId": "s69",
+      "charStart": 3195,
+      "charEnd": 3201,
+      "text": "Safety"
+    },
+    {
+      "sentenceId": "s70",
+      "charStart": 3202,
+      "charEnd": 3246,
+      "text": "glasses protect against arc flash particles."
+    },
+    {
+      "sentenceId": "s71",
+      "charStart": 3247,
+      "charEnd": 3299,
+      "text": "Non-conductive footwear is worn whenever a floor may"
+    },
+    {
+      "sentenceId": "s72",
+      "charStart": 3301,
+      "charEnd": 3313,
+      "text": "-- 1 of 2 --"
+    },
+    {
+      "sentenceId": "s73",
+      "charStart": 3315,
+      "charEnd": 3323,
+      "text": "be damp."
+    },
+    {
+      "sentenceId": "s74",
+      "charStart": 3324,
+      "charEnd": 3408,
+      "text": "Personal protective equipment reduces the severity of an injury; it does not replace"
+    },
+    {
+      "sentenceId": "s75",
+      "charStart": 3409,
+      "charEnd": 3419,
+      "text": "isolation."
+    },
+    {
+      "sentenceId": "s76",
+      "charStart": 3420,
+      "charEnd": 3502,
+      "text": "Rings, watches and metal jewellery are removed before electrical work because they"
+    },
+    {
+      "sentenceId": "s77",
+      "charStart": 3503,
+      "charEnd": 3544,
+      "text": "conduct current and can cause deep burns."
+    },
+    {
+      "sentenceId": "s78",
+      "charStart": 3546,
+      "charEnd": 3558,
+      "text": "-- 2 of 2 --"
+    }
+  ],
+  "metadata": {
+    "characters": 3558,
+    "codePoints": 3558,
+    "extractionVersion": "2026-09-28.1",
+    "fileName": "source-electrical-safety.pdf",
+    "pages": 2
+  }
+}
