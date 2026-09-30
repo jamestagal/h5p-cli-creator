@@ -132,7 +132,7 @@ Execute tasks in order. Each task writes its failing tests first, runs them and 
 | **A: engine and build identity** | 3 and follow-up F1 | Reviewer | Whole-diff review of Tasks 1–3 and F1; `pnpm verify` green |
 | **B: extraction inspection** | 8 | Benjamin, zero cost | `leap extract` on the BSBAUD412 packet; compare at least five representative tables with the original (design §4.2). Any mismatch goes back to Tasks 5–7 before anything else proceeds |
 | **C: authorise S1** | 10, offline part | Benjamin | Task 10's offline work is complete and green on its task branch, apart from the expected replay misses (see Task 10). Benjamin writes the S1 ledger entry; S1 runs only after that. The phase branch waits here, and Tasks 11–16 depend on Task 10 |
-| **D: tooling complete** | 16 | Reviewer | Whole-branch review; `pnpm verify` green; the pilot runbook reviewed |
+| **D: tooling complete** | 16 and follow-up F2 | Reviewer | Whole-branch review; `pnpm verify` green; the pilot runbook reviewed; F2 done before the runbook names package paths |
 | **E: authorise P1** | D | Benjamin | Ledger entry for P1. This is the first paid BSBAUD412 run; it comes after A and B by construction |
 
 ## File structure changes
@@ -452,6 +452,22 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 **Commit:** `feat(cli): leap extract for zero-cost inspection; generate accepts DOCX and ODT`
 
 **→ Checkpoint B.** Benjamin runs `leap extract --source docs/uoc/BSBAUD412/<packet> --out docs/uoc/BSBAUD412/extract-1` and checks at least five tables against the original (merged cells, a table across pages, lists in cells, a key/value table, a table without headers), reviews `oversizeAtomicSegments` and `oversizeRequests`, and checks every entry in `warnings.md`: each label-like reference must still point unambiguously at the right item. If any does not, the DOCX adapter renders real numbering formats before P1 (a change to Task 6 with its own tests). The result, with table numbers and pass or fail but no content, goes into `docs/testing/phase-3-pilot.md`.
+
+---
+
+### Follow-up F2: `leap generate` prints the real package path (due before Task 16)
+
+**Origin:** found during Task 8 (`ee3585e`) and recorded at the owner's request. After an import, `apps/cli/src/generate.ts` prints each activity's package as `builds/<activityId>-r<revision>.h5p`. Since Task 3, packages are stored under `BuildRecord.buildKey` = `builds/<activity>-r<n>-<fp12>.h5p`, so the printed path names a file that does not exist. The pilot runbook (Task 16) must not rely on these paths until this is fixed.
+
+**Scope (bounded):** the summary line only. Print the promoted revision's actual `BuildRecord.buildKey` (revision → `currentBuildId` → `getBuildRecord`), and print no path when the revision has no build record. No other behaviour changes.
+
+**Tests (write first):**
+- [ ] After a replay run, every printed package path exists under the output directory and equals the activity's `BuildRecord.buildKey`.
+- [ ] An activity without a build record prints no path.
+
+**Verification:** `pnpm verify` → `exit=0`.
+
+**Commit:** `fix(cli): generate prints each activity's actual build key`
 
 ---
 
