@@ -136,6 +136,7 @@ export async function resolveNumbering(zip: JSZip): Promise<NumberingResolution>
         if (existing) merged.replaceChild(copy, existing); else merged.appendChild(copy);
       }
       numberingXml.documentElement!.insertBefore(merged, firstNum);
+      abstracts.set(String(nextId), merged); // the lookups below must see what the rewritten XML says: this num now uses `merged`
       ownFirst(num, "abstractNumId")!.setAttributeNS(WNS, "w:val", String(nextId));
       nextId++;
       changed = true;

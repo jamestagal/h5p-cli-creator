@@ -145,6 +145,17 @@ describe("effective numbering (level overrides, paragraph styles, numbering styl
     expect(linesOf(r.document.text).slice(0, 3)).toEqual(["1. Prepare", "  1. Check the permit", "Not a step"]);
   });
 
+  it("an overridden level 0 leaves the definition's level 1 in place for direct and style-inherited children", async () => {
+    const override = `<w:num w:numId="6"><w:abstractNumId w:val="0"/><w:lvlOverride w:ilvl="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%1)"/></w:lvl></w:lvlOverride></w:num>`;
+    const styles = [...STYLES, `<w:style w:type="paragraph" w:styleId="SubStep"><w:name w:val="SubStep"/><w:basedOn w:val="Normal"/><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="6"/></w:numPr></w:pPr></w:style>`];
+    const r = await variant([heading(1, "Mixed"), item(6, 0, "Prepare"), styled("SubStep", "Check the permit"), item(6, 1, "Brief the team"), item(6, 0, "Isolate")], { nums: [...NUMS, override], styles });
+    expect(linesOf(r.document.text).slice(0, 5)).toEqual(["Mixed", "1. Prepare", "  1. Check the permit", "  2. Brief the team", "2. Isolate"]);
+    expect(r.document.sentences.find((s) => s.text === "1. Check the permit")).toMatchObject({ listDepth: 1, headingPath: ["Mixed"] });
+    expect(r.document.sentences.find((s) => s.text === "2. Brief the team")).toMatchObject({ listDepth: 1 });
+    expect(r.warnings.numberingUnsupported).toEqual([]);
+    expect(r.warnings.listNumberingSimplified).toEqual([{ listIndex: 1, headingPath: ["Mixed"], originalFormats: ["lowerLetter"] }]);
+  });
+
   it("numbering through a numbering style (w:numStyleLink) is followed", async () => {
     const abstractNums = [...ABSTRACT_NUMS, `<w:abstractNum w:abstractNumId="3"><w:numStyleLink w:val="RomanList"/></w:abstractNum>`, `<w:abstractNum w:abstractNumId="4"><w:lvl w:ilvl="0"><w:numFmt w:val="lowerRoman"/><w:lvlText w:val="(%1)"/></w:lvl></w:abstractNum>`];
     const nums = [...NUMS, `<w:num w:numId="8"><w:abstractNumId w:val="3"/></w:num>`, `<w:num w:numId="9"><w:abstractNumId w:val="4"/></w:num>`];
