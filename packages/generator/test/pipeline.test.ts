@@ -18,7 +18,7 @@ import type { AttemptStart, ModelResponse } from "../src/llm/types.js";
 import type { PlanRules } from "../src/plan/planner.js";
 import { ProviderError } from "../src/llm/provider.js";
 import { ANTHROPIC_TIMEOUT_MS } from "../src/llm/anthropic-provider.js";
-import { conceptResponses, syntheticDoc, syntheticUnitText, unitOut, planOutFor, SYNTHETIC_CHUNK_TOKENS, sid } from "./helpers/synthetic.js";
+import { conceptResponses, EVIDENCE_PASSAGES, markdownEvidence, passageEvidence, passageIds, syntheticDoc, syntheticUnitText, unitOut, planOutFor, SYNTHETIC_CHUNK_TOKENS, type FixtureEvidence } from "./helpers/synthetic.js";
 import { crashBefore, CrashError, failOnce, failOutcomeOnce, withBuildBytes } from "./helpers/crashing-store.js";
 import { RoutedProvider } from "./helpers/routed-provider.js";
 import { IDENTITY_A, IDENTITY_A_NEW_LOCK, IDENTITY_B } from "./helpers/identity.js";
@@ -30,23 +30,24 @@ const rules: PlanRules = { multiChoice: { perImport: 1 }, blanks: { perImport: 1
 type Doc = Awaited<ReturnType<typeof syntheticDoc>>;
 
 /** Produce fixtures cite only evidence that belongs to the concept each plan slot targets (planOutFor: multiChoice → c1, a second multiChoice → c2, blanks → c2, flashcards → c1 + c2). */
-function produceResponses(doc: Doc) {
-  const remove = `ev-${sid(doc, "Only the worker who applied a lock may remove it")}`;   // concept c1 (lockout and tagout)
-  const tag = `ev-${sid(doc, "A tag is a warning label")}`;                               // concept c1
-  const tfdA = `ev-${sid(doc, "After the isolator is opened and locked")}`;              // concept c2 (testing for dead)
-  const tfdB = `ev-${sid(doc, "Testing for dead confirms")}`;                            // concept c2
-  const mc = { title: "Removing a lock", question: "Who may remove a lockout device from an isolator?", answers: [{ text: "The worker who applied it", correct: true, feedback: "Only the worker who applied a lock may remove it." }, { text: "Any supervisor", correct: false, feedback: "" }, { text: "The site electrician", correct: false, feedback: "" }], evidenceIds: [remove] };
-  const mc2 = { title: "Testing for dead", question: "What does testing for dead confirm before work starts?", answers: [{ text: "That the conductors carry no voltage", correct: true, feedback: "Testing for dead confirms that the conductors to be worked on carry no voltage." }, { text: "That the permit is closed", correct: false, feedback: "" }, { text: "That the tag has been removed", correct: false, feedback: "" }], evidenceIds: [tfdB] };
-  const bl = { title: "Testing for dead", taskDescription: "Complete the sentences about testing for dead.", passage: "After the isolator is opened and locked, the worker must test for {{b1}} at the point of work using a voltage tester rated for the circuit. Testing for dead confirms that the conductors to be worked on carry no {{b2}}.", blanks: [{ answers: ["dead"], tip: null, evidenceIds: [tfdA] }, { answers: ["voltage"], tip: null, evidenceIds: [tfdB] }] };
-  const fc = { title: "Key terms", description: "Isolation vocabulary.", cards: [{ front: "Who may remove a lock", back: "Only the worker who applied it", tip: null, evidenceIds: [remove] }, { front: "Tag", back: "A warning label attached to the lockout device naming the worker, the date and the reason", tip: null, evidenceIds: [tag] }, { front: "When to test for dead", back: "After the isolator is opened and locked, at the point of work, with a tester rated for the circuit", tip: null, evidenceIds: [tfdA] }, { front: "What testing for dead confirms", back: "That the conductors to be worked on carry no voltage", tip: null, evidenceIds: [tfdB] }] };
+function produceResponses(doc: Doc, evidence: FixtureEvidence = markdownEvidence(doc)) {
+  const ev = (ids: string[]) => ids.map((id) => `ev-${id}`);
+  const remove = ev(evidence.lotoRemove);   // concept c1 (lockout and tagout)
+  const tag = ev(evidence.lotoTag);         // concept c1
+  const tfdA = ev(evidence.tfdA);           // concept c2 (testing for dead)
+  const tfdB = ev(evidence.tfdB);           // concept c2
+  const mc = { title: "Removing a lock", question: "Who may remove a lockout device from an isolator?", answers: [{ text: "The worker who applied it", correct: true, feedback: "Only the worker who applied a lock may remove it." }, { text: "Any supervisor", correct: false, feedback: "" }, { text: "The site electrician", correct: false, feedback: "" }], evidenceIds: remove };
+  const mc2 = { title: "Testing for dead", question: "What does testing for dead confirm before work starts?", answers: [{ text: "That the conductors carry no voltage", correct: true, feedback: "Testing for dead confirms that the conductors to be worked on carry no voltage." }, { text: "That the permit is closed", correct: false, feedback: "" }, { text: "That the tag has been removed", correct: false, feedback: "" }], evidenceIds: tfdB };
+  const bl = { title: "Testing for dead", taskDescription: "Complete the sentences about testing for dead.", passage: "After the isolator is opened and locked, the worker must test for {{b1}} at the point of work using a voltage tester rated for the circuit. Testing for dead confirms that the conductors to be worked on carry no {{b2}}.", blanks: [{ answers: ["dead"], tip: null, evidenceIds: tfdA }, { answers: ["voltage"], tip: null, evidenceIds: tfdB }] };
+  const fc = { title: "Key terms", description: "Isolation vocabulary.", cards: [{ front: "Who may remove a lock", back: "Only the worker who applied it", tip: null, evidenceIds: remove }, { front: "Tag", back: "A warning label attached to the lockout device naming the worker, the date and the reason", tip: null, evidenceIds: tag }, { front: "When to test for dead", back: "After the isolator is opened and locked, at the point of work, with a tester rated for the circuit", tip: null, evidenceIds: tfdA }, { front: "What testing for dead confirms", back: "That the conductors to be worked on carry no voltage", tip: null, evidenceIds: tfdB }] };
   return { mc, mc2, bl, fc };
 }
 
 const r = (value: unknown) => fakeResponse({ outputText: JSON.stringify(value) });
 /** Typed as the provider script union so tests can splice a ProviderError into it. */
-async function fullScript(doc: Doc): Promise<Array<ModelResponse | Error>> {
-  const { script } = conceptResponses(doc);
-  const { mc, bl, fc } = produceResponses(doc);
+async function fullScript(doc: Doc, evidence: FixtureEvidence = markdownEvidence(doc)): Promise<Array<ModelResponse | Error>> {
+  const { script } = conceptResponses(doc, evidence);
+  const { mc, bl, fc } = produceResponses(doc, evidence);
   return [r(unitOut), ...script, r(planOutFor(["multiChoice", "blanks", "flashcards"])), r(mc), r(bl), r(fc)];
 }
 const callsThroughPlan = (doc: Doc) => 1 + chunkSentences(doc.sentences, SYNTHETIC_CHUNK_TOKENS).length + 2 + 1; // parseUnit, extract per chunk, merge, align, plan
@@ -663,8 +664,13 @@ describe("current PDF ingestion through the pipeline (offline; replay of the cur
     expect(doc.text).not.toMatch(/^-- \d+ of \d+ --$/m);
     expect(doc.sentences.some((x) => /^-- \d+ of \d+ --$/.test(x.text))).toBe(false);
     expect(doc.metadata.extractionVersion).toBe(EXTRACTION_VERSION);
+    // Every supporting passage is cited in full: pinned ids, and their texts joined are exactly the passage.
+    const evidence = passageEvidence(doc);
+    expect(evidence).toEqual({ lotoEarly: ["s15"], lotoTag: ["s18", "s19"], lotoRemove: ["s20"], lotoLate: ["s62", "s63"], tfdA: ["s38", "s39"], tfdB: ["s42"], hazards: ["s29", "s30", "s31"] });
+    const textOf = (id: string) => doc.sentences.find((x) => x.sentenceId === id)!.text;
+    for (const [key, ids] of Object.entries(evidence) as Array<[keyof FixtureEvidence, string[]]>) expect(ids.map(textOf).join(" "), key).toBe(EVIDENCE_PASSAGES[key]);
     const store = new MemoryStore();
-    const provider = new FakeProvider(await fullScript(doc));
+    const provider = new FakeProvider(await fullScript(doc, evidence));
     const record = await runImport(await input("imp-pdf", { source: doc }), deps(store, provider));
     expect(record.status).toBe("ready");
     expect(provider.requests.every((req) => !/-- \d+ of \d+ --/.test(req.user))).toBe(true); // no page label reaches a model request
@@ -676,6 +682,14 @@ describe("current PDF ingestion through the pipeline (offline; replay of the cur
       expect((await store.getBuild(build.buildKey))?.subarray(0, 2).toString("latin1")).toBe("PK");
     }
     expect(await store.getArtifact("imp-pdf", "source")).toMatchObject({ textHash: doc.textHash, metadata: { extractionVersion: EXTRACTION_VERSION } });
+  });
+
+  it("passageIds refuses a passage whose continuation is missing, and one that occurs twice", async () => {
+    const doc = await ingestPdf(await readFile(pdfPath), pdfOpts);
+    expect(() => passageIds(doc, "Typical hazards are damaged insulation")).toThrow(/no contiguous sentence run/); // s29 alone, or s29 + half of s30, is not the passage
+    expect(() => passageIds(doc, "Typical hazards are")).not.toThrow(); // a complete segment is still a run of its own
+    const twice: SourceDocument = { ...doc, sentences: [...doc.sentences, ...doc.sentences.slice(28, 31).map((x, i) => ({ ...x, sentenceId: `dup${i}` }))] };
+    expect(() => passageIds(twice, EVIDENCE_PASSAGES.hazards)).toThrow(/2 contiguous sentence runs/);
   });
 
   it("refuses to resume an import created from the pre-fix PDF text, before any write or model call", async () => {

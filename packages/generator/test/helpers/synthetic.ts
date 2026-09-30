@@ -22,11 +22,59 @@ export async function syntheticDoc(): Promise<SourceDocument> {
 }
 export async function syntheticUnitText(): Promise<string> { return readFile(resolve(fixtures, "unit-synele001.txt"), "utf8"); }
 
-/** The sentence that starts with `startsWith`; in PDF text a line wrap can end a sentence early, so failing that, the sentence that is an opening fragment of it (12+ characters). */
 export function sid(doc: SourceDocument, startsWith: string): string {
-  const s = doc.sentences.find((x) => x.text.startsWith(startsWith)) ?? doc.sentences.find((x) => x.text.length >= 12 && startsWith.startsWith(x.text));
+  const s = doc.sentences.find((x) => x.text.startsWith(startsWith));
   if (!s) throw new Error(`no sentence starting "${startsWith}"`);
   return s.sentenceId;
+}
+
+/**
+ * The ids of the one run of contiguous sentences whose texts, joined with single spaces, are exactly `passage`. In PDF
+ * text a line wrap ends a segment mid-sentence, so a complete supporting passage can span several ids. Throws when no
+ * run matches (missing continuation text) or more than one does (ambiguous).
+ */
+export function passageIds(doc: SourceDocument, passage: string): string[] {
+  const flat = (t: string) => t.replace(/\s+/g, " ").trim();
+  const target = flat(passage);
+  const runs: string[][] = [];
+  for (let i = 0; i < doc.sentences.length; i++) {
+    let joined = "";
+    for (let j = i; j < doc.sentences.length; j++) {
+      joined = joined === "" ? flat(doc.sentences[j]!.text) : `${joined} ${flat(doc.sentences[j]!.text)}`;
+      if (joined === target) { runs.push(doc.sentences.slice(i, j + 1).map((x) => x.sentenceId)); break; }
+      if (!target.startsWith(joined)) break;
+    }
+  }
+  if (runs.length !== 1) throw new Error(`${runs.length === 0 ? "no" : `${runs.length}`} contiguous sentence run${runs.length === 1 ? "" : "s"} with the text "${passage}"`);
+  return runs[0]!;
+}
+
+/** The evidence the fake concept and produce responses cite, as sentence ids per supporting passage. */
+export interface FixtureEvidence { lotoEarly: string[]; lotoTag: string[]; lotoRemove: string[]; lotoLate: string[]; tfdA: string[]; tfdB: string[]; hazards: string[] }
+
+/** The complete supporting passages, as they appear in the synthetic source. */
+export const EVIDENCE_PASSAGES: Record<keyof FixtureEvidence, string> = {
+  lotoEarly: "Lockout and tagout is the method used to keep isolated equipment isolated.",
+  lotoTag: "A tag is a warning label attached to the lockout device that names the worker, the date and the reason for the isolation.",
+  lotoRemove: "Only the worker who applied a lock may remove it.",
+  lotoLate: "Lockout and tagout ends when the permit is closed, never before.",
+  tfdA: "After the isolator is opened and locked, the worker must test for dead at the point of work using a voltage tester rated for the circuit.",
+  tfdB: "Testing for dead confirms that the conductors to be worked on carry no voltage.",
+  hazards: "Typical hazards are damaged insulation, exposed conductors, moisture near live parts, stored energy in capacitors, and equipment fed from more than one supply."
+};
+
+/** Markdown: each passage is one sentence, found by its opening words (the ids every existing fixture has always used). */
+export function markdownEvidence(doc: SourceDocument): FixtureEvidence {
+  return {
+    lotoEarly: [sid(doc, "Lockout and tagout is the method")], lotoTag: [sid(doc, "A tag is a warning label")], lotoRemove: [sid(doc, "Only the worker who applied a lock may remove it")],
+    lotoLate: [sid(doc, "Lockout and tagout ends when the permit is closed")], tfdA: [sid(doc, "After the isolator is opened and locked")], tfdB: [sid(doc, "Testing for dead confirms")],
+    hazards: [sid(doc, "Typical hazards are damaged insulation")]
+  };
+}
+
+/** PDF: each passage is the unique contiguous run of sentence ids that spells it out in full. */
+export function passageEvidence(doc: SourceDocument): FixtureEvidence {
+  return Object.fromEntries(Object.entries(EVIDENCE_PASSAGES).map(([key, passage]) => [key, passageIds(doc, passage)])) as unknown as FixtureEvidence;
 }
 
 /** Synthetic model output for unit-synele001.txt, authored by hand (Task 7). */
@@ -42,21 +90,15 @@ export const unitOut = {
 };
 
 /** One extract response per chunk plus merge and align responses, built from the real sentence ids so the fixture never drifts (Task 8). */
-export function conceptResponses(doc: SourceDocument): { perChunk: Array<Array<{ name: string; summary: string; sentenceIds: string[] }>>; mergeOut: { concepts: Array<{ name: string; summary: string; memberIds: string[] }> }; alignOut: { criteria: Array<{ criterionId: string; conceptIds: string[] }> }; script: ReturnType<typeof fakeResponse>[] } {
+export function conceptResponses(doc: SourceDocument, evidence: FixtureEvidence = markdownEvidence(doc)): { perChunk: Array<Array<{ name: string; summary: string; sentenceIds: string[] }>>; mergeOut: { concepts: Array<{ name: string; summary: string; memberIds: string[] }> }; alignOut: { criteria: Array<{ criterionId: string; conceptIds: string[] }> }; script: ReturnType<typeof fakeResponse>[] } {
   const chunks = chunkSentences(doc.sentences, SYNTHETIC_CHUNK_TOKENS);
-  const lotoEarly = sid(doc, "Lockout and tagout is the method");
-  const lotoTag = sid(doc, "A tag is a warning label");
-  const lotoRemove = sid(doc, "Only the worker who applied a lock may remove it");
-  const lotoLate = sid(doc, "Lockout and tagout ends when the permit is closed");
-  const tfdA = sid(doc, "After the isolator is opened and locked");
-  const tfdB = sid(doc, "Testing for dead confirms");
-  const hazards = sid(doc, "Typical hazards are damaged insulation");
+  const { lotoEarly, lotoTag, lotoRemove, lotoLate, tfdA, tfdB, hazards } = evidence;
   const inChunk = (i: number, ids: string[]) => ids.filter((id) => chunks[i]!.sentences.some((s) => s.sentenceId === id));
   const perChunk = chunks.map((_, i) => {
     const concepts: Array<{ name: string; summary: string; sentenceIds: string[] }> = [];
-    const loto = inChunk(i, [lotoEarly, lotoTag, lotoRemove, lotoLate]); if (loto.length) concepts.push({ name: "Lockout and tagout", summary: "Locks and tags keep isolated equipment isolated.", sentenceIds: loto });
-    const tfd = inChunk(i, [tfdA, tfdB]); if (tfd.length) concepts.push({ name: "Testing for dead", summary: "Prove the tester, test every pair, record the result.", sentenceIds: tfd });
-    const hz = inChunk(i, [hazards]); if (hz.length) concepts.push({ name: "Hazard identification", summary: "Inspect for damaged insulation, moisture, stored energy, multiple supplies.", sentenceIds: hz });
+    const loto = inChunk(i, [...lotoEarly, ...lotoTag, ...lotoRemove, ...lotoLate]); if (loto.length) concepts.push({ name: "Lockout and tagout", summary: "Locks and tags keep isolated equipment isolated.", sentenceIds: loto });
+    const tfd = inChunk(i, [...tfdA, ...tfdB]); if (tfd.length) concepts.push({ name: "Testing for dead", summary: "Prove the tester, test every pair, record the result.", sentenceIds: tfd });
+    const hz = inChunk(i, hazards); if (hz.length) concepts.push({ name: "Hazard identification", summary: "Inspect for damaged insulation, moisture, stored energy, multiple supplies.", sentenceIds: hz });
     if (concepts.length === 0) concepts.push({ name: "Personal protective equipment", summary: "PPE reduces severity but does not replace isolation.", sentenceIds: [chunks[i]!.sentences[0]!.sentenceId] });
     return concepts;
   });
