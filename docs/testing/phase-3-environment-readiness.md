@@ -364,3 +364,19 @@ Running 10 tests using 1 worker
 ### Verdict (29 Sep, full network access)
 
 **Ready** for the player smoke suite: with full network access the pinned browser installs and all 10 smoke tests pass against it, given two recorded, non-network prerequisites (Node 20 first on `PATH`, `pnpm -r build` before `test:smoke`).
+
+## 2026-09-30: LibreOffice cannot open files in this container (ODT adapter, Task 7)
+
+**Context.** Task 7 wanted a real ODF reader to confirm that the synthetic ODT fixture opens and renders as intended, and optionally to produce an ODT written by LibreOffice itself.
+
+**Observed.** LibreOffice 24.2.7.2 (`libreoffice-core 4:24.2.7-0ubuntu0.24.04.4`) is installed at `/usr/bin/soffice`, but headless conversion fails for every input, including a five-byte plain text file:
+
+```
+HOME=/tmp/lo2 soffice --headless --norestore --convert-to odt /tmp/lo2/a.txt --outdir /tmp/lo2
+Warning: failed to launch javaldx - java may not function correctly
+Error: source file could not be loaded
+```
+
+The same error occurred for `structure.odt`, for `structure.docx`, with the scratchpad directory and with a plain `/tmp` directory, and with a separate `HOME`. It was reproduced again during the Task 7 correction. The cause was not investigated further.
+
+**Consequence.** The ODT adapter is tested only against synthetic fixtures built by `odt-builder.mjs`. Those tests establish the adapter's behaviour on well-formed ODF as written by the builder; they **do not establish compatibility with files written by real producers** (LibreOffice, Google Docs, Word's ODT export). Checkpoint B, or a container where LibreOffice works, should confirm the adapter on at least one real ODT before ODT sources are relied on.

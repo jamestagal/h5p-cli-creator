@@ -113,6 +113,17 @@ describe("linearize: lists, notes and headings", () => {
     ])).toEqual(["1. Prepare", "  a) Check the permit", "  b) Brief the team", "2. Isolate"]);
   });
 
+  it("writes an item's continuation paragraph at the item's depth, unnumbered, under the item's text", () => {
+    const { text, segments } = linearize([
+      { kind: "paragraph", text: "Steps:" },
+      { kind: "listItem", depth: 0, label: "1.", text: "Isolate" }, { kind: "listItem", depth: 0, label: "", text: "Use your own lock.", continuation: true },
+      { kind: "listItem", depth: 1, label: "a)", text: "Test" }, { kind: "listItem", depth: 1, label: "", text: "Twice.", continuation: true },
+      { kind: "listItem", depth: 0, label: "", text: "Then start.", continuation: true }
+    ]);
+    expect(text.split("\n")).toEqual(["Steps:", "1. Isolate", "   Use your own lock.", "  a) Test", "     Twice.", "   Then start."]);
+    expect(segments.map((s) => [s.listDepth, s.labelEnd ?? null])).toEqual([[null, null], [0, 2], [0, null], [1, 4], [1, null], [0, null]]);
+  });
+
   it("writes notes as [Note n] text where they are placed", () => {
     expect(lines([{ kind: "paragraph", text: "Records are kept for seven years.1" }, { kind: "note", n: 1, text: "Under the retention policy." }])).toEqual(["Records are kept for seven years.1", "[Note 1] Under the retention policy."]);
   });

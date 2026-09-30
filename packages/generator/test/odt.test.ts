@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { EXTRACTION_VERSION, ingestDocx, ingestOdt, normaliseSourceText, OdtFormatError } from "../src/ingest/index.js";
+import { chunkSentences, extractionRequest } from "../src/concepts/index.js";
 import { AUTOMATIC_STYLES, STYLES, cell, covered, h, list, note, p, para, row, structureOdtParts, t, table, zipOdt } from "./fixtures/structure/odt-builder.mjs";
 
 const dir = resolve(import.meta.dirname, "fixtures/structure");
@@ -110,6 +111,53 @@ describe("list labels from the list style", () => {
     const styles = [`<text:outline-style style:name="Outline"><text:outline-level-style text:level="1" style:num-format="1" style:num-suffix="."/></text:outline-style>`, ...STYLES.filter((s) => !s.includes("outline-style"))];
     const r = await variant([h(1, "Scope"), para("Body text."), `<text:h text:outline-level="1" text:is-list-header="true">Unnumbered</text:h>`], { styles });
     expect(r.warnings.numberingUnsupported).toEqual([{ reason: "numbered-heading", headingPath: [], text: "Scope", numId: "outline", ilvl: "0" }]);
+  });
+});
+
+describe("list items with more than one paragraph", () => {
+  /** A list item holding several paragraphs, then optionally a nested list. */
+  const multi = (paragraphs: string[], nested = "") => `<text:list-item>${paragraphs.map(para).join("")}${nested}</text:list-item>`;
+  const numbered = (items: string) => `<text:list text:style-name="Numbered">${items}</text:list>`;
+  const requestLines = (doc: Awaited<ReturnType<typeof variant>>["document"]) => chunkSentences(doc.sentences, 6000).flatMap((c) => extractionRequest(c, {}).user.split("\n"));
+
+  it("a top-level item's second paragraph keeps the item's depth, is not numbered again, and follows it in the request", async () => {
+    const r = await variant([h(1, "Isolation"), numbered(`${multi(["Lock the isolator.", "Use your own padlock."])}${multi(["Test for dead."])}`), para("After the list.")]);
+    const doc = r.document;
+    expect(linesOf(doc.text).slice(0, 5)).toEqual(["Isolation", "1. Lock the isolator.", "   Use your own padlock.", "2. Test for dead.", "After the list."]);
+    const s = (text: string) => doc.sentences.find((x) => x.text === text)!;
+    expect(s("1. Lock the isolator.")).toMatchObject({ listDepth: 0, headingPath: ["Isolation"] });
+    expect(s("Use your own padlock.")).toMatchObject({ listDepth: 0, headingPath: ["Isolation"], atomic: false });
+    expect(s("After the list.")).toMatchObject({ listDepth: null });
+    for (const x of doc.sentences) expect(doc.text.slice(x.charStart, x.charEnd)).toBe(x.text);
+    const req = requestLines(doc);
+    const at = req.findIndex((l) => l.endsWith("(list level 1) 1. Lock the isolator."));
+    expect(req.slice(at, at + 3)).toEqual([`[${s("1. Lock the isolator.").sentenceId}] (list level 1) 1. Lock the isolator.`, `[${s("Use your own padlock.").sentenceId}] (list level 1) Use your own padlock.`, `[${s("2. Test for dead.").sentenceId}] (list level 1) 2. Test for dead.`]);
+  });
+
+  it("a nested item's continuation paragraphs keep depth 1, before and after its own sub-list", async () => {
+    const threeLevels = [...AUTOMATIC_STYLES, numberStyle("Numbered", [1, 2, 3].map((n) => level(n, "1", ' style:num-suffix="."')).join(""))];
+    const r = await variant([numbered(multi(["Prepare the work."], numbered(`${multi(["Check the permit.", "The permit is signed by the supervisor."], numbered(multi(["Read the conditions."])))}${multi(["Brief the team."])}`)))], { automaticStyles: threeLevels });
+    expect(r.warnings.numberingUnsupported).toEqual([]);
+    const doc = r.document;
+    expect(linesOf(doc.text).slice(0, 5)).toEqual(["1. Prepare the work.", "  1. Check the permit.", "     The permit is signed by the supervisor.", "    1. Read the conditions.", "  2. Brief the team."]);
+    const depth = (text: string) => doc.sentences.find((x) => x.text === text)!.listDepth;
+    expect([depth("1. Check the permit."), depth("The permit is signed by the supervisor."), depth("1. Read the conditions."), depth("2. Brief the team.")]).toEqual([1, 1, 2, 1]);
+    for (const x of doc.sentences) expect(doc.text.slice(x.charStart, x.charEnd)).toBe(x.text);
+    expect(requestLines(doc)).toContain(`[${doc.sentences.find((x) => x.text === "The permit is signed by the supervisor.")!.sentenceId}] (list level 2) The permit is signed by the supervisor.`);
+
+    const after = await variant([numbered(`<text:list-item>${para("Prepare the work.")}${numbered(multi(["Check the permit."]))}${para("Then start.")}</text:list-item>`)]);
+    expect(linesOf(after.document.text).slice(0, 3)).toEqual(["1. Prepare the work.", "  1. Check the permit.", "   Then start."]);
+    expect(after.document.sentences.find((x) => x.text === "Then start.")).toMatchObject({ listDepth: 0 });
+  });
+
+  it("in a table cell, continuations stay with their item inside the atomic row, nested ones inside the sub-list", async () => {
+    const inCell = numbered(`${multi(["Lock.", "Own padlock only."], numbered(multi(["Tag.", "Sign the tag."])))}${multi(["Test."])}`);
+    const r = await variant([table("T", 2, [row([cell(para("Steps")), cell(inCell)])])]);
+    const doc = r.document;
+    const rowText = "[Table 1, row 1] Column 1: Steps; Column 2: 1. Lock. Own padlock only. [sub-list: 1. Tag. Sign the tag.] 2. Test.";
+    expect(linesOf(doc.text)[0]).toBe(rowText);
+    expect(doc.sentences.find((x) => x.text === rowText)).toMatchObject({ atomic: true, listDepth: null });
+    for (const x of doc.sentences) expect(doc.text.slice(x.charStart, x.charEnd)).toBe(x.text);
   });
 });
 

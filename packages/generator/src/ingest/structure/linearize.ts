@@ -135,7 +135,8 @@ function noteLines(note: Extract<Block, { kind: "note" }>, push: (text: string, 
 
 /**
  * Blocks → source text and segments. Headings are lines of their own and set the heading path; list items are
- * indented by depth with their label; each table data row is one atomic line `[Table n, row r] label: value; …`;
+ * indented by depth with their label, and an item's continuation paragraphs keep its depth, without a label, indented
+ * under its text; each table data row is one atomic line `[Table n, row r] label: value; …`;
  * notes are lines starting `[Note n]` (noteLines). Empty blocks produce no line, lines are joined with "\n", and every piece of text must
  * already be normalised, so the result is a fixed point of normaliseSourceText.
  */
@@ -143,6 +144,7 @@ export function linearize(blocks: Block[]): Linearized {
   const lines: Line[] = [];
   const headings: Array<{ level: number; text: string }> = [];
   const path = (): string[] => headings.map((h) => h.text);
+  const labelWidth: number[] = []; // label length of the latest item at each depth, for continuation paragraphs
   const push = (text: string, atomic = false, listDepth: number | null = null, labelEnd?: number): void => { if (text !== "") lines.push({ text, atomic, headingPath: path(), listDepth, ...(labelEnd ? { labelEnd } : {}) }); };
 
   for (const b of blocks) {
@@ -157,10 +159,20 @@ export function linearize(blocks: Block[]): Linearized {
       }
       case "paragraph": push(assertNormalised(b.text, "paragraph")); break;
       case "listItem": {
+        const depth = Math.max(0, b.depth);
+        if (b.continuation) {
+          // A further paragraph of the item above: same depth, no label, indented under the item's text (a hanging indent).
+          const text = assertNormalised(b.text, "list item continuation");
+          const hang = labelWidth[depth] ?? 0;
+          if (text !== "") push(`${lines.length === 0 ? "" : `${"  ".repeat(depth)}${" ".repeat(hang === 0 ? 0 : hang + 1)}`}${text}`, false, depth);
+          break;
+        }
         const label = assertNormalised(b.label, "list label");
+        labelWidth[depth] = label.length;
+        labelWidth.length = depth + 1;
         const body = [label, assertNormalised(b.text, "list item")].filter(Boolean).join(" ");
-        const indent = lines.length === 0 ? "" : "  ".repeat(Math.max(0, b.depth));
-        if (body !== "") push(`${indent}${body}`, false, Math.max(0, b.depth), label === "" ? undefined : indent.length + label.length); // a leading indent on the first line would not survive trimming; the depth is kept as metadata either way
+        const indent = lines.length === 0 ? "" : "  ".repeat(depth);
+        if (body !== "") push(`${indent}${body}`, false, depth, label === "" ? undefined : indent.length + label.length); // a leading indent on the first line would not survive trimming; the depth is kept as metadata either way
         break;
       }
       case "note": noteLines(b, push); break;

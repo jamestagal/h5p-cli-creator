@@ -173,7 +173,11 @@ function listBlocks(list: XmlElement, depth: number, chain: Chain, style: string
     parts.forEach((c, i) => {
       if (i === first) return;
       if (is(c, TEXT, "list")) out.push(...listBlocks(c, depth + 1, chain, own, state, inCell));
-      else out.push(...walk([c], state, inCell));
+      else if (first >= 0 && (is(c, TEXT, "p") || is(c, TEXT, "h"))) {
+        // A further paragraph of this item: it belongs to the item, at its depth, and is not numbered again.
+        const { text, after } = inline(c, state);
+        out.push({ kind: "listItem", depth, label: "", text, continuation: true }, ...after);
+      } else out.push(...walk([c], state, inCell));
     });
   }
   return out;

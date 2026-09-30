@@ -14,7 +14,8 @@ export interface Cell {
 export type Block =
   | { kind: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; text: string }
   | { kind: "paragraph"; text: string }
-  | { kind: "listItem"; depth: number; label: string; text: string }
+  /** A list item's first paragraph carries its label; each further paragraph of the same item is a `continuation` at the same depth, with no label. */
+  | { kind: "listItem"; depth: number; label: string; text: string; continuation?: boolean }
   /** `rows` lists, per row, the cells that start in it (as in HTML): a span covers later positions. `headerRows` counts rows the format marks as headers. */
   | { kind: "table"; index: number; headerRows: number; rows: Cell[][] }
   /** A footnote or endnote. `blocks` holds its structured content (paragraphs, list items, tables), written after `text` in order. */
