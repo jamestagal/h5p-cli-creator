@@ -11,7 +11,14 @@ export interface Segment {
   /** For a list item: UTF-16 units from charStart to the end of its label (indent included), so the splitter never ends a sentence inside it ("1."). */
   labelEnd?: number;
 }
-export interface Linearized { text: string; segments: Segment[] }
+/**
+ * A table written as atomic row lines, for inspection (`leap extract`'s tables.md). `name` is how its lines cite it:
+ * "3" for `[Table 3, row r]`, "Note 2, table 1" for a table in a note. `labels` are the column labels from the marked
+ * header rows, or null when the format marked none (the lines then use `Column n`). `firstRows` are its first two
+ * lines, exactly as in the text. Tables nested in cells are written inline in their row and are not listed.
+ */
+export interface TableSummary { name: string; headingPath: string[]; markedHeaderRows: number; labels: string[] | null; rowCount: number; firstRows: string[] }
+export interface Linearized { text: string; segments: Segment[]; tables: TableSummary[] }
 
 interface Line { text: string; atomic: boolean; headingPath: string[]; listDepth: number | null; labelEnd?: number }
 
@@ -72,14 +79,22 @@ function inlineContent(text: string, blocks: Block[], where: string, nestedName:
 }
 
 /** A table as data rows of `label: value` pairs, one entry per data row. `name` is its number: "4", or "4.1" when nested. */
-function tableRows(table: Extract<Block, { kind: "table" }>, name: string): Array<{ n: number; pairs: string[] }> {
+function tableRows(table: Extract<Block, { kind: "table" }>, name: string): Array<{ n: number; pairs: string[] }> & { labels: string[]; headerCount: number } {
   let nested = 0;
   const render = (cell: Cell): string => inlineContent(cell.text, cell.blocks ?? [], `Table ${name} cell`, () => `${name}.${++nested}`);
   const grid = expandGrid(table.rows, render);
   const headerCount = Math.min(Math.max(0, table.headerRows), grid.length);
   const width = grid[0]?.length ?? 0;
   const labels = labelsFor(grid.slice(0, headerCount), width);
-  return grid.slice(headerCount).map((cells, i) => ({ n: i + 1, pairs: cells.map((v, c) => `${labels[c]}: ${v === "" ? EMPTY : v}`) }));
+  const rows = grid.slice(headerCount).map((cells, i) => ({ n: i + 1, pairs: cells.map((v, c) => `${labels[c]}: ${v === "" ? EMPTY : v}`) }));
+  return Object.assign(rows, { labels, headerCount });
+}
+
+/** Writes a table's row lines through `push` and returns its summary. */
+function writeTable(rows: ReturnType<typeof tableRows>, name: string, lineOf: (r: { n: number; pairs: string[] }) => string, headingPath: string[], push: (text: string) => void): TableSummary {
+  const lines = rows.map(lineOf);
+  for (const l of lines) push(l);
+  return { name, headingPath, markedHeaderRows: rows.headerCount, labels: rows.headerCount > 0 ? rows.labels : null, rowCount: rows.length, firstRows: lines.slice(0, 2) };
 }
 
 /**
@@ -112,7 +127,7 @@ function inlineTable(table: Extract<Block, { kind: "table" }>, name: string): st
  * its list items indented by depth with their labels (depth kept as metadata, as in the body), and each data row of a
  * table in it as an atomic line `[Note n, table k, row r] …`. Anything else in it is written inline.
  */
-function noteLines(note: Extract<Block, { kind: "note" }>, push: (text: string, atomic?: boolean, listDepth?: number | null, labelEnd?: number) => void): void {
+function noteLines(note: Extract<Block, { kind: "note" }>, push: (text: string, atomic?: boolean, listDepth?: number | null, labelEnd?: number) => void, headingPath: string[], tablesOut: TableSummary[]): void {
   const prefix = `[Note ${note.n}]`;
   let count = 0;
   let tables = 0;
@@ -126,7 +141,7 @@ function noteLines(note: Extract<Block, { kind: "note" }>, push: (text: string, 
       line(body === "" ? "" : `${indent}${body}`, false, Math.max(0, b.depth), label === "" ? undefined : indent.length + label.length);
     } else if (b.kind === "table") {
       const k = ++tables;
-      for (const r of tableRows(b, `note ${note.n}.${k}`)) { push(`[Note ${note.n}, table ${k}, row ${r.n}] ${r.pairs.join("; ")}`, true); count++; }
+      tablesOut.push(writeTable(tableRows(b, `note ${note.n}.${k}`), `Note ${note.n}, table ${k}`, (r) => `[Note ${note.n}, table ${k}, row ${r.n}] ${r.pairs.join("; ")}`, headingPath, (l) => { push(l, true); count++; }));
     } else if (b.kind === "note") line(inlineContent("", [b], `Note ${note.n}`, () => `${note.n}.${++tables}`));
     else line(assertNormalised(b.text, `note ${b.kind}`));
   }
@@ -145,6 +160,7 @@ export function linearize(blocks: Block[]): Linearized {
   const headings: Array<{ level: number; text: string }> = [];
   const path = (): string[] => headings.map((h) => h.text);
   const labelWidth: number[] = []; // label length of the latest item at each depth, for continuation paragraphs
+  const tables: TableSummary[] = [];
   const push = (text: string, atomic = false, listDepth: number | null = null, labelEnd?: number): void => { if (text !== "") lines.push({ text, atomic, headingPath: path(), listDepth, ...(labelEnd ? { labelEnd } : {}) }); };
 
   for (const b of blocks) {
@@ -175,10 +191,10 @@ export function linearize(blocks: Block[]): Linearized {
         if (body !== "") push(`${indent}${body}`, false, depth, label === "" ? undefined : indent.length + label.length); // a leading indent on the first line would not survive trimming; the depth is kept as metadata either way
         break;
       }
-      case "note": noteLines(b, push); break;
+      case "note": noteLines(b, push, path(), tables); break;
       case "table": {
         const name = String(b.index);
-        for (const r of tableRows(b, name)) push(`[Table ${name}, row ${r.n}] ${r.pairs.join("; ")}`, true);
+        tables.push(writeTable(tableRows(b, name), name, (r) => `[Table ${name}, row ${r.n}] ${r.pairs.join("; ")}`, path(), (l) => push(l, true)));
         break;
       }
     }
@@ -192,5 +208,5 @@ export function linearize(blocks: Block[]): Linearized {
     text += line.text;
     segments.push({ charStart, charEnd: text.length, atomic: line.atomic, headingPath: line.headingPath, listDepth: line.listDepth, ...(line.labelEnd ? { labelEnd: line.labelEnd } : {}) });
   }
-  return { text, segments };
+  return { text, segments, tables };
 }

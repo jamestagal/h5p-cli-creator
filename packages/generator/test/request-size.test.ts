@@ -16,7 +16,7 @@ const { MemoryStore } = await import("../src/store/memory-store.js");
 const { FakeProvider } = await import("../src/llm/fake-provider.js");
 const { finaliseDocument, ingestMarkdown, ingestText } = await import("../src/ingest/index.js");
 const { linearize } = await import("../src/ingest/structure/linearize.js");
-const { OversizeAtomicSegmentError, chunkSentences, RequestTooLargeError, extractionRequest } = await import("../src/concepts/index.js");
+const { OversizeAtomicSegmentError, chunkSentences, inspectChunks, oversizeExtractionRequests, RequestTooLargeError, extractionRequest } = await import("../src/concepts/index.js");
 const { DEFAULT_PROMPT_CONFIG } = await import("../src/prompts/system.js");
 const { testIdentity } = await import("./helpers/identity.js");
 
@@ -61,6 +61,31 @@ describe("size checks run before any dispatch", () => {
     const later = await runImport(input("imp-ok", source), { store: new MemoryStore(), provider, registry, engineIdentity: testIdentity("x") }).catch((e: unknown) => e);
     expect(later).not.toBeInstanceOf(RequestTooLargeError);
     expect(provider.requests.length).toBeGreaterThan(0); // it got as far as dispatching
+  });
+});
+
+describe("inspection without a run (leap extract)", () => {
+  it("inspectChunks lists every oversize atomic row that chunkSentences refuses on, and gives each its own chunk", () => {
+    const row = (r: number) => [{ text: `Row ${r}`, colSpan: 1, rowSpan: 1 }, { text: "Monthly reconciliation of every ledger account against the bank statement, signed off by the finance manager", colSpan: 1, rowSpan: 1 }];
+    const { text, segments } = linearize([{ kind: "paragraph", text: FILLER }, { kind: "table", index: 1, headerRows: 0, rows: [row(1), row(2)] }]);
+    const source = finaliseDocument("text", text, segments, { sourceId: "src" });
+    expect(() => chunkSentences(source.sentences, 20)).toThrow(OversizeAtomicSegmentError);
+    const { chunks, oversizeAtomicSegments } = inspectChunks(source.sentences, 20);
+    expect(oversizeAtomicSegments.map((x) => x.label)).toEqual(["[Table 1, row 1]", "[Table 1, row 2]"]);
+    expect(oversizeAtomicSegments.every((x) => x.estimatedTokens > 20 && x.budgetTokens === 20)).toBe(true);
+    expect(chunks.filter((c) => c.sentences.some((x) => x.atomic)).every((c) => c.sentences.length === 1)).toBe(true);
+    expect(inspectChunks(source.sentences, 6000).chunks.map((c) => c.sentences)).toEqual(chunkSentences(source.sentences, 6000).map((c) => c.sentences));
+  });
+
+  it("oversizeExtractionRequests lists what assertExtractionRequestsFit refuses on", async () => {
+    const long = `${"The isolation procedure has many steps that the worker follows in order ".repeat(40).trim()}.`;
+    const source = await ingestText(`${FILLER} ${long}`, { sourceId: "src" });
+    limits.override = { "claude-haiku-4-5-20251001": 1000, "claude-sonnet-5": 1000 };
+    try {
+      const listed = oversizeExtractionRequests(chunkSentences(source.sentences, 6000), {});
+      expect(listed).toEqual([expect.objectContaining({ chunkIndex: 0, sentenceId: source.sentences.find((s) => s.text === long)!.sentenceId, limit: 1000, maxOutputTokens: 3000, model: "claude-haiku-4-5-20251001" })]);
+    } finally { limits.override = null; }
+    expect(oversizeExtractionRequests(chunkSentences(source.sentences, 6000), {})).toEqual([]);
   });
 });
 

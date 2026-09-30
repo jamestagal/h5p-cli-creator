@@ -5,6 +5,7 @@ import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { compileToFile, createRegistry } from "@leaplearn/engine";
 import { csvToFlashcardsSpec } from "./csv-to-flashcards.js";
+import { DEFAULT_CHUNK_TOKENS, extract } from "./extract.js";
 import { generate } from "./generate.js";
 import { localImageResolver, networkImageResolver } from "./image-resolver.js";
 import { review } from "./review.js";
@@ -38,7 +39,7 @@ try {
         process.stdout.write(`wrote ${argv.output} (${result.entries.length} entries, ${result.libraries.length} libraries)\n`);
       })
     .command("generate", "Generate multiChoice, blanks and flashcards activities from a source (and optional unit of competency), compile them, and report cost", (y) => y
-      .option("source", { type: "string", demandOption: true, describe: ".pdf, .md or .txt" })
+      .option("source", { type: "string", demandOption: true, describe: ".txt, .md, .pdf, .docx or .odt" })
       .option("out", { type: "string", demandOption: true, describe: "output directory (the import store; rerun to resume)" })
       .option("unit", { type: "string", describe: "unit of competency text file" })
       .option("types", { type: "string", default: "multiChoice,blanks,flashcards" })
@@ -58,6 +59,13 @@ try {
       async (argv) => {
         const code = await generate({ source: argv.source, out: argv.out, ...(argv.unit ? { unit: argv.unit } : {}), types: argv.types, budgetUsd: argv["budget-usd"], maxRequests: argv["max-requests"], maxTokens: argv["max-tokens"], maxSeconds: argv["max-seconds"], language: argv.language, readingLevel: argv["reading-level"], tone: argv.tone, ...(argv.customisation ? { customisation: argv.customisation } : {}), ...(argv.name ? { name: argv.name } : {}), libraries: argv.libraries, provider: argv.provider, ...(argv.fixtures ? { fixtures: argv.fixtures } : {}), concurrency: argv.concurrency }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
         process.exitCode = code;
+      })
+    .command("extract", "Ingest a source exactly as generate would and write extracted.txt, tables.md, extract.json and warnings.md for review; no model call, API key or ledger", (y) => y
+      .option("source", { type: "string", demandOption: true, describe: ".txt, .md, .pdf, .docx or .odt" })
+      .option("out", { type: "string", demandOption: true, describe: "output directory: outside the repository, or under docs/uoc/ (real material stays out of git)" })
+      .option("chunk-tokens", { type: "number", default: DEFAULT_CHUNK_TOKENS, describe: "chunk budget used to size table rows and extraction requests" }),
+      async (argv) => {
+        process.exitCode = await extract({ source: argv.source, out: argv.out, chunkTokens: argv["chunk-tokens"] }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
       })
     .command("review", "Record a human acceptance or alignment decision against a promoted activity and refresh mapping.csv and cost.json", (y) => y
       .option("out", { type: "string", demandOption: true, describe: "the import directory" })

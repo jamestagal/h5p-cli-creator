@@ -148,6 +148,21 @@ describe("linearize: lists, notes and headings", () => {
       .toEqual(["[Table 1, row 1] Column 1: Scope; Column 2: All sites[1] [Note 1] Applies to: • Plant [sub-list: • Pumps]"]);
   });
 
+  it("summarises each table it writes: name, heading path, marked header rows and labels, row count and first two lines", () => {
+    const cell = (text: string) => ({ text, colSpan: 1, rowSpan: 1 });
+    const { text, tables } = linearize([
+      { kind: "heading", level: 1, text: "Scope" },
+      { kind: "table", index: 1, headerRows: 0, rows: [[cell("Site"), cell("Plant")], [cell("Period"), cell("FY2026")], [cell("Owner"), cell("Finance")]] },
+      { kind: "paragraph", text: "Cited here.[1]" },
+      { kind: "note", n: 1, text: "", blocks: [{ kind: "table", index: 0, headerRows: 1, rows: [[cell("Stage"), cell("Days")], [cell("Draft"), cell("5")]] }] }
+    ]);
+    expect(tables).toEqual([
+      { name: "1", headingPath: ["Scope"], markedHeaderRows: 0, labels: null, rowCount: 3, firstRows: ["[Table 1, row 1] Column 1: Site; Column 2: Plant", "[Table 1, row 2] Column 1: Period; Column 2: FY2026"] },
+      { name: "Note 1, table 1", headingPath: ["Scope"], markedHeaderRows: 1, labels: ["Stage", "Days"], rowCount: 1, firstRows: ["[Note 1, table 1, row 1] Stage: Draft; Days: 5"] }
+    ]);
+    for (const t of tables) for (const line of t.firstRows) expect(text.split("\n")).toContain(line);
+  });
+
   it("gives each sentence its heading path; a new H2 replaces the old one", () => {
     const blocks: Block[] = [
       { kind: "heading", level: 1, text: "Topic 1" }, { kind: "paragraph", text: "Intro sentence." },

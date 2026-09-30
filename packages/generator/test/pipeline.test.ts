@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createRegistry, type EngineIdentity, type LibraryRegistry } from "@leaplearn/engine";
 import { MemoryStore } from "../src/store/memory-store.js";
-import { EXTRACTION_VERSION, ingestPdf, type SourceDocument } from "../src/ingest/index.js";
+import { EXTRACTION_VERSION, ingestDocx, ingestOdt, ingestPdf, type SourceDocument } from "../src/ingest/index.js";
 import { BuildArtifactError, BuildIntegrityError, LegacyStoreError, MalformedStoreVersionError, STORE_VERSION, StoreLockedError, UnsupportedStoreVersionError, type ImportRecord, type ImportStore } from "../src/store/types.js";
 import { buildIdFor, buildKeyFor } from "../src/store/builds.js";
 import { buildRevision } from "../src/pipeline/build.js";
@@ -21,6 +21,7 @@ import { ANTHROPIC_TIMEOUT_MS } from "../src/llm/anthropic-provider.js";
 import { conceptResponses, EVIDENCE_PASSAGES, markdownEvidence, passageEvidence, passageIds, syntheticDoc, syntheticUnitText, unitOut, planOutFor, SYNTHETIC_CHUNK_TOKENS, type FixtureEvidence } from "./helpers/synthetic.js";
 import { crashBefore, CrashError, failOnce, failOutcomeOnce, withBuildBytes } from "./helpers/crashing-store.js";
 import { RoutedProvider } from "./helpers/routed-provider.js";
+import { electricalDocx, electricalOdt } from "./helpers/structured-sources.js";
 import { IDENTITY_A, IDENTITY_A_NEW_LOCK, IDENTITY_B } from "./helpers/identity.js";
 
 const root = resolve(import.meta.dirname, "../../..");
@@ -708,5 +709,42 @@ describe("current PDF ingestion through the pipeline (offline; replay of the cur
     const other = new MemoryStore();
     await runImport(await input("imp-v", { source: relabelled, unitText: null }), deps(other, new FakeProvider([]))).catch(() => undefined);
     await expect(runImport(await input("imp-v", { source: current, unitText: null }), deps(other, new FakeProvider([])))).rejects.toBeInstanceOf(IncompatibleResumeError);
+  });
+});
+
+describe("DOCX and ODT sources through the pipeline (offline, fake provider)", () => {
+  for (const format of ["docx", "odt"] as const) {
+    it(`${format}: runs every stage on the fake provider, with heading context, list levels and table rows in the requests, and compiles every activity`, async () => {
+      const opts = { sourceId: `src-electrical.${format}`, fileName: `electrical.${format}` };
+      const doc = format === "docx" ? (await ingestDocx(await electricalDocx(), opts)).document : (await ingestOdt(await electricalOdt(), opts)).document;
+      expect(doc.kind).toBe(format);
+      expect(doc.metadata).toMatchObject({ extractor: format, extractionVersion: EXTRACTION_VERSION });
+      const evidence = passageEvidence(doc);
+      const textOf = (id: string) => doc.sentences.find((x) => x.sentenceId === id)!.text;
+      for (const [key, ids] of Object.entries(evidence) as Array<[keyof FixtureEvidence, string[]]>) expect(ids.map(textOf).join(" "), key).toBe(EVIDENCE_PASSAGES[key]);
+      const store = new MemoryStore();
+      const provider = new FakeProvider(await fullScript(doc, evidence));
+      const record = await runImport(await input(`imp-${format}`, { source: doc }), deps(store, provider));
+      expect(record.status).toBe("ready");
+      expect(await store.getImport(`imp-${format}`)).toMatchObject({ sourceType: format });
+      const extracts = provider.requests.filter((q) => q.purpose === "extract").map((q) => q.user);
+      expect(extracts.some((u) => u.includes("HEADING CONTEXT") && u.includes("Working safely around electrical equipment (synthetic training text) › 2. Lockout and tagout"))).toBe(true);
+      expect(extracts.some((u) => u.includes("(list level 1) • Gloves are rated for the working voltage."))).toBe(true);
+      expect(extracts.some((u) => u.includes("] [Table 1, row 1] Item: Insulated gloves; Check before use: Roll to trap air and look for pinholes."))).toBe(true);
+      const activities = await store.listActivities(`imp-${format}`);
+      expect(activities.map((a) => a.status)).toEqual(["promoted", "promoted", "promoted"]);
+      expect(await store.getArtifact(`imp-${format}`, "source")).toMatchObject({ kind: format, textHash: doc.textHash });
+    });
+  }
+
+  it("an import created from DOCX output under the previous extraction version refuses to resume, before any write or model call", async () => {
+    const doc = (await ingestDocx(await electricalDocx(), { sourceId: "src-electrical.docx" })).document;
+    const store = new MemoryStore();
+    await runImport(await input("imp-old-docx", { source: { ...doc, metadata: { ...doc.metadata, extractionVersion: "2026-09-30.1" } }, unitText: null }), deps(store, new FakeProvider([]))).catch(() => undefined);
+    const before = JSON.stringify([await store.getImport("imp-old-docx"), await store.listOperations("imp-old-docx"), await store.listAttempts("imp-old-docx")]);
+    const provider = new FakeProvider([]);
+    await expect(runImport(await input("imp-old-docx", { source: doc, unitText: null }), deps(store, provider))).rejects.toBeInstanceOf(IncompatibleResumeError);
+    expect(provider.requests).toHaveLength(0);
+    expect(JSON.stringify([await store.getImport("imp-old-docx"), await store.listOperations("imp-old-docx"), await store.listAttempts("imp-old-docx")])).toBe(before);
   });
 });

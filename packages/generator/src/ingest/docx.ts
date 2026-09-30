@@ -6,13 +6,13 @@ import mammoth from "mammoth";
 import { resolveNumbering, type SimplifiedNumbering, type UnsupportedNumbering } from "./docx-numbering.js";
 import { finaliseDocument, type IngestOptions, type SourceDocument } from "./source-document.js";
 import { normaliseBlocks, type Block, type Cell } from "./structure/blocks.js";
-import { linearize } from "./structure/linearize.js";
+import { linearize, type TableSummary } from "./structure/linearize.js";
 
 export type { SimplifiedNumbering, UnsupportedNumbering } from "./docx-numbering.js";
 /** A sentence that looks like it refers to a list item by its label ("item b)", "(ii)"), which simplified numbering may have changed. */
 export interface LabelLikeReference { sentenceId: string; headingPath: string[]; text: string }
 export interface IngestWarnings { listNumberingSimplified: SimplifiedNumbering[]; numberingUnsupported: UnsupportedNumbering[]; labelLikeReferences: LabelLikeReference[] }
-export interface StructuredIngestResult { document: SourceDocument; warnings: IngestWarnings }
+export interface StructuredIngestResult { document: SourceDocument; warnings: IngestWarnings; tables: TableSummary[] }
 
 const LABEL_LIKE = [/\bitem [a-z]\)/i, /\([a-z]\)/, /\([ivx]+\)/i, /\b[a-z]\) (?:above|below)\b/i];
 
@@ -176,7 +176,7 @@ export async function ingestDocx(bytes: Buffer, opts: IngestOptions): Promise<St
   for (const [name, xml] of numbering.rewrittenParts) zip.file(name, xml);
   const converted = numbering.rewrittenParts.size === 0 ? bytes : await zip.generateAsync({ type: "nodebuffer" });
   const { value: html } = await mammoth.convertToHtml({ buffer: converted });
-  const { text, segments } = linearize(normaliseBlocks(htmlToBlocks(html)));
+  const { text, segments, tables } = linearize(normaliseBlocks(htmlToBlocks(html)));
   const document = finaliseDocument("docx", text, segments, opts, { originalSha256: createHash("sha256").update(bytes).digest("hex"), extractor: "docx" });
-  return { document, warnings: { listNumberingSimplified: numbering.simplified, numberingUnsupported: numbering.unsupported, labelLikeReferences: labelLikeReferences(document) } };
+  return { document, tables, warnings: { listNumberingSimplified: numbering.simplified, numberingUnsupported: numbering.unsupported, labelLikeReferences: labelLikeReferences(document) } };
 }

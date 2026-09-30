@@ -1,9 +1,10 @@
 import { readFile } from "node:fs/promises";
-import { basename, extname, resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { createRegistry, engineIdentity } from "@leaplearn/engine";
-import { ANTHROPIC_TIMEOUT_MS, createAnthropicProvider, IncompatibleResumeError, isStoreVersionError, ingestMarkdown, ingestPdf, ingestText, ReplayProvider, RecordingProvider, runImport, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ImportRecord, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
+import { ANTHROPIC_TIMEOUT_MS, createAnthropicProvider, IncompatibleResumeError, isStoreVersionError, ReplayProvider, RecordingProvider, runImport, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ImportRecord, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
 import { FileStore } from "./file-store.js";
 import { formatCostReport, writeReportsLocked } from "./report.js";
+import { loadSource, UnsupportedSourceError, warningSummary } from "./source.js";
 
 export interface GenerateArgs {
   source: string; out: string; unit?: string; types: string; budgetUsd: number; maxRequests: number; maxTokens: number; maxSeconds: number;
@@ -37,11 +38,11 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
   // Refuse a phase-2 directory before any work, and before the lock: a version-1 import never becomes writable, so this read cannot go stale. runImport checks again under the lock.
   try { await FileStore.assertWritableAt(outDir); } catch (err) { if (isStoreVersionError(err)) { io.err(`leap: ${err.message}\n`); return 1; } throw err; }
   const sourcePath = resolve(args.source);
-  const sourceId = `src-${basename(sourcePath)}`;
-  const ext = extname(sourcePath).toLowerCase();
-  const source = ext === ".pdf" ? await ingestPdf(await readFile(sourcePath), { sourceId, fileName: basename(sourcePath) })
-    : ext === ".md" ? await ingestMarkdown(await readFile(sourcePath, "utf8"), { sourceId, fileName: basename(sourcePath) })
-    : await ingestText(await readFile(sourcePath, "utf8"), { sourceId, fileName: basename(sourcePath) });
+  let loaded: Awaited<ReturnType<typeof loadSource>>;
+  try { loaded = await loadSource(sourcePath); } catch (err) { if (err instanceof UnsupportedSourceError) { io.err(`leap: ${err.message}\n`); return 1; } throw err; }
+  const source = loaded.document;
+  const warnings = warningSummary(loaded.warnings);
+  if (warnings) io.err(`${warnings}\n`);
   const unitText = args.unit ? await readFile(resolve(args.unit), "utf8") : null;
   const registry = await createRegistry({ lockPath: resolve(args.libraries, "libraries.lock.json"), cacheDir: resolve(args.libraries, "cache") });
   const store = new FileStore(outDir);

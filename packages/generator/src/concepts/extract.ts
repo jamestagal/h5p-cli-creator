@@ -54,17 +54,28 @@ export class RequestTooLargeError extends Error {
   }
 }
 
-/** Refuses, before any dispatch, a chunk whose complete extraction request would not fit the extract model's input limit (R14). */
-export function assertExtractionRequestsFit(chunks: Chunk[], options: ExtractOptions = {}): void {
+/** A chunk whose complete extraction request would not fit the extract model's input limit, named by its longest sentence. */
+export interface OversizeRequest { chunkIndex: number; sentenceId: string; model: string; estimatedInputTokens: number; maxOutputTokens: number; limit: number }
+
+/** Every chunk whose extraction request (estimated as the budget reservation estimates it, plus its output allowance) exceeds the model's input limit. */
+export function oversizeExtractionRequests(chunks: Chunk[], options: ExtractOptions = {}): OversizeRequest[] {
+  const out: OversizeRequest[] = [];
   for (const chunk of chunks) {
     const request = extractionRequest(chunk, options);
     const estimatedInputTokens = reserveInputTokens(request);
     const limit = MAX_INPUT_TOKENS[request.model];
     if (estimatedInputTokens + request.maxOutputTokens > limit) {
       const largest = chunk.sentences.reduce((a, b) => (b.text.length > a.text.length ? b : a));
-      throw new RequestTooLargeError(largest.sentenceId, estimatedInputTokens, request.maxOutputTokens, limit);
+      out.push({ chunkIndex: chunk.chunkIndex, sentenceId: largest.sentenceId, model: request.model, estimatedInputTokens, maxOutputTokens: request.maxOutputTokens, limit });
     }
   }
+  return out;
+}
+
+/** Refuses, before any dispatch, a chunk whose complete extraction request would not fit the extract model's input limit (R14). */
+export function assertExtractionRequestsFit(chunks: Chunk[], options: ExtractOptions = {}): void {
+  const [first] = oversizeExtractionRequests(chunks, options);
+  if (first) throw new RequestTooLargeError(first.sentenceId, first.estimatedInputTokens, first.maxOutputTokens, first.limit);
 }
 
 export async function extractChunkConcepts(doc: SourceDocument, chunk: Chunk, runner: StageRunner, options: ExtractOptions = {}): Promise<ChunkConcept[]> {

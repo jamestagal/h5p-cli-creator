@@ -316,8 +316,8 @@ export async function ingestOdt(bytes: Buffer, opts: IngestOptions): Promise<Str
     styles: readStyles(content, await read("styles.xml")), notes: 0, tables: 0, headings: [], chains: [], lastChainByStyle: new Map(), chainById: new Map(),
     warnings: { listNumberingSimplified: [], numberingUnsupported: [], labelLikeReferences: [] }
   };
-  const { text, segments } = linearize(normaliseBlocks(walk(elements(officeText), state, false)));
+  const { text, segments, tables } = linearize(normaliseBlocks(walk(elements(officeText), state, false)));
   const document = finaliseDocument("odt", text, segments, opts, { originalSha256: createHash("sha256").update(bytes).digest("hex"), extractor: "odt" });
   const listNumberingSimplified = state.chains.filter((c) => c.simplified.length > 0).map((c) => ({ listIndex: c.index, headingPath: c.headingPath, originalFormats: c.simplified }));
-  return { document, warnings: { listNumberingSimplified, numberingUnsupported: state.warnings.numberingUnsupported, labelLikeReferences: labelLikeReferences(document) } };
+  return { document, tables, warnings: { listNumberingSimplified, numberingUnsupported: state.warnings.numberingUnsupported, labelLikeReferences: labelLikeReferences(document) } };
 }
