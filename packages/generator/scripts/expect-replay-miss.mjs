@@ -6,7 +6,7 @@
 //   - every failure's error is a ReplayMissError thrown by ReplayProvider.complete, either directly or as the cause of
 //     the stage runner's InfrastructureFailure with the same message, naming a purpose and a request-key prefix;
 //   - for each key prefix, no file in test/fixtures/replay/synthetic/ starts with it (the recording is absent, not
-//     unreadable or malformed);
+//     unreadable or malformed); until S1 records into it the directory does not exist, which counts as no files;
 //   - the purpose is one this task changes and is the first stage to miss: parseUnit;
 //   - there is at least one such miss, and no unhandled error.
 // Anything else (a malformed fixture, a schema error, an assertion failure) fails the script.
@@ -60,7 +60,8 @@ try {
   const vitest = await startVitest("test", [], { root: pkg, watch: false, reporters: [["json", { outputFile: jsonFile }], capture] });
   await vitest.close();
   const report = JSON.parse(await readFile(jsonFile, "utf8"));
-  const fixtures = await readdir(replayDir);
+  // Absent until S1 records into it: the phase-2 recordings were archived in test/fixtures/historical/.
+  const fixtures = await readdir(replayDir).catch((err) => { if (err.code === "ENOENT") return []; throw err; });
 
   for (const file of report.testResults) {
     const rel = relative(pkg, file.name);

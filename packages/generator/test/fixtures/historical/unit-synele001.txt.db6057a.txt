@@ -1,0 +1,23 @@
+SYNELE001 Isolate and test electrical equipment (SYNTHETIC UNIT FOR TESTS)
+
+Application
+This synthetic unit describes the skills required to isolate electrical equipment, confirm isolation by testing, and restore supply safely.
+
+Elements and Performance Criteria
+1. Prepare to isolate equipment
+1.1 Identify electrical hazards in the work area and record them on the isolation permit
+1.2 Confirm every supply to the equipment, including secondary supplies
+2. Isolate and secure equipment
+2.1 Apply lockout devices and tags in accordance with site procedure
+2.2 Test for dead using a proved voltage tester
+3. Restore supply
+3.1 Remove locks and tags in the correct sequence after work is complete
+3.2 Complete an incident report for any breach of isolation
+3.3 Confirm guards and covers are refitted before supply is restored
+
+Knowledge Evidence
+- types of electrical hazards including stored energy and multiple supplies
+- purpose of lockout devices and tags
+
+Performance Evidence
+- isolate and test at least one item of equipment fed from two supplies

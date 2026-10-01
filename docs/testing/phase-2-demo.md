@@ -56,6 +56,11 @@ on a command line, exported, or written to any file. `--provider record` wrote t
 `packages/generator/test/fixtures/replay/synthetic/`, which `packages/generator/test/replay.test.ts`
 replays offline.
 
+*(Note, 1 Oct 2026.)* Phase 3 Task 10 changed the requests these responses answer, so they are no longer replayed.
+They were moved unchanged to `packages/generator/test/fixtures/historical/replay/` with the source document and unit
+text they were made from; `test/historical-archive.test.ts` checks them against a hash manifest (plan R12, amended
+1 Oct 2026).
+
 ## What the run produced
 
 `exit=0`, import status `ready` — **every planned activity was promoted and none failed.**
