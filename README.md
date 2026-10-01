@@ -45,11 +45,27 @@ node --env-file=.env apps/cli/dist/index.js generate \
   --source packages/generator/test/fixtures/synthetic/source-electrical-safety.pdf \
   --unit packages/generator/test/fixtures/synthetic/unit-synele001.txt \
   --out /tmp/leap-demo --budget-usd 2 \
-  --provider record --fixtures packages/generator/test/fixtures/replay/synthetic
+  --provider record --fixtures packages/generator/test/fixtures/replay/synthetic \
+  --ledger /path/outside/the/repo/pilot-ledger.json --run demo
 ```
 
 `ANTHROPIC_API_KEY` comes from the gitignored root `.env` (`node --env-file`), never from a
 command line and never from an exported shell variable.
+
+A run that can make paid calls (`--provider anthropic` or `record`) needs a ledger entry
+authorising it: `--ledger` names a JSON file and `--run` an entry in it. The ledger has an
+estimated total cap and, per run, an `outDir` (absolute), an estimated `capUsd` and who authorised
+it and when:
+
+```json
+{ "totalCapUsd": 5, "runs": [{ "runId": "demo", "outDir": "/tmp/leap-demo", "capUsd": 2, "authorisedBy": "…", "authorisedOn": "2026-10-01" }] }
+```
+
+The run is refused before anything is created or resumed if the run caps add up to more than the
+total, the run is not listed, `--out` is not its `outDir`, `--budget-usd` is above its cap, or its
+spend so far (read from `attempts.jsonl`, counting unsettled attempts at their reservations) already
+meets its cap. Without `--budget-usd` the import's budget is the run's cap. Like `--budget-usd`, the
+caps are estimates. Replay needs no ledger.
 
 `--out` is the import store as well as the output directory: rerunning the same command resumes the
 same import (the import id is a slug of the directory name) rather than starting a new one. Four

@@ -43,7 +43,7 @@ try {
       .option("out", { type: "string", demandOption: true, describe: "output directory (the import store; rerun to resume)" })
       .option("unit", { type: "string", describe: "unit of competency text file" })
       .option("types", { type: "string", default: "multiChoice,blanks,flashcards" })
-      .option("budget-usd", { type: "number", default: 2, describe: "estimated spend cap in USD (reservations are estimates; the report shows reservation underestimates and any spend over the cap)" })
+      .option("budget-usd", { type: "number", describe: "estimated spend cap in USD for this import (reservations are estimates; the report shows reservation underestimates and any spend over the cap). Default: the run's ledger cap for a paid run, else $2" })
       .option("max-requests", { type: "number", default: 200, describe: "hard limit on model requests" })
       .option("max-tokens", { type: "number", default: 2_000_000, describe: "estimated cap on reserved input + output tokens" })
       .option("max-seconds", { type: "number", default: 1800, describe: "hard limit on elapsed time for this import, counted across runs" })
@@ -55,9 +55,11 @@ try {
       .option("libraries", { type: "string", default: resolve(process.cwd(), "libraries") })
       .option("provider", { choices: ["anthropic", "replay", "record"] as const, default: "anthropic" as const })
       .option("fixtures", { type: "string", describe: "fixture directory for --provider replay|record" })
-      .option("concurrency", { type: "number", default: 3, describe: "activity types generated at once (each type is one serial lane)" }),
+      .option("concurrency", { type: "number", default: 3, describe: "activity types generated at once (each type is one serial lane)" })
+      .option("ledger", { type: "string", describe: "pilot ledger (JSON) authorising paid runs; required with --provider anthropic or record" })
+      .option("run", { type: "string", describe: "the run's id in the ledger; required with --provider anthropic or record" }),
       async (argv) => {
-        const code = await generate({ source: argv.source, out: argv.out, ...(argv.unit ? { unit: argv.unit } : {}), types: argv.types, budgetUsd: argv["budget-usd"], maxRequests: argv["max-requests"], maxTokens: argv["max-tokens"], maxSeconds: argv["max-seconds"], language: argv.language, readingLevel: argv["reading-level"], tone: argv.tone, ...(argv.customisation ? { customisation: argv.customisation } : {}), ...(argv.name ? { name: argv.name } : {}), libraries: argv.libraries, provider: argv.provider, ...(argv.fixtures ? { fixtures: argv.fixtures } : {}), concurrency: argv.concurrency }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
+        const code = await generate({ source: argv.source, out: argv.out, ...(argv.unit ? { unit: argv.unit } : {}), types: argv.types, ...(argv["budget-usd"] !== undefined ? { budgetUsd: argv["budget-usd"] } : {}), ...(argv.ledger ? { ledger: argv.ledger } : {}), ...(argv.run ? { run: argv.run } : {}), maxRequests: argv["max-requests"], maxTokens: argv["max-tokens"], maxSeconds: argv["max-seconds"], language: argv.language, readingLevel: argv["reading-level"], tone: argv.tone, ...(argv.customisation ? { customisation: argv.customisation } : {}), ...(argv.name ? { name: argv.name } : {}), libraries: argv.libraries, provider: argv.provider, ...(argv.fixtures ? { fixtures: argv.fixtures } : {}), concurrency: argv.concurrency }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
         process.exitCode = code;
       })
     .command("extract", "Ingest a source exactly as generate would and write extracted.txt, tables.md, extract.json and warnings.md for review; no model call, API key or ledger", (y) => y

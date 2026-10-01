@@ -1,6 +1,7 @@
 import { createBudget, type Budget, type BudgetLimits } from "../llm/budget.js";
 import type { ModelProvider } from "../llm/provider.js";
 import { createRunner, type RunnerOptions, type StageRunner } from "../llm/runner.js";
+import { spendFromAttempts } from "../llm/spend.js";
 import type { AttemptEvent, AttemptOutcome, AttemptStart, Purpose } from "../llm/types.js";
 import type { ImportStore, OperationOrigin, OperationRecord } from "../store/types.js";
 
@@ -55,9 +56,9 @@ export function budgetFromLedger(limits: BudgetLimits, events: AttemptEvent[], s
     const reservedTokens = e.reservedInputTokens + e.reservedOutputTokens;
     const actualTokens = o && o.inputTokens !== null ? o.inputTokens + (o.cacheReadTokens ?? 0) + (o.cacheWriteTokens ?? 0) + (o.outputTokens ?? 0) : null;
     budget.requests += 1;
-    budget.spentUsdMicro += o?.costUsdMicro ?? e.reservedUsdMicro;
     budget.spentTokens += actualTokens ?? reservedTokens;
   }
+  budget.spentUsdMicro = spendFromAttempts(events); // one accounting rule for resume and for the pilot ledger's checks
   return budget;
 }
 

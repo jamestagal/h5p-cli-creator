@@ -512,6 +512,8 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 - `generate` requires `--ledger` and `--run` when the provider is `anthropic` or `record`, and runs `authoriseRun` before creating or resuming anything. On resume, it also refuses if `spendFromAttempts` for the directory already meets the cap, with a message giving spend and cap. The import's per-import budget is set to `min(--budget-usd, cap)`; the phase-2 rule that a resume may raise the budget is bounded by the cap. Task 13 applies the same checks to `regenerate`. Replay and fake providers ignore the ledger.
 - The documentation and messages call caps **estimated** and never say a run or the pilot "cannot" exceed them.
 
+- *(Amended 1 Oct, Task 9.)* The ledger is a JSON file. `--budget-usd` has no fixed default any more: a paid run without it gets its run's cap, and a replay run gets $2 as before; `budgetFromLedger` now takes its spend from `spendFromAttempts`, so resume and the ledger check share one rule. The concurrency test runs the two `generate` calls in one process at once, with a provider injected through `generate`'s test-only `deps.provider` on the `record` code path; the authorisation is pure and each run reads only its own directory, so two processes would exercise the same code. The README's paid example names `--ledger` and `--run`.
+
 **Tests (write first):**
 - [ ] Each refusal rule, with its message.
 - [ ] `generate --provider record` without `--ledger` exits 1 before any directory is created.

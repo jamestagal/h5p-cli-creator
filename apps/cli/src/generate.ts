@@ -1,16 +1,26 @@
 import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { createRegistry, engineIdentity } from "@leaplearn/engine";
-import { ANTHROPIC_TIMEOUT_MS, createAnthropicProvider, IncompatibleResumeError, isStoreVersionError, OriginalSourceError, ReplayProvider, RecordingProvider, runImport, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ImportRecord, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
+import { ANTHROPIC_TIMEOUT_MS, authoriseRun, createAnthropicProvider, IncompatibleResumeError, isStoreVersionError, LedgerError, OriginalSourceError, readLedger, ReplayProvider, RecordingProvider, runImport, spendFromAttempts, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ImportRecord, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
 import { FileStore } from "./file-store.js";
 import { formatCostReport, writeReportsLocked } from "./report.js";
 import { loadSource, UnsupportedSourceError, warningSummary } from "./source.js";
 
 export interface GenerateArgs {
-  source: string; out: string; unit?: string; types: string; budgetUsd: number; maxRequests: number; maxTokens: number; maxSeconds: number;
+  source: string; out: string; unit?: string; types: string; maxRequests: number; maxTokens: number; maxSeconds: number;
+  /** The per-import estimated spend cap. Defaults to the run's ledger cap for a paid run, and to DEFAULT_BUDGET_USD otherwise. */
+  budgetUsd?: number;
   language: string; readingLevel: string; tone: string; customisation?: string; name?: string; libraries: string;
   provider: "anthropic" | "replay" | "record"; fixtures?: string; concurrency: number;
+  /** The pilot ledger and the run in it; required when the provider can make paid calls (anthropic, record). */
+  ledger?: string; run?: string;
 }
+
+/** The per-import estimated spend cap of a run with no ledger (replay), in USD. */
+export const DEFAULT_BUDGET_USD = 2;
+
+/** Test seam: a provider used in place of the one --provider names (the ledger rules still follow --provider). */
+export interface GenerateDeps { provider?: ModelProvider }
 
 export function importIdFor(outDir: string): string {
   return basename(resolve(outDir)).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "import";
@@ -25,7 +35,23 @@ function providerFor(args: GenerateArgs): ModelProvider {
   return live;
 }
 
-export async function generate(args: GenerateArgs, io: { out: (s: string) => void; err: (s: string) => void }): Promise<number> {
+/**
+ * The ledger check for a paid run (R6, R7), before anything is created or resumed: the run must be authorised by the
+ * ledger, and an existing directory's spend so far, read from its attempt records, must be below the run's cap. Returns
+ * the per-import estimated budget in µUSD, or an error message. Caps are estimates; so is the spend.
+ */
+async function authorisePaidRun(args: GenerateArgs, outDir: string): Promise<{ ok: true; budgetUsdMicro: number } | { ok: false; message: string }> {
+  if (!args.ledger || !args.run) return { ok: false, message: `--provider ${args.provider} can make paid calls, so it needs --ledger <file> and --run <id>: the ledger entry authorising this run` };
+  let ledger: Awaited<ReturnType<typeof readLedger>>;
+  try { ledger = await readLedger(resolve(args.ledger)); } catch (err) { if (err instanceof LedgerError) return { ok: false, message: err.message }; throw err; }
+  const auth = authoriseRun(ledger, { runId: args.run, outDir, budgetUsd: args.budgetUsd });
+  if (!auth.ok) return { ok: false, message: auth.message };
+  const spent = spendFromAttempts(await new FileStore(outDir).listAttempts(importIdFor(outDir)));
+  if (spent >= auth.capUsdMicro) return { ok: false, message: `run ${JSON.stringify(args.run)} has already spent an estimated $${(spent / 1_000_000).toFixed(4)} (from its attempt records), which meets its estimated cap of $${(auth.capUsdMicro / 1_000_000).toFixed(2)}; nothing more is dispatched under this ledger entry` };
+  return { ok: true, budgetUsdMicro: Math.min(args.budgetUsd === undefined ? auth.capUsdMicro : Math.round(args.budgetUsd * 1_000_000), auth.capUsdMicro) };
+}
+
+export async function generate(args: GenerateArgs, io: { out: (s: string) => void; err: (s: string) => void }, deps: GenerateDeps = {}): Promise<number> {
   const types = args.types.split(",").map((t) => t.trim()).filter(Boolean) as PlannedType[];
   for (const t of types) if (!["multiChoice", "blanks", "flashcards"].includes(t)) throw new Error(`unsupported type ${t}; phase 2 supports multiChoice, blanks, flashcards`);
   if (new Set(types).size !== types.length) throw new Error(`--types lists a type more than once (${args.types}); name each type once`);
@@ -35,6 +61,12 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
   if (!(TONE_IDS as readonly string[]).includes(args.tone)) throw new Error(`unknown tone ${args.tone}`);
 
   const outDir = resolve(args.out);
+  let budgetUsdMicro = Math.round((args.budgetUsd ?? DEFAULT_BUDGET_USD) * 1_000_000);
+  if (args.provider === "anthropic" || args.provider === "record") {
+    const paid = await authorisePaidRun(args, outDir); // before anything is created or resumed
+    if (!paid.ok) { io.err(`leap: ${paid.message}\n`); return 1; }
+    budgetUsdMicro = paid.budgetUsdMicro;
+  }
   // Refuse a phase-2 directory before any work, and before the lock: a version-1 import never becomes writable, so this read cannot go stale. runImport checks again under the lock.
   try { await FileStore.assertWritableAt(outDir); } catch (err) { if (isStoreVersionError(err)) { io.err(`leap: ${err.message}\n`); return 1; } throw err; }
   const sourcePath = resolve(args.source);
@@ -48,13 +80,13 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
   const store = new FileStore(outDir);
   const importId = importIdFor(outDir);
   const promptConfig = { readingLevel: args.readingLevel as ReadingLevel, tone: args.tone as Tone, language: args.language, ...(args.customisation ? { customisation: args.customisation } : {}) };
-  const budget = { usdMicro: Math.round(args.budgetUsd * 1_000_000), requests: args.maxRequests, tokens: args.maxTokens, elapsedMs: Math.round(args.maxSeconds * 1000) };
+  const budget = { usdMicro: budgetUsdMicro, requests: args.maxRequests, tokens: args.maxTokens, elapsedMs: Math.round(args.maxSeconds * 1000) };
   const identity = await engineIdentity(resolve(args.libraries));
   let record: ImportRecord;
   try {
     record = await runImport(
       { importId, name: args.name ?? basename(sourcePath), source, unitText, selectedTypes: types, budget, promptConfig, language: args.language, customisation: args.customisation ?? null, ...(source.kind === "docx" || source.kind === "odt" ? { original: { ext: `.${source.kind}` as const, bytes: loaded.bytes } } : {}) },
-      { store, provider: providerFor(args), registry, engineIdentity: identity, concurrency: args.concurrency, maxAttemptMs: ANTHROPIC_TIMEOUT_MS, onProgress: (e) => io.err(`${e.kind === "status" ? `status: ${e.status}` : e.kind === "activity" ? `${e.activityId}: ${e.status}${e.error ? ` (${e.error})` : ""}` : `${e.purpose}: ${e.status}${e.costUsdMicro === null ? "" : ` ($${(e.costUsdMicro / 1_000_000).toFixed(4)})`}`}\n`) }
+      { store, provider: deps.provider ?? providerFor(args), registry, engineIdentity: identity, concurrency: args.concurrency, maxAttemptMs: ANTHROPIC_TIMEOUT_MS, onProgress: (e) => io.err(`${e.kind === "status" ? `status: ${e.status}` : e.kind === "activity" ? `${e.activityId}: ${e.status}${e.error ? ` (${e.error})` : ""}` : `${e.purpose}: ${e.status}${e.costUsdMicro === null ? "" : ` ($${(e.costUsdMicro / 1_000_000).toFixed(4)})`}`}\n`) }
     );
   } catch (err) {
     if (err instanceof IncompatibleResumeError || err instanceof StoreLockedError || err instanceof OriginalSourceError || isStoreVersionError(err)) { io.err(`leap: ${err.message}\n`); return 1; }
