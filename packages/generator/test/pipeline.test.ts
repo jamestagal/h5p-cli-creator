@@ -743,7 +743,7 @@ describe("DOCX and ODT sources through the pipeline (offline, fake provider)", (
     const bytes = await electricalDocx();
     const doc = (await ingestDocx(bytes, { sourceId: "src-electrical.docx" })).document;
     const store = new MemoryStore();
-    await runImport(await input("imp-old-docx", { source: { ...doc, metadata: { ...doc.metadata, extractionVersion: "2026-09-30.1" } }, unitText: null, original: { ext: ".docx", bytes } }), deps(store, new FakeProvider([]))).catch(() => undefined);
+    await runImport(await input("imp-old-docx", { source: { ...doc, metadata: { ...doc.metadata, extractionVersion: "2026-09-30.2" } }, unitText: null, original: { ext: ".docx", bytes } }), deps(store, new FakeProvider([]))).catch(() => undefined);
     const before = JSON.stringify([await store.getImport("imp-old-docx"), await store.listOperations("imp-old-docx"), await store.listAttempts("imp-old-docx")]);
     const provider = new FakeProvider([]);
     await expect(runImport(await input("imp-old-docx", { source: doc, unitText: null, original: { ext: ".docx", bytes } }), deps(store, provider))).rejects.toBeInstanceOf(IncompatibleResumeError);

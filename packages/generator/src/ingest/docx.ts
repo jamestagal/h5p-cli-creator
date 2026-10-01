@@ -4,6 +4,7 @@ import { parseDocument } from "htmlparser2";
 import JSZip from "jszip";
 import mammoth from "mammoth";
 import { resolveNumbering, type SimplifiedNumbering, type UnsupportedNumbering } from "./docx-numbering.js";
+import { explicitTableHeaders } from "./docx-table-headers.js";
 import { finaliseDocument, type IngestOptions, type SourceDocument } from "./source-document.js";
 import { normaliseBlocks, normaliseBlockText, type Block, type Cell } from "./structure/blocks.js";
 import { linearize, type TableSummary } from "./structure/linearize.js";
@@ -181,19 +182,23 @@ export function htmlToBlocks(html: string): Block[] {
 }
 
 /**
- * DOCX → SourceDocument (design §4.2). Numbering is resolved first (resolveNumbering: style-inherited numbering and
- * level overrides made explicit for mammoth). mammoth's HTML (default style map, images ignored) then gives the blocks:
- * headings, paragraphs, nested lists (numbered lists labelled 1., 2. by position, bullets •), tables with `thead` rows
- * from w:tblHeader counted as header rows and colspan/rowspan from gridSpan/vMerge, and notes, with their paragraphs,
- * lists and tables, placed after the citing block. Tracked deletions are dropped and insertions kept (mammoth). List
- * formats other than decimal and bullet, numbering that cannot be rendered, and sentences that look like label
- * references are reported (R13). Text is normalised before linearizing (R11) and admitted once, by finaliseDocument.
+ * DOCX → SourceDocument (design §4.2). Before mammoth runs, numbering is resolved (resolveNumbering: style-inherited
+ * numbering and level overrides made explicit) and header flags switched off with w:val="false" are removed
+ * (explicitTableHeaders), since mammoth would read them as headers. mammoth's HTML (default style map, images ignored)
+ * then gives the blocks: headings, paragraphs, nested lists (numbered lists labelled 1., 2. by position, bullets •),
+ * tables with their leading w:tblHeader rows (`thead`) counted as header rows and colspan/rowspan from gridSpan/vMerge,
+ * and notes, with their paragraphs, lists and tables, placed after the citing block. Tracked deletions are dropped and
+ * insertions kept (mammoth). List formats other than decimal and bullet, numbering that cannot be rendered, and
+ * sentences that look like label references are reported (R13). Text is normalised before linearizing (R11) and
+ * admitted once, by finaliseDocument.
  */
 export async function ingestDocx(bytes: Buffer, opts: IngestOptions): Promise<StructuredIngestResult> {
   const zip = await JSZip.loadAsync(bytes);
   const numbering = await resolveNumbering(zip);
   for (const [name, xml] of numbering.rewrittenParts) zip.file(name, xml);
-  const converted = numbering.rewrittenParts.size === 0 ? bytes : await zip.generateAsync({ type: "nodebuffer" });
+  const headers = await explicitTableHeaders(zip); // reads the parts as numbering left them
+  for (const [name, xml] of headers.rewrittenParts) zip.file(name, xml);
+  const converted = numbering.rewrittenParts.size === 0 && headers.rewrittenParts.size === 0 ? bytes : await zip.generateAsync({ type: "nodebuffer" });
   const { value: html } = await mammoth.convertToHtml({ buffer: converted });
   const { text, segments, tables } = linearize(normaliseBlocks(htmlToBlocks(html)));
   const document = finaliseDocument("docx", text, segments, opts, { originalSha256: createHash("sha256").update(bytes).digest("hex"), extractor: "docx" });

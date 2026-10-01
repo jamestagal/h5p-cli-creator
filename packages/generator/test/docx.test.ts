@@ -196,3 +196,58 @@ describe("effective numbering (level overrides, paragraph styles, numbering styl
     expect(r.document.metadata.originalSha256).toBe(createHash("sha256").update(bytes).digest("hex"));
   });
 });
+
+describe("w:tblHeader: only a row the document marks on is a header row (Checkpoint B)", () => {
+  /** A row with w:tblHeader set to `flag` (the attribute value), bare (`""`), or absent (undefined). */
+  const row = (cells: string[], flag?: string) => `<w:tr>${flag === undefined ? "" : `<w:trPr><w:tblHeader${flag === "" ? "" : ` w:val="${flag}"`}/></w:trPr>`}${cells.map((c) => tc(para(c))).join("")}</w:tr>`;
+  const table = (rows: string[]) => `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>${rows.join("")}</w:tbl>`;
+  const rowLines = (text: string, n: number) => linesOf(text).filter((l) => l.startsWith(`[Table ${n}, `));
+  const checkCitations = (doc: Awaited<ReturnType<typeof variant>>["document"]) => {
+    for (const x of doc.sentences) expect(doc.text.slice(x.charStart, x.charEnd)).toBe(x.text);
+    for (const x of doc.sentences.filter((y) => y.text.startsWith("[Table "))) expect(x.atomic).toBe(true);
+  };
+
+  it("a table whose rows all say w:val=\"false\" (or \"0\", \"off\") has no header row: every row is data, labelled Column n", async () => {
+    const r = await variant([heading(1, "Flags"), table([row(["Scope", "All sites"], "false"), row(["Period", "FY2026"], "0"), row(["Owner", "Finance"], "off"), row(["Review", "Annual"], "FALSE")])]);
+    expect(rowLines(r.document.text, 1)).toEqual([
+      "[Table 1, row 1] Column 1: Scope; Column 2: All sites", "[Table 1, row 2] Column 1: Period; Column 2: FY2026",
+      "[Table 1, row 3] Column 1: Owner; Column 2: Finance", "[Table 1, row 4] Column 1: Review; Column 2: Annual"
+    ]);
+    expect(r.tables).toEqual([expect.objectContaining({ name: "1", markedHeaderRows: 0, labels: null, rowCount: 4 })]);
+    checkCitations(r.document);
+  });
+
+  it("true, bare and absent flags: a leading row marked true or bare is a header; rows marked false or unmarked are data", async () => {
+    const r = await variant([
+      table([row(["Risk", "Control"], "true"), row(["Missing records", "Monthly check"], "false"), row(["Fraud", "Dual sign-off"])]),
+      table([row(["Stage", "Days"], ""), row(["Draft", "5"])]),
+      table([row(["Item", "Check"], "1"), row(["Gloves", "Pinholes"], "on"), row(["Glasses", "Cracks"], "false")]),
+      table([row(["Plain", "Row"]), row(["Second", "Row"])])
+    ]);
+    expect(rowLines(r.document.text, 1)).toEqual(["[Table 1, row 1] Risk: Missing records; Control: Monthly check", "[Table 1, row 2] Risk: Fraud; Control: Dual sign-off"]);
+    expect(rowLines(r.document.text, 2)).toEqual(["[Table 2, row 1] Stage: Draft; Days: 5"]);
+    expect(rowLines(r.document.text, 3)).toEqual(["[Table 3, row 1] Item / Gloves: Glasses; Check / Pinholes: Cracks"]);
+    expect(rowLines(r.document.text, 4)).toEqual(["[Table 4, row 1] Column 1: Plain; Column 2: Row", "[Table 4, row 2] Column 1: Second; Column 2: Row"]);
+    expect(r.tables.map((t) => [t.markedHeaderRows, t.rowCount])).toEqual([[1, 2], [1, 1], [2, 1], [0, 2]]);
+    checkCitations(r.document);
+  });
+
+  it("a row marked true below a data row is data, as Word repeats only leading header rows", async () => {
+    const r = await variant([table([row(["Risk", "Control"], "true"), row(["Fraud", "Dual sign-off"], "false"), row(["Late", "Reminder"], "true")])]);
+    expect(rowLines(r.document.text, 1)).toEqual(["[Table 1, row 1] Risk: Fraud; Control: Dual sign-off", "[Table 1, row 2] Risk: Late; Control: Reminder"]);
+  });
+
+  it("applies in notes too: a footnote table whose rows say false keeps its data rows", async () => {
+    const footnotes = [`<w:footnote w:id="1">${para("Timetable:")}${table([row(["Draft", "5"], "false"), row(["Final", "10"], "false")])}</w:footnote>`];
+    const r = await variant([p(`${run("Results are reported on time.")}<w:r><w:footnoteReference w:id="1"/></w:r>`)], { footnotes });
+    expect(linesOf(r.document.text).filter((l) => l.startsWith("[Note 1, table 1"))).toEqual(["[Note 1, table 1, row 1] Column 1: Draft; Column 2: 5", "[Note 1, table 1, row 2] Column 1: Final; Column 2: 10"]);
+    checkCitations(r.document);
+  });
+
+  it("the fixture's bare w:tblHeader rows still count as headers, and the original's hash is of the bytes as supplied", async () => {
+    const bytes = await zipDocx(structureParts({ body: [table([row(["Risk", "Control"], ""), row(["Fraud", "Dual sign-off"], "false")]), FILLER] }));
+    const r = await ingestDocx(bytes, opts);
+    expect(rowLines(r.document.text, 1)).toEqual(["[Table 1, row 1] Risk: Fraud; Control: Dual sign-off"]);
+    expect(r.document.metadata.originalSha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+  });
+});

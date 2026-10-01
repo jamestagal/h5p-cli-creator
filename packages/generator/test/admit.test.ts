@@ -187,12 +187,13 @@ describe("the limit applies only to the submitted source", () => {
 
 describe("the extraction version", () => {
   it("is recorded on every ingested document and is part of the run fingerprint", async () => {
-    expect(EXTRACTION_VERSION).toBe("2026-09-30.2");
+    expect(EXTRACTION_VERSION).toBe("2026-10-01.1");
     const doc = await ingestText("a".repeat(500), opts);
     expect(doc.metadata.extractionVersion).toBe(EXTRACTION_VERSION);
     const base: FingerprintInput = { sourceTextHash: doc.textHash, extractionVersion: EXTRACTION_VERSION, unitText: null, selectedTypes: ["multiChoice"], language: "en", promptConfig: DEFAULT_PROMPT_CONFIG, customisation: null, chunkTokens: 6000, rules: DEFAULT_PLAN_RULES };
     expect(runFingerprint({ ...base, extractionVersion: "2026-09-28.2" })).not.toBe(runFingerprint(base));
     expect(runFingerprint({ ...base, extractionVersion: "2026-09-30.1" })).not.toBe(runFingerprint(base)); // before the DOCX and ODT adapters were settled
+    expect(runFingerprint({ ...base, extractionVersion: "2026-09-30.2" })).not.toBe(runFingerprint(base)); // before w:tblHeader="false" rows were read as data
     expect(runFingerprint({ ...base })).toBe(runFingerprint(base));
   });
 });

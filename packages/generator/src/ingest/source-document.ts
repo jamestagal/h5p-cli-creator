@@ -36,9 +36,11 @@ export interface IngestOptions { sourceId: string; fileName?: string; }
  * a resume must match. History: 2026-09-28.1 NFC normalisation and code-point admission; 2026-09-30.1 PDF text is the
  * pages' own text, without pdf-parse's page labels; 2026-09-30.2 the DOCX and ODT adapters as enabled for persistent
  * ingestion (`leap generate`, Task 8), after the Task 6 and 7 corrections: structured notes, effective DOCX numbering,
- * ODT list continuations. Any DOCX or ODT output from before this version is development output and is not resumable.
+ * ODT list continuations. Any DOCX or ODT output from before this version is development output and is not resumable;
+ * 2026-10-01.1 DOCX table rows whose w:tblHeader is switched off (w:val="false", "0", "off") are data rows, not headers
+ * (Checkpoint B: mammoth read every such row as a header).
  */
-export const EXTRACTION_VERSION = "2026-09-30.2";
+export const EXTRACTION_VERSION = "2026-10-01.1";
 
 export function textHash(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
