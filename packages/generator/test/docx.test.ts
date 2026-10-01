@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { EXTRACTION_VERSION, htmlToBlocks, ingestDocx, normaliseSourceText } from "../src/ingest/index.js";
+import { EXTRACTION_VERSION, htmlToBlocks, ingestDocx, ingestText, labelLikeReferences, normaliseSourceText } from "../src/ingest/index.js";
 import { linearize } from "../src/ingest/structure/linearize.js";
 import { normaliseBlocks } from "../src/ingest/structure/blocks.js";
 import { ABSTRACT_NUMS, BODY, NUMS, STYLES, heading, item, p, para, run, structureParts, tbl, tc, tr, zipDocx } from "./fixtures/structure/docx-builder.mjs";
@@ -249,5 +249,38 @@ describe("w:tblHeader: only a row the document marks on is a header row (Checkpo
     const r = await ingestDocx(bytes, opts);
     expect(rowLines(r.document.text, 1)).toEqual(["[Table 1, row 1] Risk: Fraud; Control: Dual sign-off"]);
     expect(r.document.metadata.originalSha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+  });
+});
+
+describe("label-like references: list nouns with numbers, in digits or words (Checkpoint B)", () => {
+  const PAD = "This paragraph pads the synthetic document so that it passes source admission. ".repeat(8).trim();
+  const flagged = async (sentences: string[]) => labelLikeReferences(await ingestText(`${PAD} ${sentences.join(" ")}`, { sourceId: "src" })).map((r) => r.text);
+
+  it("flags step, question, item and point followed by a number word or digits, singular or plural, in any case", async () => {
+    const refs = [
+      "Step four is where most errors are found.", "Go back to step one before you sign.", "Questions 2 and 3 cover the evidence.",
+      "Item 10 lists the owners.", "Point three applies to every branch.", "Repeat STEP 2 for each site."
+    ];
+    expect(await flagged(refs)).toEqual(refs);
+  });
+
+  it("flags an ordinal before a list noun: the fourth question, the second step", async () => {
+    const refs = ["The fourth question is the one reviewers skip.", "Leave the second step until the evidence is filed."];
+    expect(await flagged(refs)).toEqual(refs);
+  });
+
+  it("still flags the earlier forms: item b), (c), (ii), b) above", async () => {
+    const refs = ["See item b) for the scope.", "The rule in (c) applies here.", "Condition (ii) is optional.", "The control in b) above is required."];
+    expect(await flagged(refs)).toEqual(refs);
+  });
+
+  it("does not flag a list noun without a number, or a number without a list noun", async () => {
+    expect(await flagged(["Each step is recorded in the file.", "One question remains open.", "Four branches are in scope.", "The points raised were resolved.", "Take one step at a time."])).toEqual([]);
+  });
+
+  it("reports the new form from a DOCX, with its heading path", async () => {
+    const r = await variant([heading(1, "Self-check"), item(5, 0, "Open the file"), item(5, 0, "Check the owner"), para("Step two is the one most often missed.")]);
+    const ref = r.document.sentences.find((x) => x.text === "Step two is the one most often missed.")!;
+    expect(r.warnings.labelLikeReferences).toEqual([{ sentenceId: ref.sentenceId, headingPath: ["Self-check"], text: ref.text }]);
   });
 });

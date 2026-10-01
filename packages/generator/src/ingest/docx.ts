@@ -15,7 +15,20 @@ export interface LabelLikeReference { sentenceId: string; headingPath: string[];
 export interface IngestWarnings { listNumberingSimplified: SimplifiedNumbering[]; numberingUnsupported: UnsupportedNumbering[]; labelLikeReferences: LabelLikeReference[] }
 export interface StructuredIngestResult { document: SourceDocument; warnings: IngestWarnings; tables: TableSummary[] }
 
-const LABEL_LIKE = [/\bitem [a-z]\)/i, /\([a-z]\)/, /\([ivx]+\)/i, /\b[a-z]\) (?:above|below)\b/i];
+const NUMBER_WORD = "one|two|three|four|five|six|seven|eight|nine|ten";
+const ORDINAL_WORD = "first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth";
+const LIST_NOUN = "steps?|questions?|items?|points?";
+/**
+ * Patterns for sentences that refer to list items by their label or position (R13): "item b)", "(c)", "(ii)",
+ * "b) above"; and a list noun with a number, "step four", "Step 3", "questions 2 and 3", "the fourth question" (added
+ * after Checkpoint B found references of that form, written in words, that pointed into lists without numbers).
+ * They flag sentences for review, so a false positive costs one check and a miss can cost a reference its meaning.
+ */
+const LABEL_LIKE = [
+  /\bitem [a-z]\)/i, /\([a-z]\)/, /\([ivx]+\)/i, /\b[a-z]\) (?:above|below)\b/i,
+  new RegExp(`\\b(?:${LIST_NOUN}) (?:\\d{1,2}|${NUMBER_WORD})\\b`, "i"),
+  new RegExp(`\\b(?:${ORDINAL_WORD}) (?:${LIST_NOUN})\\b`, "i")
+];
 
 /**
  * The sentence a list's first item became: a list sentence under the same headings whose text, after its label, is the
