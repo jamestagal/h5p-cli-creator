@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { authoriseRun, LedgerError, readLedger, type Ledger } from "../src/pilot/ledger.js";
+import { authoriseRun, LedgerError, readLedger, toUsdMicro, type Ledger } from "../src/pilot/ledger.js";
 import { spendFromAttempts } from "../src/llm/spend.js";
 import { budgetFromLedger } from "../src/pipeline/operations.js";
 import { reserve } from "../src/llm/budget.js";
@@ -34,6 +34,34 @@ describe("readLedger", () => {
       expect((refused as Error).message).toMatch(message);
     }
     await expect(readLedger(await write("{ not json"))).rejects.toThrow(/could not be read as JSON/);
+  });
+});
+
+describe("amounts must convert to a positive safe integer of µUSD", () => {
+  it("toUsdMicro accepts positive finite amounts of at least one µUSD and refuses NaN, infinities, zero, negatives, dust and overflow", () => {
+    expect(toUsdMicro(1)).toBe(1_000_000);
+    expect(toUsdMicro(0.000001)).toBe(1);
+    expect(toUsdMicro(5.001255)).toBe(5_001_255);
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 0, -1, 0.0000004, 1e10, 1e300, Number.MAX_VALUE, "1", undefined, null]) expect(toUsdMicro(bad), String(bad)).toBeNull();
+    expect(toUsdMicro(9_000_000_000)).toBe(9_000_000_000_000_000); // largest whole-dollar amounts still count exactly
+    expect(toUsdMicro(9_100_000_000)).toBeNull();
+  });
+
+  it("authoriseRun refuses a NaN, infinite, non-positive or overflowing budget before any other rule, so no comparison can silently pass", () => {
+    const l = ledger(1, [run("S1", 1)]);
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, 0, -2, 1e300]) {
+      const refused = authoriseRun(l, { runId: "S1", outDir: "/pilot/S1", budgetUsd: bad });
+      expect(refused, String(bad)).toMatchObject({ ok: false, rule: "invalid-budget" });
+      expect(refused.ok ? "" : refused.message).toMatch(/is not a valid estimated budget/);
+    }
+    expect(authoriseRun(ledger(1, [run("S1", 1)]), { runId: "nobody", outDir: "/x", budgetUsd: Number.NaN })).toMatchObject({ rule: "invalid-budget" });
+  });
+
+  it("readLedger refuses caps that do not convert: dust and overflow, for a run cap and for the total", async () => {
+    const write = async (value: unknown) => { const p = join(await mkdtemp(join(tmpdir(), "ledger-")), "ledger.json"); await writeFile(p, JSON.stringify(value)); return p; };
+    for (const [value, field] of [[ledger(5, [run("S1", 1e300)]), "capUsd"], [ledger(5, [run("S1", 0.0000001)]), "capUsd"], [ledger(1e300, [run("S1", 1)]), "totalCapUsd"]] as const) {
+      await expect(readLedger(await write(value))).rejects.toThrow(new RegExp(`${field} must be a positive amount in USD`));
+    }
   });
 });
 
@@ -101,5 +129,13 @@ describe("spendFromAttempts", () => {
     const request = (maxOutputTokens: number): ModelRequest => ({ purpose: "produce", model: "claude-sonnet-5", system: "s", user: "u", maxOutputTokens, outputSchema: {} } as unknown as ModelRequest);
     expect(reserve(budget, request(50_000))).toMatchObject({ ok: false, limit: "spend" }); // $0.50 of output at $10/MTok
     expect(reserve(budget, request(1_000))).toMatchObject({ ok: true });
+  });
+
+  it("a $5.001255 reservation is refused against a $1 per-import budget; with a NaN budget (what an unchecked --budget-usd NaN produced) it would have passed", () => {
+    const request = { purpose: "produce", model: "claude-sonnet-5", system: "s", user: "u", maxOutputTokens: 500_000, outputSchema: {} } as unknown as ModelRequest;
+    const limits = { requests: 100, tokens: 10_000_000, elapsedMs: 3_600_000 };
+    const capped = reserve(budgetFromLedger({ usdMicro: toUsdMicro(1)!, ...limits }, [], Date.now(), 0), request);
+    expect(capped).toMatchObject({ ok: false, limit: "spend" });
+    expect(reserve(budgetFromLedger({ usdMicro: Number.NaN, ...limits }, [], Date.now(), 0), request)).toMatchObject({ ok: true }); // the hazard toUsdMicro now prevents upstream
   });
 });

@@ -159,3 +159,55 @@ describe("authorised runs", () => {
     expect(refused.provider.requests).toHaveLength(0);
   });
 });
+
+describe("invalid budgets and limits are refused before any write or dispatch", () => {
+  it("spawned CLI: --budget-usd NaN, non-numeric text and an overflowing amount exit 1 on the paid path, creating neither the output nor the fixtures directory", async () => {
+    const dir = await temp();
+    const out = join(dir, "s1");
+    const ledger = await ledgerFile(dir, 1, [{ runId: "S1", outDir: out, capUsd: 1 }]);
+    for (const value of ["NaN", "abc", "1e300"]) {
+      const result = await leap(["generate", "--source", sourceMd, "--unit", unitTxt, "--out", out, "--provider", "record", "--fixtures", join(dir, "fx"), "--ledger", ledger, "--run", "S1", "--budget-usd", value, "--libraries", librariesDir]);
+      expect(result.code, value).toBe(1);
+      expect(result.stderr, value).toMatch(/^leap: --budget-usd \S+ is not a valid estimated budget: give a positive amount in USD of at least \$0\.000001\n$/);
+      expect(existsSync(out), value).toBe(false);
+      expect(existsSync(join(dir, "fx")), value).toBe(false);
+    }
+  });
+
+  it("spawned CLI: the replay path refuses an invalid budget or limit too, so a NaN cannot disable a limit there either", async () => {
+    const dir = await temp();
+    const out = join(dir, "replay");
+    for (const [flag, value] of [["--budget-usd", "NaN"], ["--max-requests", "abc"], ["--max-tokens", "NaN"], ["--max-seconds", "-5"]] as const) {
+      const result = await leap(["generate", "--source", sourceMd, "--unit", unitTxt, "--out", out, "--provider", "replay", "--fixtures", join(dir, "fx"), flag, value, "--libraries", librariesDir]);
+      expect(result.code, flag).toBe(1);
+      expect(result.stderr, flag).toContain(`leap: ${flag} `);
+      expect(existsSync(out), flag).toBe(false);
+    }
+  });
+
+  it("programmatic: NaN, an infinite and an overflowing budget make no provider call and create nothing; without --budget-usd the import's budget is the finite $1 cap", async () => {
+    const dir = await temp();
+    const out = join(dir, "s1");
+    const ledger = await ledgerFile(dir, 1, [{ runId: "S1", outDir: out, capUsd: 1 }]);
+    for (const budgetUsd of [Number.NaN, Number.POSITIVE_INFINITY, 1e300]) {
+      const result = await run({ out, ledger, run: "S1", budgetUsd });
+      expect(result.code, String(budgetUsd)).toBe(1);
+      expect(result.stderr, String(budgetUsd)).toContain("is not a valid estimated budget");
+      expect(result.provider.requests, String(budgetUsd)).toHaveLength(0);
+      expect(existsSync(out), String(budgetUsd)).toBe(false);
+    }
+    const capped = await run({ out, ledger, run: "S1" }); // no --budget-usd: the import's budget is the $1 cap
+    expect((await importJson(out)).budget.usdMicro).toBe(1_000_000);
+    expect(capped.provider.requests.length).toBeGreaterThan(0);
+  });
+
+  it("an injected provider is refused under the ledger-exempt replay selection, before any call", async () => {
+    const provider = new FailingProvider();
+    const out = join(await temp(), "replay");
+    const refused = await generate({ source: sourceMd, unit: unitTxt, out, types: "multiChoice", maxRequests: 200, maxTokens: 2_000_000, maxSeconds: 1800, language: "en", readingLevel: "high-school", tone: "educational", libraries: librariesDir, provider: "replay", fixtures: out, concurrency: 1 }, { out: () => undefined, err: () => undefined }, { provider }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(Error);
+    expect((refused as Error).message).toContain("a provider can be injected only with --provider anthropic or record");
+    expect(provider.requests).toHaveLength(0);
+    expect(existsSync(out)).toBe(false);
+  });
+});

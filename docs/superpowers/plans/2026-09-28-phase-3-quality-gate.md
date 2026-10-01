@@ -514,6 +514,8 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 - *(Amended 1 Oct, Task 9.)* The ledger is a JSON file. `--budget-usd` has no fixed default any more: a paid run without it gets its run's cap, and a replay run gets $2 as before; `budgetFromLedger` now takes its spend from `spendFromAttempts`, so resume and the ledger check share one rule. The concurrency test runs the two `generate` calls in one process at once, with a provider injected through `generate`'s test-only `deps.provider` on the `record` code path; the authorisation is pure and each run reads only its own directory, so two processes would exercise the same code. The README's paid example names `--ledger` and `--run`.
 
+- *(Amended 1 Oct, Task 9 review.)* Every cap and budget converts through one rule, `toUsdMicro`: a finite amount above zero whose µUSD value is a positive safe integer. Ledger caps that do not convert are refused by `readLedger`; a requested budget that does not convert is refused by `authoriseRun` (`invalid-budget`, checked first) and by `generate` on every provider path, before anything is written or dispatched, since a NaN would make every cap comparison false and disable enforcement. `generate` also refuses a NaN or non-positive `--max-requests`, `--max-tokens` or `--max-seconds`, for the same reason. An injected test provider is refused outside the ledger-checked paths (`anthropic`, `record`).
+
 **Tests (write first):**
 - [ ] Each refusal rule, with its message.
 - [ ] `generate --provider record` without `--ledger` exits 1 before any directory is created.

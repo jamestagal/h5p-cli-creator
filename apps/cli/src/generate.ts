@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { createRegistry, engineIdentity } from "@leaplearn/engine";
-import { ANTHROPIC_TIMEOUT_MS, authoriseRun, createAnthropicProvider, IncompatibleResumeError, isStoreVersionError, LedgerError, OriginalSourceError, readLedger, ReplayProvider, RecordingProvider, runImport, spendFromAttempts, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ImportRecord, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
+import { ANTHROPIC_TIMEOUT_MS, authoriseRun, toUsdMicro, createAnthropicProvider, IncompatibleResumeError, isStoreVersionError, LedgerError, OriginalSourceError, readLedger, ReplayProvider, RecordingProvider, runImport, spendFromAttempts, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ImportRecord, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
 import { FileStore } from "./file-store.js";
 import { formatCostReport, writeReportsLocked } from "./report.js";
 import { loadSource, UnsupportedSourceError, warningSummary } from "./source.js";
@@ -19,8 +19,20 @@ export interface GenerateArgs {
 /** The per-import estimated spend cap of a run with no ledger (replay), in USD. */
 export const DEFAULT_BUDGET_USD = 2;
 
-/** Test seam: a provider used in place of the one --provider names (the ledger rules still follow --provider). */
+/**
+ * Test seam: a provider used in place of the one --provider names. Allowed only on a ledger-checked path (anthropic or
+ * record), so an injected provider can never run under the ledger-exempt replay selection.
+ */
 export interface GenerateDeps { provider?: ModelProvider }
+
+/** The numeric limits, checked before anything is written: NaN or a non-positive value would make every limit comparison false and disable the limit. */
+function invalidLimits(args: GenerateArgs): string | null {
+  if (args.budgetUsd !== undefined && toUsdMicro(args.budgetUsd) === null) return `--budget-usd ${String(args.budgetUsd)} is not a valid estimated budget: give a positive amount in USD of at least $0.000001`;
+  for (const [flag, value] of [["--max-requests", args.maxRequests], ["--max-tokens", args.maxTokens], ["--max-seconds", args.maxSeconds]] as const) {
+    if (!Number.isFinite(value) || value <= 0 || !Number.isSafeInteger(Math.round(value))) return `${flag} ${String(value)} is not a valid limit: give a positive number`;
+  }
+  return null;
+}
 
 export function importIdFor(outDir: string): string {
   return basename(resolve(outDir)).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "import";
@@ -48,7 +60,7 @@ async function authorisePaidRun(args: GenerateArgs, outDir: string): Promise<{ o
   if (!auth.ok) return { ok: false, message: auth.message };
   const spent = spendFromAttempts(await new FileStore(outDir).listAttempts(importIdFor(outDir)));
   if (spent >= auth.capUsdMicro) return { ok: false, message: `run ${JSON.stringify(args.run)} has already spent an estimated $${(spent / 1_000_000).toFixed(4)} (from its attempt records), which meets its estimated cap of $${(auth.capUsdMicro / 1_000_000).toFixed(2)}; nothing more is dispatched under this ledger entry` };
-  return { ok: true, budgetUsdMicro: Math.min(args.budgetUsd === undefined ? auth.capUsdMicro : Math.round(args.budgetUsd * 1_000_000), auth.capUsdMicro) };
+  return { ok: true, budgetUsdMicro: Math.min(toUsdMicro(args.budgetUsd) ?? auth.capUsdMicro, auth.capUsdMicro) };
 }
 
 export async function generate(args: GenerateArgs, io: { out: (s: string) => void; err: (s: string) => void }, deps: GenerateDeps = {}): Promise<number> {
@@ -60,9 +72,13 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
 
   if (!(TONE_IDS as readonly string[]).includes(args.tone)) throw new Error(`unknown tone ${args.tone}`);
 
+  const invalid = invalidLimits(args);
+  if (invalid) { io.err(`leap: ${invalid}\n`); return 1; } // before any write or dispatch, on every provider path
+  const ledgerChecked = args.provider === "anthropic" || args.provider === "record";
+  if (deps.provider && !ledgerChecked) throw new Error(`a provider can be injected only with --provider anthropic or record, where the ledger applies; not with --provider ${args.provider}`);
   const outDir = resolve(args.out);
-  let budgetUsdMicro = Math.round((args.budgetUsd ?? DEFAULT_BUDGET_USD) * 1_000_000);
-  if (args.provider === "anthropic" || args.provider === "record") {
+  let budgetUsdMicro = toUsdMicro(args.budgetUsd ?? DEFAULT_BUDGET_USD)!;
+  if (ledgerChecked) {
     const paid = await authorisePaidRun(args, outDir); // before anything is created or resumed
     if (!paid.ok) { io.err(`leap: ${paid.message}\n`); return 1; }
     budgetUsdMicro = paid.budgetUsdMicro;
