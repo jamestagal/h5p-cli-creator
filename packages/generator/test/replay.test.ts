@@ -6,6 +6,7 @@ import { MemoryStore } from "../src/store/memory-store.js";
 import { runImport, type RunImportDeps } from "../src/pipeline/run-import.js";
 import { testIdentity } from "./helpers/identity.js";
 import { S1_DEPS, S1_SETTINGS, s1Input, settingsOf } from "./helpers/s1-settings.js";
+import { importCompletenessProblems } from "./helpers/import-complete.js";
 
 const root = resolve(import.meta.dirname, "../../..");
 /** Where S1 records. The phase-2 recordings were archived, unchanged, in fixtures/historical/ (see historical-archive.test.ts). */
@@ -42,6 +43,8 @@ describe("S1: current PDF ingestion replayed under S1_SETTINGS", () => {
     const store = new MemoryStore();
     const { input, deps } = await s1Run(store);
     const record = await runImport(input, deps);
-    expect(["ready", "ready_with_failures"]).toContain(record.status);
+    // A complete run only: status ready, every selected type planned, every planned activity promoted with a valid
+    // build and matching package bytes. An incomplete recording fails here (plan Task 10 step 5).
+    expect(await importCompletenessProblems(store, record, input.selectedTypes, deps.engineIdentity)).toEqual([]);
   });
 });

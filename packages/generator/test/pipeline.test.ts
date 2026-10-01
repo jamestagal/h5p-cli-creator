@@ -23,6 +23,7 @@ import { crashBefore, CrashError, failOnce, failOutcomeOnce, withBuildBytes } fr
 import { RoutedProvider } from "./helpers/routed-provider.js";
 import { electricalDocx, electricalOdt } from "./helpers/structured-sources.js";
 import { IDENTITY_A, IDENTITY_A_NEW_LOCK, IDENTITY_B } from "./helpers/identity.js";
+import { importCompletenessProblems } from "./helpers/import-complete.js";
 
 const root = resolve(import.meta.dirname, "../../..");
 let registry: LibraryRegistry;
@@ -56,6 +57,44 @@ const callsThroughPlan = (doc: Doc) => 1 + chunkSentences(doc.sentences, SYNTHET
 const input = async (importId: string, overrides: Partial<RunImportInput> = {}): Promise<RunImportInput> => ({ importId, name: "Synthetic import", source: await syntheticDoc(), unitText: await syntheticUnitText(), selectedTypes: ["multiChoice", "blanks", "flashcards"] as const, budget: { usdMicro: 5_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null, ...overrides });
 const deps = (store: RunImportDeps["store"], provider: RunImportDeps["provider"], overrides: Partial<RunImportDeps> = {}): RunImportDeps => ({ store, provider, registry, engineIdentity: IDENTITY_A, concurrency: 1, chunkTokens: SYNTHETIC_CHUNK_TOKENS, rules, sleep: async () => undefined, ...overrides });
 const purposes = (p: { requests: Array<{ purpose: string }> }) => p.requests.map((x) => x.purpose);
+
+describe("the completeness check a recorded run (S1) must pass", () => {
+  const types = ["multiChoice", "blanks", "flashcards"] as const;
+
+  it("passes a complete run: ready, every type planned, every activity promoted with a valid build and matching package", async () => {
+    const store = new MemoryStore(); const doc = await syntheticDoc();
+    const record = await runImport(await input("imp-complete"), deps(store, new FakeProvider(await fullScript(doc))));
+    expect(await importCompletenessProblems(store, record, types, IDENTITY_A)).toEqual([]);
+  });
+
+  it("rejects a run with a failed activity, even though the import finishes as ready_with_failures", async () => {
+    const store = new MemoryStore(); const doc = await syntheticDoc();
+    const { mc, fc } = produceResponses(doc);
+    const bad = r({ title: "Bad" }); // fails the blanks schema, so all three content attempts fail
+    const { script } = conceptResponses(doc);
+    const provider = new FakeProvider([r(unitOut), ...script, r(planOutFor([...types])), r(mc), bad, bad, bad, r(fc)]);
+    const record = await runImport(await input("imp-failed"), deps(store, provider));
+    expect(record.status).toBe("ready_with_failures"); // what the old replay assertion accepted
+    const problems = await importCompletenessProblems(store, record, types, IDENTITY_A);
+    expect(problems).toContain("import status is ready_with_failures, not ready");
+    expect(problems.some((p) => /^act-2 \(blanks\): status failed \(content: /.test(p))).toBe(true);
+    expect(problems).toHaveLength(2);
+  });
+
+  it("rejects a missing type, a package whose bytes do not match its build record, and a build under another engine", async () => {
+    const store = new MemoryStore(); const doc = await syntheticDoc();
+    const record = await runImport(await input("imp-damaged"), deps(store, new FakeProvider(await fullScript(doc))));
+    const damaged = withBuildBytes(store, (key, bytes) => (key.includes("act-3") && bytes ? Buffer.concat([bytes, Buffer.from("x")]) : bytes));
+    expect(await importCompletenessProblems(damaged, record, types, IDENTITY_A)).toEqual([expect.stringMatching(/^act-3 \(flashcards\): package .* does not match its build record's sha256 and length$/)]);
+    const plan = (await store.getArtifact<Array<{ type: string }>>("imp-damaged", "plan"))!;
+    await store.putArtifact("imp-damaged", "plan", plan.filter((p) => p.type !== "blanks"));
+    const missing = await importCompletenessProblems(store, record, types, IDENTITY_A);
+    expect(missing).toContain("no planned blanks activity");
+    expect(missing).toContain("act-2: has an activity record but is not in the plan");
+    await store.putArtifact("imp-damaged", "plan", plan);
+    expect((await importCompletenessProblems(store, record, types, IDENTITY_B)).length).toBe(3); // every build points at engine A
+  });
+});
 
 describe("pipeline defaults", () => {
   it("charges a killed run's unobservable tail at the adapter's request timeout, not at its own constant", () => {
