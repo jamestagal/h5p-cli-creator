@@ -131,7 +131,7 @@ Execute tasks in order. Each task writes its failing tests first, runs them and 
 |---|---|---|---|
 | **A: engine and build identity** | 3 and follow-up F1 | Reviewer | Whole-diff review of Tasks 1–3 and F1; `pnpm verify` green |
 | **B: extraction inspection** | 8 | Benjamin, zero cost | `leap extract` on the BSBAUD412 packet; compare at least five representative tables with the original (design §4.2). Any mismatch goes back to Tasks 5–7 before anything else proceeds |
-| **C: authorise S1** | 10, offline part | Benjamin | Task 10's offline work is complete and green on its task branch, apart from the expected replay misses (see Task 10). Benjamin writes the S1 ledger entry; S1 runs only after that. The phase branch waits here, and Tasks 11–16 depend on Task 10 |
+| **C: authorise S1** | 10, offline part | Benjamin | Task 10's offline work is complete and green on its task branch, apart from the expected replay misses (see Task 10). Benjamin decides follow-up F3 (the plan/produce model), then writes the S1 ledger entry; S1 runs only after that. The phase branch waits here, and Tasks 11–16 depend on Task 10 |
 | **D: tooling complete** | 16 and follow-up F2 | Reviewer | Whole-branch review; `pnpm verify` green; the pilot runbook reviewed; F2 done before the runbook names package paths |
 | **E: authorise P1** | D | Benjamin | Ledger entry for P1. This is the first paid BSBAUD412 run; it comes after A and B by construction |
 
@@ -472,6 +472,25 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 **Verification:** `pnpm verify` → `exit=0`.
 
 **Commit:** `fix(cli): generate prints each activity's actual build key`
+
+---
+
+### Follow-up F3: decide the plan/produce model before S1 (Sonnet 5 → Sonnet 5.5)
+
+**Origin:** the owner's decision of 1 Oct 2026: keep `claude-sonnet-5` for the `plan` and `produce` roles for now, revisit before S1, and update at some stage. Claude Sonnet 5.5 (`claude-sonnet-5-5`) is the current Sonnet. Its list price is the same as Sonnet 5 ($2 input / $10 output per MTok, $0.20 cache reads), with the same 1M context, 128K output and tokenizer, so any saving would come from tokens used per task, which only a measured run shows.
+
+**When:** decided by the owner before the S1 ledger entry (Checkpoint C), so that S1 and the pilot record and measure the model the pilot will use. If the owner defers again, record the deferral here; S1 then runs on Sonnet 5.
+
+**Scope if adopted (bounded):**
+- `MODEL_ROLES.plan` and `MODEL_ROLES.produce` → `claude-sonnet-5-5`; entries for it in `MAX_INPUT_TOKENS` (1,000,000), `REQUEST_PROFILES` and the pricing table.
+- Request profile: Sonnet 5.5 rejects `thinking: {type: "disabled"}` (400). Use `thinking: {type: "between_tools"}` (accepted at effort `high` or below, no other thinking field), or adaptive thinking at a measured effort; no sampling parameters (non-default values are a 400).
+- A `stop_reason: "refusal"` response becomes a content failure with its `stop_details` category recorded; whether to use server-side fallbacks is decided with it.
+- Unaffected: structured output already uses `output_config.format`, not forced `tool_choice` (a 400 on Sonnet 5.5).
+- Historical replay stays unchanged: its recordings were made with `claude-sonnet-5`, so the historical replay keeps that model. Only S1 and later recordings use the new one.
+
+**Tests (if adopted):** the request profile sent for each role (no `disabled` thinking, no sampling parameters); the refusal path as a content failure; historical replay passes unchanged; pricing and input limits for the new ID.
+
+**Commit (if adopted):** `feat(llm): plan and produce on Claude Sonnet 5.5`
 
 ---
 
