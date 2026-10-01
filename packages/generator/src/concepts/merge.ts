@@ -1,4 +1,4 @@
-import { CONCEPT_NAME_MAX, CONCEPT_SUMMARY_MAX, type Concept, type Evidence } from "@leaplearn/shared";
+import { CONCEPT_NAME_MAX, CONCEPT_SUMMARY_MAX, type Concept, type ConceptKind, type Evidence } from "@leaplearn/shared";
 import { modelForRole } from "../llm/models.js";
 import type { StageRunner } from "../llm/runner.js";
 import { MergeOut, MergeOutSchema } from "../schemas/model-output.js";
@@ -12,9 +12,14 @@ function unionEvidence(groups: Evidence[][]): Evidence[] {
   return [...byId.values()].sort((a, b) => a.charStart - b.charStart);
 }
 
+/** A merged concept is an RTO instruction when any member is: provider-specific statements never become teaching content. */
+function mergedKind(members: ChunkConcept[]): ConceptKind {
+  return members.some((m) => m.kind === "rto-instruction") ? "rto-instruction" : "content";
+}
+
 export async function mergeConcepts(chunkConcepts: ChunkConcept[][], runner: StageRunner): Promise<Concept[]> {
   const all = chunkConcepts.flat();
-  if (chunkConcepts.length <= 1) return all.map((c, i) => ({ conceptId: `c${i + 1}`, name: c.name, summary: c.summary, evidence: c.evidence }));
+  if (chunkConcepts.length <= 1) return all.map((c, i) => ({ conceptId: `c${i + 1}`, kind: c.kind, name: c.name, summary: c.summary, evidence: c.evidence }));
   const ids = new Set(all.map((c) => c.tempId));
   const listing = chunkConcepts.map((cs, i) => `PART ${i + 1}:\n${cs.map((c) => `- ${c.tempId}: ${c.name} — ${c.summary}`).join("\n")}`).join("\n\n");
   const { value } = await runner.run({
@@ -41,5 +46,8 @@ export async function mergeConcepts(chunkConcepts: ChunkConcept[][], runner: Sta
     }
   });
   const byId = new Map(all.map((c) => [c.tempId, c]));
-  return value.concepts.map((c, i) => ({ conceptId: `c${i + 1}`, name: c.name.trim(), summary: c.summary.trim(), evidence: unionEvidence(c.memberIds.map((id) => byId.get(id)!.evidence)) }));
+  return value.concepts.map((c, i) => {
+    const members = c.memberIds.map((id) => byId.get(id)!);
+    return { conceptId: `c${i + 1}`, kind: mergedKind(members), name: c.name.trim(), summary: c.summary.trim(), evidence: unionEvidence(members.map((m) => m.evidence)) };
+  });
 }

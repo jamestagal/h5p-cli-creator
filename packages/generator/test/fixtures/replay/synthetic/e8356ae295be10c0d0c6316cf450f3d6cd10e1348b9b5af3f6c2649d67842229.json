@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-10-01T22:53:18.463Z",
+  "request": {
+    "purpose": "produce",
+    "model": "claude-sonnet-5",
+    "maxOutputTokens": 1500,
+    "userPreview": "Write ONE multiple-choice revision question from the evidence.\n- The question tests understanding of the focus, not recall of exact wording.\n- Give 3 or 4 answer options; exactly one is correct; the o"
+  },
+  "response": {
+    "providerRequestId": "req_011CfcLbfVh2tz3yqMJM16m3",
+    "model": "claude-sonnet-5",
+    "stopReason": "end_turn",
+    "outputText": "{\"title\":\"Lockout and Tagout in Multi-Worker Situations\",\"question\":\"When several workers are isolating the same piece of equipment, what is the correct lockout and tagout procedure to ensure the equipment cannot be re-energised until every worker has finished?\",\"answers\":[{\"text\":\"Each worker applies their own personal padlock to a multi-lock hasp, and only the worker who applied a lock may remove it.\",\"correct\":true,\"feedback\":\"This matches the evidence: when several workers are involved, each applies their own lock to a multi-lock hasp so the equipment stays isolated until all locks are removed, and only the worker who applied a lock may remove it.\"},{\"text\":\"One supervisor applies a single lock on behalf of the whole team to simplify the process.\",\"correct\":false,\"feedback\":\"The evidence states each worker applies their own lock to a multi-lock hasp, not a single lock applied by one person for the group.\"},{\"text\":\"Each worker attaches a tag without a lock, since tags alone are sufficient to warn others away from the equipment.\",\"correct\":false,\"feedback\":\"A tag without a lock is only a warning, not a control, and must never be used alone when a lock can be fitted.\"},{\"text\":\"Any worker on the team may remove another worker's lock once their own task is finished.\",\"correct\":false,\"feedback\":\"Only the worker who applied a particular lock may remove it, regardless of whether other workers have completed their tasks.\"}],\"evidenceIds\":[\"ev-s15\",\"ev-s20\",\"ev-s21\",\"ev-s22\",\"ev-s24\",\"ev-s25\"]}",
+    "rawUsage": {
+      "input_tokens": 349,
+      "cache_creation_input_tokens": 1289,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 1289,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 513,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "usage": {
+      "inputTokens": 349,
+      "outputTokens": 513,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 1289
+    },
+    "latencyMs": 5647
+  }
+}

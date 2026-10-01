@@ -29,7 +29,7 @@ const unitTxt = resolve(root, "packages/generator/test/fixtures/synthetic/unit-s
 const librariesDir = resolve(root, "libraries");
 
 const importRecord = (importId: string) => ({ storeVersion: 2, importId, orgId: "local", name: "n", sourceType: "markdown", status: "generating", customisation: null, language: "en", unitTextHash: null, selectedTypes: ["multiChoice"], fingerprint: "f".repeat(64), budget: { usdMicro: 10, requests: 1, tokens: 1, elapsedMs: 1 }, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: importId, createdAt: "t", updatedAt: "t" });
-const activityRecord = { activityId: "act-1", importId: "f1-store", type: "multiChoice", order: 0, status: "generating", currentRevision: null, conceptIds: [], criteriaIds: [], error: null, dropped: false };
+const activityRecord = { activityId: "act-1", importId: "f1-store", type: "multiChoice", order: 0, status: "generating", currentRevision: null, conceptIds: [], criteriaIds: [], error: null, dropped: false, unitTextHash: null };
 
 /** An import directory named f1-store (so its import id is f1-store) with one activity and no revisions yet. */
 async function storeDir(): Promise<string> {

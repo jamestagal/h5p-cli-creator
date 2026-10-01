@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-10-01T22:53:12.755Z",
+  "request": {
+    "purpose": "produce",
+    "model": "claude-sonnet-5",
+    "maxOutputTokens": 1500,
+    "userPreview": "Write ONE multiple-choice revision question from the evidence.\n- The question tests understanding of the focus, not recall of exact wording.\n- Give 3 or 4 answer options; exactly one is correct; the o"
+  },
+  "response": {
+    "providerRequestId": "req_011CfcLbK4cn6nvBUvBvnE8s",
+    "model": "claude-sonnet-5",
+    "stopReason": "end_turn",
+    "outputText": "{\"title\":\"Pre-Isolation Hazard Identification\",\"question\":\"Why is equipment fed from more than one power supply considered particularly hazardous during isolation work, according to the inspection process described?\",\"answers\":[{\"text\":\"Because isolating only one supply still leaves the equipment live through the remaining supply\",\"correct\":true,\"feedback\":\"Correct. Equipment with two supplies is dangerous because isolating one supply leaves the other live, so all supplies must be identified and isolated.\"},{\"text\":\"Because multiple supplies always cause damaged insulation over time\",\"correct\":false,\"feedback\":\"Damaged insulation is a separate hazard type and is not caused by having multiple supplies.\"},{\"text\":\"Because supervisors are not permitted to sign permits for equipment with multiple supplies\",\"correct\":false,\"feedback\":\"The evidence does not state any restriction on supervisor sign-off based on the number of supplies.\"},{\"text\":\"Because stored energy in capacitors only occurs in equipment with multiple supplies\",\"correct\":false,\"feedback\":\"Stored energy in capacitors is listed as a separate hazard and is not linked specifically to multiple supplies.\"}],\"evidenceIds\":[\"ev-s31\",\"ev-s32\",\"ev-s33\"]}",
+    "rawUsage": {
+      "input_tokens": 332,
+      "cache_creation_input_tokens": 1255,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 1255,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 408,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "usage": {
+      "inputTokens": 332,
+      "outputTokens": 408,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 1255
+    },
+    "latencyMs": 4722
+  }
+}

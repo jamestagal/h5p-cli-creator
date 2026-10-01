@@ -15,7 +15,7 @@ const root = resolve(import.meta.dirname, "../../..");
 let registry: LibraryRegistry;
 beforeAll(async () => { registry = await createRegistry({ lockPath: resolve(root, "libraries/libraries.lock.json"), cacheDir: resolve(root, "libraries/cache") }); });
 
-const map: ConceptMap = { sourceId: "src", textHash: "0".repeat(64), concepts: [{ conceptId: "c1", name: "Lockout and tagout", summary: "s", evidence: [
+const map: ConceptMap = { sourceId: "src", textHash: "0".repeat(64), concepts: [{ conceptId: "c1", kind: "content", name: "Lockout and tagout", summary: "s", evidence: [
   { evidenceId: "ev-s1", sentenceId: "s1", charStart: 0, charEnd: 50, quote: "Only the worker who applied a lock may remove it." },
   { evidenceId: "ev-s2", sentenceId: "s2", charStart: 51, charEnd: 101, quote: "A tag names the worker, the date and the reason." }
 ] }] };
@@ -37,7 +37,7 @@ describe("flashcards producer", () => {
     expect(provider.requests[0]).not.toHaveProperty("temperature");
   });
   it("a card citing only concept B's evidence is mapped only to concept B's criteria, never to concept A's", async () => {
-    const aligned: ConceptMap = { ...map, concepts: [map.concepts[0]!, { conceptId: "c2", name: "Testing for dead", summary: "s", evidence: [{ evidenceId: "ev-s3", sentenceId: "s3", charStart: 102, charEnd: 145, quote: "Test for dead at the point of work every time." }] }],
+    const aligned: ConceptMap = { ...map, concepts: [map.concepts[0]!, { conceptId: "c2", kind: "content", name: "Testing for dead", summary: "s", evidence: [{ evidenceId: "ev-s3", sentenceId: "s3", charStart: 102, charEnd: 145, quote: "Test for dead at the point of work every time." }] }],
       alignment: { criteria: [{ criterionId: "PC2.1", conceptIds: ["c1"] }, { criterionId: "PC2.2", conceptIds: ["c2"] }], unsupportedCriteriaIds: [] } };
     const mixed = { ...good, cards: [...good.cards.slice(0, 3), card("When to test for dead", "At the point of work, every time", "ev-s3")] };
     const { runner } = mk([fakeResponse({ outputText: JSON.stringify(mixed) })]);

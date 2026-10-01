@@ -177,7 +177,7 @@ describe("the limit applies only to the submitted source", () => {
   });
 
   it("parseUnit accepts a unit of competency far under 500 code points", async () => {
-    const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(unitOut) })]);
+    const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify({ ...unitOut, knowledgeEvidence: [], assessmentConditions: null }) })]); // a short unit text has no KE or conditions to copy
     const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 10_000_000 }), operationId: "op-unit", origin: "shared", requestId: null, sleep: async () => undefined });
     const text = "SYNELE001 Isolate and test electrical equipment";
     expect(countCodePoints(text)).toBeLessThan(500);

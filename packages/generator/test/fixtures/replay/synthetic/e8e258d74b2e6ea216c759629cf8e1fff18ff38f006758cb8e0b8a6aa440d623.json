@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-10-01T22:52:56.592Z",
+  "request": {
+    "purpose": "plan",
+    "model": "claude-sonnet-5",
+    "maxOutputTokens": 3000,
+    "userPreview": "CONCEPTS:\n- c1: Electrical Hazard and Injury Risk — Electricity poses an immediate and severe threat to workers, with most serious injuries occurring when someone contacts equipment they mistakenly be"
+  },
+  "response": {
+    "providerRequestId": "req_011CfcLZyLBLjYJJMZkXzAp2",
+    "model": "claude-sonnet-5",
+    "stopReason": "end_turn",
+    "outputText": "{\"activities\":[{\"slot\":1,\"type\":\"multiChoice\",\"conceptIds\":[\"c1\"],\"criteriaIds\":[],\"focus\":\"Recognising why electrical hazards remain severe even when equipment is assumed de-energised\"},{\"slot\":2,\"type\":\"multiChoice\",\"conceptIds\":[\"c2\"],\"criteriaIds\":[],\"focus\":\"Understanding isolation as elimination of hazard versus mere control\"},{\"slot\":3,\"type\":\"multiChoice\",\"conceptIds\":[\"c4\"],\"criteriaIds\":[\"PC1.1\",\"PC1.2\",\"KE1\"],\"focus\":\"Identifying hazards and documenting findings before isolation begins\"},{\"slot\":4,\"type\":\"multiChoice\",\"conceptIds\":[\"c3\"],\"criteriaIds\":[\"PC2.1\",\"KE2\",\"KE2.1\",\"KE2.2\"],\"focus\":\"Applying lockout and tagout principles in multi-worker scenarios\"},{\"slot\":5,\"type\":\"multiChoice\",\"conceptIds\":[\"c5\"],\"criteriaIds\":[\"PC2.2\"],\"focus\":\"Correct sequence and verification steps for testing conductors dead\"},{\"slot\":6,\"type\":\"blanks\",\"conceptIds\":[\"c6\"],\"criteriaIds\":[\"PC3.1\",\"PC3.3\"],\"focus\":\"Completing work safely and restoring supply with proper authorisation\"},{\"slot\":7,\"type\":\"blanks\",\"conceptIds\":[\"c7\"],\"criteriaIds\":[],\"focus\":\"Correct use of personal protective equipment during electrical work\"},{\"slot\":8,\"type\":\"blanks\",\"conceptIds\":[\"c3\"],\"criteriaIds\":[\"PC2.1\",\"KE2\"],\"focus\":\"Terminology of lockout and tagout control methods\"},{\"slot\":9,\"type\":\"flashcards\",\"conceptIds\":[\"c1\",\"c2\",\"c3\",\"c4\",\"c5\",\"c6\",\"c7\"],\"criteriaIds\":[\"PC1.1\",\"PC1.2\",\"PC2.1\",\"PC2.2\",\"PC3.1\",\"PC3.3\",\"KE1\",\"KE2\",\"KE2.1\",\"KE2.2\"],\"focus\":\"Reviewing the full isolation and safe working process from hazard identification to supply restoration\"}]}",
+    "rawUsage": {
+      "input_tokens": 1550,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 733,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "usage": {
+      "inputTokens": 1550,
+      "outputTokens": 733,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 0
+    },
+    "latencyMs": 6740
+  }
+}

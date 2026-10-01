@@ -1,5 +1,5 @@
 import { escapeHtml, validate, type LibraryRegistry } from "@leaplearn/engine";
-import { ProvenanceError, type ActivitySpec, type ConceptMap, type UnitOfCompetency } from "@leaplearn/shared";
+import { ProvenanceError, targetsOf, type ActivitySpec, type ConceptMap, type UnitOfCompetency } from "@leaplearn/shared";
 import { ZodError } from "zod";
 import type { StageRunner } from "../llm/runner.js";
 import type { ActivityPlan, PlannedType, PlanRules } from "../plan/planner.js";
@@ -66,8 +66,8 @@ export function deriveProvenance(input: ProduceInput, block: EvidenceBlock, evid
 
 export function criteriaBlock(input: ProduceInput): string {
   if (!input.unit || input.plan.criteriaIds.length === 0) return "";
-  const byId = new Map(input.unit.elements.flatMap((e) => e.performanceCriteria).map((c) => [c.id, c.text]));
-  return `\nPERFORMANCE CRITERIA THIS ACTIVITY HELPS REVISE:\n${input.plan.criteriaIds.map((id) => `- ${id}: ${byId.get(id) ?? ""}`).join("\n")}`;
+  const byId = new Map(targetsOf(input.unit).map((t) => [t.id, t.text]));
+  return `\nCRITERIA THIS ACTIVITY HELPS REVISE (PC: performance criterion; KE: knowledge evidence):\n${input.plan.criteriaIds.map((id) => `- ${id}: ${byId.get(id) ?? ""}`).join("\n")}`;
 }
 
 /**

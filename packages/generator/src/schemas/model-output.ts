@@ -1,12 +1,18 @@
 import { z } from "zod";
 import { toProviderSchema } from "../llm/schema.js";
 
+/**
+ * Knowledge Evidence travels as a flat list in document order, each bullet naming its parent's index: structured output
+ * does not accept recursive schemas. Code checks the list and rebuilds the tree (competency/parse-unit.ts).
+ */
 export const UnitOut = z.object({
-  code: z.string(), title: z.string(),
+  code: z.string(), title: z.string(), release: z.string().nullable(),
   elements: z.array(z.object({ number: z.string(), text: z.string(), performanceCriteria: z.array(z.object({ number: z.string(), text: z.string() })) })),
-  knowledgeEvidence: z.array(z.string()), performanceEvidence: z.array(z.string())
+  knowledgeEvidence: z.array(z.object({ index: z.number().int(), parentIndex: z.number().int().nullable(), text: z.string() })),
+  performanceEvidence: z.array(z.string()),
+  assessmentConditions: z.string().nullable()
 });
-export const ConceptsOut = z.object({ concepts: z.array(z.object({ name: z.string(), summary: z.string(), sentenceIds: z.array(z.string()) })) });
+export const ConceptsOut = z.object({ concepts: z.array(z.object({ name: z.string(), summary: z.string(), kind: z.enum(["content", "rto-instruction"]), sentenceIds: z.array(z.string()) })) });
 export const MergeOut = z.object({ concepts: z.array(z.object({ name: z.string(), summary: z.string(), memberIds: z.array(z.string()) })) });
 export const AlignmentOut = z.object({ criteria: z.array(z.object({ criterionId: z.string(), conceptIds: z.array(z.string()) })) });
 export const PlanOut = z.object({ activities: z.array(z.object({ slot: z.number().int(), type: z.enum(["multiChoice", "blanks", "flashcards"]), conceptIds: z.array(z.string()), criteriaIds: z.array(z.string()), focus: z.string() })) });

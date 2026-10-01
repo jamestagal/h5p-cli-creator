@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-10-01T22:53:38.410Z",
+  "request": {
+    "purpose": "produce",
+    "model": "claude-sonnet-5",
+    "maxOutputTokens": 1500,
+    "userPreview": "Write ONE fill-in-the-blanks revision passage from the evidence.\n- The passage is 2 to 4 sentences of plain text that closely follows the evidence, with 2 to 4 blanks written as {{b1}}, {{b2}}, ... in"
+  },
+  "response": {
+    "providerRequestId": "req_011CfcLdG4arzYMoqfNzB5Wh",
+    "model": "claude-sonnet-5",
+    "stopReason": "end_turn",
+    "outputText": "{\"title\":\"Lockout and Tagout Terminology\",\"taskDescription\":\"Fill in each blank with the correct term from the lockout and tagout evidence.\",\"passage\":\"Lockout and tagout is the method used to keep isolated equipment isolated, and a lockout device is a {{b1}} that physically prevents an isolator from being closed. A tag is a warning label attached to the lockout device that names the worker, the date and the reason for the isolation, and only the worker who applied a lock may remove it. If several workers are involved, each worker applies their own lock to a {{b2}} so that the equipment cannot be re-energised until all locks are removed. A tag without a lock is a warning, not a control, and must never be used on its own where a {{b3}} can be fitted.\",\"blanks\":[{\"answers\":[\"padlock or hasp\"],\"tip\":\"Two physical devices mentioned together that stop an isolator from closing\",\"evidenceIds\":[\"ev-s16\",\"ev-s17\"]},{\"answers\":[\"multi-lock hasp\"],\"tip\":\"A device that lets several workers each attach their own lock\",\"evidenceIds\":[\"ev-s22\"]},{\"answers\":[\"lock\"],\"tip\":\"The physical control device that must be used instead of a tag alone\",\"evidenceIds\":[\"ev-s25\"]}]}",
+    "rawUsage": {
+      "input_tokens": 346,
+      "cache_creation_input_tokens": 1326,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 1326,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 420,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "usage": {
+      "inputTokens": 346,
+      "outputTokens": 420,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 1326
+    },
+    "latencyMs": 3952
+  }
+}

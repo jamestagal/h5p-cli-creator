@@ -72,6 +72,16 @@ Benjamin's review of Task 4 (`841bfd7`) found that the PDF adapter stored pdf-pa
 
 Until S1, "replay requests stay byte-identical" (R12, Global constraints) means: the historical replay test passes unchanged from the frozen document at every commit.
 
+## Amendment to R12 (1 Oct 2026): the historical replay is archived
+
+Task 10 changes the parse, extract and align requests (and `PROMPT_VERSION`), so no later revision sends a request the phase-2 recordings answer, and old responses are never re-keyed. The historical replay therefore cannot pass after Task 10, not only until S1. Benjamin's ruling at Checkpoint C, 1 Oct 2026:
+
+1. The 13 recordings move unchanged (same names, same bytes) from `packages/generator/test/fixtures/replay/synthetic/` to `packages/generator/test/fixtures/historical/replay/`. They are never deleted, edited or re-keyed.
+2. The archive also keeps the frozen source document, the unit text the recordings were made from (`unit-synele001.txt.db6057a.txt`) and the synthetic PDF as it was before Task 10 (`source-electrical-safety.pdf.db6057a.pdf`, the bytes the frozen document's provenance names). `manifest.json` records every file's sha256, the recording revision `c8717eb` and the **last compatible code revision, `db6057a`**, where the historical replay test last passed.
+3. The current-pipeline historical replay test is retired. `test/historical-archive.test.ts` replaces it: the archive holds exactly the manifest's files with their hashes; the 13 recordings are named by request key and readable; the frozen document is the pre-fix extraction; the archived unit text is what the recorded parse request was made from; and today's parse request for that unit text has no recording in the archive (it is not replayable, and nothing pretends otherwise).
+4. `test/fixtures/replay/synthetic/` is empty until S1 records into it, so S1 removes no fixture files.
+5. Item 1 of the 30 Sep amendment (every recording stays unchanged) still holds, at the recordings' new location. Item 3 (the replay test runs from the frozen document) held through `db6057a` and ends with Task 10.
+
 ## Paid runs and authorisation
 
 **Approving this plan authorises no paid run.** Tasks 1–9, the offline part of Task 10, and Tasks 11–16 make no model calls. Task 10 ends with one small paid run on synthetic material (S1), and the pilot needs paid runs on BSBAUD412. Each requires Benjamin's ledger entry beforehand.
@@ -119,7 +129,7 @@ Phase 2's global constraints continue to apply, unchanged: the engine boundary, 
 - **The decision is derived in code** (`deriveDecision`) and nowhere else. No command accepts a decision as input except to check it against the derived one.
 - **Offsets vs counts**, as in C7. Every function that takes or returns an offset says so in its doc comment.
 - **Normalise before offsets** (R11). Offsets are only ever computed on the final stored text, and no function transforms stored text after offsets exist.
-- **Replay wire compatibility** (R12, amended 30 Sep 2026). Until Task 10, every change keeps existing replay requests byte-identical; the historical replay test, run from the frozen pre-fix source document with unchanged recordings, passing at each commit is the check. Current PDF ingestion is tested offline until S1 records it.
+- **Replay wire compatibility** (R12, amended 30 Sep and 1 Oct 2026). Until Task 10, every change keeps existing replay requests byte-identical; the historical replay test, run from the frozen pre-fix source document with unchanged recordings, passing at each commit is the check (it held through `db6057a`). From Task 10 the phase-2 recordings are an archive checked for integrity, not replayed (amendment of 1 Oct below). Current PDF ingestion is tested offline until S1 records it.
 - **Every planned activity is accounted for** (R10). Any report that counts activities partitions the plan, and its tests assert the sum.
 - **Claims:** unreviewed output is described as "source citations" and "suggested alignment". "Verified" and "reviewed" are used only for a revision whose current build has a counted, accepted scored review. Nothing claims competency or satisfaction of an RTO's assessment requirements.
 
@@ -482,14 +492,16 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 **When:** decided by the owner before the S1 ledger entry (Checkpoint C), so that S1 and the pilot record and measure the model the pilot will use. If the owner defers again, record the deferral here; S1 then runs on Sonnet 5.
 
+**Decision (1 Oct 2026, Checkpoint C): deferred.** Benjamin keeps `claude-sonnet-5` for `plan` and `produce` in S1, to hold the model constant while the Task 10 pipeline changes are measured. S1 runs on Sonnet 5; F3 stays open, to be revisited after the pipeline changes are measured.
+
 **Scope if adopted (bounded):**
 - `MODEL_ROLES.plan` and `MODEL_ROLES.produce` → `claude-sonnet-5-5`; entries for it in `MAX_INPUT_TOKENS` (1,000,000), `REQUEST_PROFILES` and the pricing table.
 - Request profile: Sonnet 5.5 rejects `thinking: {type: "disabled"}` (400). Use `thinking: {type: "between_tools"}` (accepted at effort `high` or below, no other thinking field), or adaptive thinking at a measured effort; no sampling parameters (non-default values are a 400).
 - A `stop_reason: "refusal"` response becomes a content failure with its `stop_details` category recorded; whether to use server-side fallbacks is decided with it.
 - Unaffected: structured output already uses `output_config.format`, not forced `tool_choice` (a 400 on Sonnet 5.5).
-- Historical replay stays unchanged: its recordings were made with `claude-sonnet-5`, so the historical replay keeps that model. Only S1 and later recordings use the new one.
+- The historical recordings were made with `claude-sonnet-5` and stay as they are in the archive (R12 amendment of 1 Oct 2026); they are not replayed by the current pipeline, so a model change does not touch them. Only S1 and later recordings use the new model.
 
-**Tests (if adopted):** the request profile sent for each role (no `disabled` thinking, no sampling parameters); the refusal path as a content failure; historical replay passes unchanged; pricing and input limits for the new ID.
+**Tests (if adopted):** the request profile sent for each role (no `disabled` thinking, no sampling parameters); the refusal path as a content failure; the historical archive's integrity checks pass unchanged; pricing and input limits for the new ID.
 
 **Commit (if adopted):** `feat(llm): plan and produce on Claude Sonnet 5.5`
 
@@ -548,6 +560,14 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 - Alignment covers every target from `targetsOf(unit)` under the phase-2 evidence rule. Only `content` concepts are offered. `unsupportedCriteriaIds` includes unsupported KE nodes. Provenance `criteriaIds` holds PC and KE IDs; the field name is unchanged (a recorded deviation, accepted).
 - The planner never allocates an `rto-instruction` concept. Assessment conditions are never taken from the source document.
 - Records naming target IDs carry `unitTextHash`.
+- *(Amended 1 Oct, Task 10 offline part.)* **Stored records from before KE IDs:** `Concept.kind` defaults to `content` when absent, and alignment and planning exclude only `rto-instruction` (so a concept without a kind counts as content, as the schema reads it). `Alignment.unitTextHash` is optional in the schema, because alignments stored earlier have none; every new alignment carries it. `ActivityRecord.unitTextHash` is `string | null` (null when the import has no unit) and is written for every new activity. `targetsOf` skips Knowledge Evidence stored as plain strings: those had no IDs and were never targets. Resuming an earlier import is still refused by the run fingerprint (`PROMPT_VERSION` is part of it).
+- *(Amended 1 Oct, Task 10 offline part.)* **Other prompts that change with the contract:** the align request lists KE nodes in their own block, a nested node with its ancestors' text (`- KE2.1: … (under: …)`). The produce request's criteria block is headed `CRITERIA THIS ACTIVITY HELPS REVISE (PC: performance criterion; KE: knowledge evidence)` and resolves KE IDs too. `leap review` accepts KE IDs (it checks against `targetsOf`). `PROMPT_VERSION` becomes `2026-10-01.1`.
+- *(Amended 1 Oct, Task 10 offline part.)* **The stage runner keeps the provider's error as `cause`** on the `InfrastructureFailure` it throws (the message is unchanged). Without it the replay-miss check could only read the message, not the throw site: Vitest's JSON report keeps the outer stack only, so `scripts/expect-replay-miss.mjs` runs the suite through Vitest's Node API, with the JSON reporter for the per-file census and a capture reporter for each failure's error chain.
+- *(Amended 1 Oct, Task 10 offline part.)* **Request snapshots:** `test/request-shape.test.ts` snapshots the parse, extract and align requests for `S1_SETTINGS`. At S1's chunk budget the synthetic PDF is one chunk, so there is no merge request. The align request's concept list comes from the scripted extract reply, so the snapshot pins the align template and the unit's targets, not what S1's model will return.
+- *(Amended 1 Oct, Checkpoint C ruling.)* **Historical replay after Task 10:** every recorded request changes in this task, so the historical replay is archived, not replayed: see the R12 amendment of 1 Oct 2026. The phase-2 recordings, frozen document, original unit text and pre-Task-10 PDF are kept byte for byte in `test/fixtures/historical/` with a hash manifest naming `db6057a` as the last compatible revision, and `test/historical-archive.test.ts` replaces the historical replay test. `replay.test.ts` holds only the S1 consumer.
+- *(Amended 1 Oct, Checkpoint C ruling.)* **S1 out directory:** the ledger's S1 `outDir` ends in `/s1`, so `leap generate` gives the import ID `s1` that `S1_SETTINGS` pins. The import ID is not part of any request, so it does not affect replay keys.
+- *(Amended 1 Oct, Checkpoint C review.)* **The S1 replay accepts only a complete run:** status `ready` (never `ready_with_failures`); at least one planned activity of every selected type; every planned activity promoted, its promoted revision pointing at the build record derived from activity, revision and engine fingerprint, whose stored package bytes match the record's sha256 and length and open as an H5P package. The check is `test/helpers/import-complete.ts`; offline tests in `pipeline.test.ts` show it passes a complete run and rejects a failed activity, a missing type, damaged package bytes and a build under another engine.
+- *(Amended 1 Oct, Checkpoint C ruling.)* **S1 model:** F3 is deferred; S1 runs `plan` and `produce` on `claude-sonnet-5`.
 
 **S1 fixture and settings (R12), pinned in `test/helpers/s1-settings.ts` as `S1_SETTINGS`:**
 - Source: `packages/generator/test/fixtures/synthetic/source-electrical-safety.pdf`, regenerated by its existing script from the source text. The text gains an "RTO instructions" section stating that assessment has no simulated option, and stays above 500 code points and ASCII-only.
@@ -566,7 +586,7 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
    Any other failure, including a malformed fixture, a schema error or an assertion failure, fails the script. Build, typecheck and lint run separately and must exit 0. Commit on `phase-3/task-10`.
 4. **→ Checkpoint C**, then S1, only after Benjamin's ledger entry exists:
    `node --env-file=.env apps/cli/dist/index.js generate --source packages/generator/test/fixtures/synthetic/source-electrical-safety.pdf --unit packages/generator/test/fixtures/synthetic/unit-synele001.txt --out <S1 outDir> --budget-usd 1 --provider record --fixtures packages/generator/test/fixtures/replay/synthetic --ledger docs/uoc/pilot-ledger.json --run S1 --concurrency 1`
-   Stale fixture files are removed first, in the same commit. `replay.test.ts` is updated for the new counts and targets, and `scripts/expect-replay-miss.mjs` is deleted.
+   `<S1 outDir>` ends in `/s1`. *(Amended 1 Oct.)* There are no stale fixture files to remove: the phase-2 recordings were archived unchanged in `test/fixtures/historical/` before S1, and `test/fixtures/replay/synthetic/` holds only what S1 records. `replay.test.ts` is updated for the new counts and targets, and `scripts/expect-replay-miss.mjs` is deleted.
 5. **If S1 fails** (a provider error, a content failure that leaves the replay set incomplete, or a cap refusal), keep its directory and recorded files, write the failure into `docs/testing/phase-3-pilot.md`, and stop. A retry needs a new ledger entry.
 
 **Tests (write first, FakeProvider):**

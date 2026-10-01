@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-10-01T22:53:24.144Z",
+  "request": {
+    "purpose": "produce",
+    "model": "claude-sonnet-5",
+    "maxOutputTokens": 1500,
+    "userPreview": "Write ONE multiple-choice revision question from the evidence.\n- The question tests understanding of the focus, not recall of exact wording.\n- Give 3 or 4 answer options; exactly one is correct; the o"
+  },
+  "response": {
+    "providerRequestId": "req_011CfcLc5pQsWKMG2B84sGop",
+    "model": "claude-sonnet-5",
+    "stopReason": "end_turn",
+    "outputText": "{\"title\":\"Testing for Dead: Verification Procedure\",\"question\":\"Why must a voltage tester be proved on a known live source both immediately before and immediately after testing for dead at the point of work?\",\"answers\":[{\"text\":\"Because a reading of zero on an unproved tester proves nothing, so proving confirms the tester is working correctly throughout the test\",\"correct\":true,\"feedback\":\"Correct. The tester must be proved on a known live source immediately before and after the test, since an unproved tester showing zero gives no reliable evidence that the conductors are actually dead.\"},{\"text\":\"Because the tester battery drains quickly and needs to be checked only at the end of the job\",\"correct\":false,\"feedback\":\"The evidence does not mention battery drainage as the reason for proving; proving is about verifying the tester functions correctly before and after use, not about battery life.\"},{\"text\":\"Because proving the tester once before testing is enough to guarantee accurate results for the rest of the shift\",\"correct\":false,\"feedback\":\"This is incorrect because the tester must be proved both before and after the test, not just once before starting work for the day.\"},{\"text\":\"Because the permit requires a signature from a supervisor confirming the tester was recently serviced\",\"correct\":false,\"feedback\":\"The evidence describes proving the tester on a known live source, not obtaining a supervisor signature about servicing.\"}],\"evidenceIds\":[\"ev-s42\",\"ev-s43\",\"ev-s44\",\"ev-s46\",\"ev-s50\"]}",
+    "rawUsage": {
+      "input_tokens": 268,
+      "cache_creation_input_tokens": 1293,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 1293,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 476,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "usage": {
+      "inputTokens": 268,
+      "outputTokens": 476,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 1293
+    },
+    "latencyMs": 5639
+  }
+}

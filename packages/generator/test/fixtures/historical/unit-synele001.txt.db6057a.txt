@@ -1,5 +1,4 @@
 SYNELE001 Isolate and test electrical equipment (SYNTHETIC UNIT FOR TESTS)
-Release 1
 
 Application
 This synthetic unit describes the skills required to isolate electrical equipment, confirm isolation by testing, and restore supply safely.
@@ -18,12 +17,7 @@ Elements and Performance Criteria
 
 Knowledge Evidence
 - types of electrical hazards including stored energy and multiple supplies
-- purpose of lockout devices and tags, including:
-  - personal padlocks that only the applying worker may remove
-  - multi-lock hasps used when several workers share an isolation point
+- purpose of lockout devices and tags
 
 Performance Evidence
 - isolate and test at least one item of equipment fed from two supplies
-
-Assessment Conditions
-Skills must be demonstrated in the workplace or in a simulated environment that reflects workplace conditions. Assessment must include access to a voltage tester and lockout devices.

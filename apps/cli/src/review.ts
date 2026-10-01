@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { criteriaOf, type AcceptanceDecision, type AlignmentDecision, type UnitOfCompetency } from "@leaplearn/shared";
+import { targetsOf, type AcceptanceDecision, type AlignmentDecision, type UnitOfCompetency } from "@leaplearn/shared";
 import { assertCurrentLayout, assertWritableStoreVersion, isStoreVersionError, StoreLockedError, type AcceptanceRecord, type AlignmentReviewRecord, type ImportStore } from "@leaplearn/generator";
 import { FileStore } from "./file-store.js";
 import { importIdFor } from "./generate.js";
@@ -38,7 +38,7 @@ export async function recordReview(store: ImportStore, importId: string, input: 
   }
   const unit = await store.getArtifact<UnitOfCompetency>(importId, "unit");
   if (!unit) throw new ReviewError(`import ${importId} has no unit of competency, so there is no alignment to review`);
-  if (!criteriaOf(unit).some((c) => c.id === input.criterionId)) throw new ReviewError(`criterion ${input.criterionId} is not in unit ${unit.code}`);
+  if (!targetsOf(unit).some((t) => t.id === input.criterionId)) throw new ReviewError(`criterion ${input.criterionId} is not in unit ${unit.code}`);
   const provenance = itemProvenance(revision.spec as Parameters<typeof itemProvenance>[0], input.itemId);
   const earlier = (await store.listAlignmentReviews(importId)).filter((r) => r.activityId === activity.activityId && r.revision === revision.revision && (r.itemId ?? null) === input.itemId);
   const present = provenance.criteriaIds.includes(input.criterionId) || earlier.some((r) => r.criterionId === input.criterionId);

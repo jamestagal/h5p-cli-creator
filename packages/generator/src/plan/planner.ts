@@ -21,16 +21,18 @@ export function planSlots(selectedTypes: PlannedType[], conceptCount: number, ru
 
 const SYSTEM = "You allocate extracted concepts to a fixed list of activity slots so that the set of activities covers the important concepts without repeating the same idea in the same activity type. Each multiChoice or blanks slot targets one or two concepts; a flashcards slot may cover many. Where criteria are listed, attach the criteria each activity helps a learner revise. Use only the given concept and criterion ids.";
 
+/** Only content concepts are offered or counted: an RTO instruction is never allocated to an activity. */
 export async function planActivities(map: ConceptMap, selectedTypes: PlannedType[], runner: StageRunner, rules: PlanRules = DEFAULT_PLAN_RULES): Promise<ActivityPlan[]> {
-  const slots = planSlots(selectedTypes, map.concepts.length, rules);
+  const concepts = map.concepts.filter((c) => c.kind !== "rto-instruction"); // a concept stored without a kind is content, as the schema reads it
+  const slots = planSlots(selectedTypes, concepts.length, rules);
   if (slots.length === 0) return [];
   const slotsByNumber = new Map(slots.map((s) => [s.slot, s]));
-  const conceptIds = new Set(map.concepts.map((c) => c.conceptId));
+  const conceptIds = new Set(concepts.map((c) => c.conceptId));
   const supported = new Map(map.alignment?.criteria.map((c) => [c.criterionId, c.conceptIds]) ?? []);
   const criteriaText = map.alignment
     ? `\nCRITERIA:\n${map.alignment.criteria.map((c) => `- ${c.criterionId}${c.conceptIds.length ? ` supported by ${c.conceptIds.join(", ")}` : " (unsupported by the source)"}`).join("\n")}`
     : "";
-  const user = `CONCEPTS:\n${map.concepts.map((c) => `- ${c.conceptId}: ${c.name} — ${c.summary} (evidence: ${c.evidence.length} sentence${c.evidence.length === 1 ? "" : "s"})`).join("\n")}${criteriaText}\n\nSLOTS (return exactly these, in order):\n${slots.map((s) => `- slot ${s.slot}: ${s.type}`).join("\n")}\n\nFor each slot give conceptIds (at least one), criteriaIds (only criteria supported by those concepts; empty when none) and a one-line focus.`;
+  const user = `CONCEPTS:\n${concepts.map((c) => `- ${c.conceptId}: ${c.name} — ${c.summary} (evidence: ${c.evidence.length} sentence${c.evidence.length === 1 ? "" : "s"})`).join("\n")}${criteriaText}\n\nSLOTS (return exactly these, in order):\n${slots.map((s) => `- slot ${s.slot}: ${s.type}`).join("\n")}\n\nFor each slot give conceptIds (at least one), criteriaIds (only criteria supported by those concepts; empty when none) and a one-line focus.`;
   const { value } = await runner.run({
     key: "plan",
     request: { purpose: "plan", model: modelForRole("plan"), system: SYSTEM, user, maxOutputTokens: 3000, outputSchema: PlanOutSchema },

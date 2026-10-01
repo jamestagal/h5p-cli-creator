@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-10-01T22:53:07.957Z",
+  "request": {
+    "purpose": "produce",
+    "model": "claude-sonnet-5",
+    "maxOutputTokens": 1500,
+    "userPreview": "Write ONE multiple-choice revision question from the evidence.\n- The question tests understanding of the focus, not recall of exact wording.\n- Give 3 or 4 answer options; exactly one is correct; the o"
+  },
+  "response": {
+    "providerRequestId": "req_011CfcLaueCazCYff1VeqtMU",
+    "model": "claude-sonnet-5",
+    "stopReason": "end_turn",
+    "outputText": "{\"title\":\"Isolation: Eliminating the Hazard\",\"question\":\"Why is correctly isolating equipment before electrical work considered superior to simply controlling the hazard, such as by relying on a switch position?\",\"answers\":[{\"text\":\"Because isolation disconnects equipment from every source of electrical energy, removing the hazard entirely rather than just managing its risk.\",\"correct\":true,\"feedback\":\"Correct. Isolation is the process of disconnecting equipment from every source of electrical energy before work begins, so a worker who isolates correctly removes the hazard instead of merely managing it.\"},{\"text\":\"Because a switch position alone provides a reliable and sufficient guarantee that equipment is de-energized.\",\"correct\":false,\"feedback\":\"This is incorrect. The evidence states that nobody should rely on a switch position alone, since this only controls rather than eliminates the hazard.\"},{\"text\":\"Because isolation only needs to happen after work begins, once a hazard has already been identified.\",\"correct\":false,\"feedback\":\"This is incorrect. Isolation must occur before work begins, not after, since it assumes isolation comes first.\"},{\"text\":\"Because isolation manages the risk of electrical energy without fully removing it from the equipment.\",\"correct\":false,\"feedback\":\"This is incorrect. Isolation removes the hazard rather than simply managing or controlling it.\"}],\"evidenceIds\":[\"ev-s7\",\"ev-s8\",\"ev-s10\",\"ev-s12\"]}",
+    "rawUsage": {
+      "input_tokens": 201,
+      "cache_creation_input_tokens": 1129,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 1129,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 478,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "usage": {
+      "inputTokens": 201,
+      "outputTokens": 478,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 1129
+    },
+    "latencyMs": 5413
+  }
+}

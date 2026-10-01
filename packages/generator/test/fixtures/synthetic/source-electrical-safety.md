@@ -23,3 +23,7 @@ Work proceeds only inside the boundary described on the permit. When the work is
 ## 6. Personal protective equipment
 
 Insulated gloves are inspected for pinholes by rolling them to trap air before each use. Safety glasses protect against arc flash particles. Non-conductive footwear is worn whenever a floor may be damp. Personal protective equipment reduces the severity of an injury; it does not replace isolation. Rings, watches and metal jewellery are removed before electrical work because they conduct current and can cause deep burns.
+
+## 7. RTO instructions
+
+This section is for learners enrolled with our training organisation. Assessment for this unit is conducted in your workplace only; there is no simulated option. Submit your completed isolation permit to your trainer within five working days of the assessment.

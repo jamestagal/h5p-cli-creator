@@ -7,13 +7,19 @@ They say nothing about educational quality; that is the phase-3 gate, which uses
 outside this directory.
 
 Designed properties:
-- `source-electrical-safety.md`: about 40 sentences. The concept "lockout and tagout" appears in
+- `source-electrical-safety.md`: about 40 sentences. Since Task 10 it ends with section 7, "RTO
+  instructions", which says assessment is workplace-only with no simulated option: an instruction
+  from one training organisation, which must be classified `rto-instruction`, never planned, and
+  never override the unit's assessment conditions. The concept "lockout and tagout" appears in
   section 2 and again in section 5 (a repeated concept the merge pass must unify). With the test
   chunk budget of 330 estimated tokens, the sentence about "test for dead" at the end of section 3
   and its follow-up at the start of section 4 fall in different chunks (evidence for one concept
   spanning a chunk boundary).
 - `unit-synele001.txt`: three elements, seven performance criteria. PC3.2 ("Complete an incident
-  report") has no support anywhere in the source and must be reported as unsupported.
+  report") has no support anywhere in the source and must be reported as unsupported. Since Task 10
+  (phase 3) it also has a release line, nested Knowledge Evidence (two top-level bullets, the second
+  with two sub-bullets, so KE1, KE2, KE2.1, KE2.2) and an Assessment Conditions section that allows a
+  workplace or a simulated environment.
 - `source-electrical-safety.pdf`: generated from the markdown by `scripts/make-synthetic-pdf.ts`
   (pdf-lib), so the PDF ingestion test can check the same sentences survive the text layer.
 - Fake model responses for the pipeline tests are built *in test code* from the ingested

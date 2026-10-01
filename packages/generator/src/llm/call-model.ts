@@ -24,7 +24,7 @@ export interface CallContext {
 export type CallResult =
   | { kind: "ok"; json: unknown; response: ModelResponse; attemptId: string }
   | { kind: "content_error"; reason: string; response: ModelResponse; attemptId: string }
-  | { kind: "transient_error" | "provider_error"; error: string; attemptId: string; providerRequestId: string | null; retryAfterMs: number | null }
+  | { kind: "transient_error" | "provider_error"; error: string; attemptId: string; providerRequestId: string | null; retryAfterMs: number | null; /** What the provider threw, kept for diagnosis. */ cause: unknown }
   | { kind: "budget_refused"; limit: BudgetLimitName; reason: string };
 
 function interpret(response: ModelResponse): { status: AttemptStatus; json?: unknown; reason?: string } {
@@ -53,12 +53,12 @@ export async function callModel(request: ModelRequest, ctx: CallContext): Promis
   });
   const started = Date.now();
   let response: ModelResponse | undefined;
-  let failure: { status: AttemptStatus; error: string; providerRequestId: string | null; retryAfterMs: number | null } | undefined;
+  let failure: { status: AttemptStatus; error: string; providerRequestId: string | null; retryAfterMs: number | null; cause: unknown } | undefined;
   try {
     response = await ctx.provider.complete(request, { deadlineMs: ctx.budget.deadlineMs });
   } catch (err) {
     const provider = err instanceof ProviderError ? err : undefined;
-    failure = { status: provider?.kind === "transient" ? "transient_error" : "provider_error", error: err instanceof Error ? err.message : String(err), providerRequestId: provider?.requestId ?? null, retryAfterMs: provider?.retryAfterMs ?? null };
+    failure = { status: provider?.kind === "transient" ? "transient_error" : "provider_error", error: err instanceof Error ? err.message : String(err), providerRequestId: provider?.requestId ?? null, retryAfterMs: provider?.retryAfterMs ?? null, cause: err };
   }
 
   const usage = response?.usage ?? null;
@@ -82,7 +82,7 @@ export async function callModel(request: ModelRequest, ctx: CallContext): Promis
   await ctx.recorder.recordOutcome(outcome);
   settle(ctx.budget, reservation, { costUsdMicro: cost.costUsdMicro, tokens: usage && actualInputTokens !== null ? actualInputTokens + usage.outputTokens : null });
 
-  if (failure) return { kind: failure.status === "transient_error" ? "transient_error" : "provider_error", error: failure.error, attemptId, providerRequestId: failure.providerRequestId, retryAfterMs: failure.retryAfterMs };
+  if (failure) return { kind: failure.status === "transient_error" ? "transient_error" : "provider_error", error: failure.error, attemptId, providerRequestId: failure.providerRequestId, retryAfterMs: failure.retryAfterMs, cause: failure.cause };
   if (interpreted!.status === "ok") return { kind: "ok", json: interpreted!.json, response: response!, attemptId };
   return { kind: "content_error", reason: interpreted!.reason ?? "content error", response: response!, attemptId };
 }

@@ -103,7 +103,7 @@ export function createRunner(options: RunnerOptions): StageRunner {
           throw new InfrastructureFailure(err instanceof Error ? err.message : String(err), { cause: err });
         }
         if (result.kind === "budget_refused") throw new BudgetRefused(result.reason, result.limit);
-        if (result.kind === "provider_error") throw new InfrastructureFailure(`${result.error}${result.providerRequestId ? ` (request ${result.providerRequestId})` : ""}`);
+        if (result.kind === "provider_error") throw new InfrastructureFailure(`${result.error}${result.providerRequestId ? ` (request ${result.providerRequestId})` : ""}`, { cause: result.cause });
         if (result.kind === "transient_error") {
           attemptIds.push(result.attemptId);
           retryIndex += 1;

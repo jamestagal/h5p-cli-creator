@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-10-01T22:53:02.415Z",
+  "request": {
+    "purpose": "produce",
+    "model": "claude-sonnet-5",
+    "maxOutputTokens": 1500,
+    "userPreview": "Write ONE multiple-choice revision question from the evidence.\n- The question tests understanding of the focus, not recall of exact wording.\n- Give 3 or 4 answer options; exactly one is correct; the o"
+  },
+  "response": {
+    "providerRequestId": "req_011CfcLaUCkxgfy2h4Tx2LL6",
+    "model": "claude-sonnet-5",
+    "stopReason": "end_turn",
+    "outputText": "{\"title\":\"Electrical Hazard Awareness: The De-Energised Assumption\",\"question\":\"According to workplace safety evidence, under what circumstance do most serious electrical injuries actually occur?\",\"answers\":[{\"text\":\"When a worker touches equipment they mistakenly believed was de-energised\",\"correct\":true,\"feedback\":\"Correct. Most serious electrical injuries happen when someone touches a part that they believed was de-energised, showing how dangerous false assumptions about power status can be.\"},{\"text\":\"When workers deliberately ignore known live wires without any protective equipment\",\"correct\":false,\"feedback\":\"The evidence does not describe deliberate contact with known live wires as the main cause; instead, it highlights mistaken beliefs that equipment was de-energised.\"},{\"text\":\"When equipment is correctly labelled as live but workers forget to check it\",\"correct\":false,\"feedback\":\"The evidence focuses on workers believing equipment was de-energised, not on forgetting to check correctly labelled live equipment.\"},{\"text\":\"When electrical faults occur only after prolonged exposure over several hours\",\"correct\":false,\"feedback\":\"This contradicts the evidence, which states electricity can injure or kill a worker in less than a second, not after prolonged exposure.\"}],\"evidenceIds\":[\"ev-s4\",\"ev-s5\",\"ev-s6\"]}",
+    "rawUsage": {
+      "input_tokens": 209,
+      "cache_creation_input_tokens": 1100,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 1100,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 438,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "usage": {
+      "inputTokens": 209,
+      "outputTokens": 438,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 1100
+    },
+    "latencyMs": 5810
+  }
+}

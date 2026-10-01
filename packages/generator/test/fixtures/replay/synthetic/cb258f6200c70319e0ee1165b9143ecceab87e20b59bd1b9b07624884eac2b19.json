@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-10-01T22:53:51.457Z",
+  "request": {
+    "purpose": "produce",
+    "model": "claude-sonnet-5",
+    "maxOutputTokens": 3000,
+    "userPreview": "Write a set of 4 to 12 revision flashcards from the evidence.\n- front is a term, question or prompt (short); back is the answer or definition in one or two sentences drawn from the evidence; tip is an"
+  },
+  "response": {
+    "providerRequestId": "req_011CfcLdZ9FVSFx9LHnfzeho",
+    "model": "claude-sonnet-5",
+    "stopReason": "end_turn",
+    "outputText": "{\"title\":\"Isolation and Safe Working Process Flashcards\",\"description\":\"A set of revision flashcards covering the full process of electrical isolation and safe working, from identifying hazards and locking out equipment to testing for dead and restoring supply safely.\",\"cards\":[{\"front\":\"Why do most serious electrical injuries occur at work?\",\"back\":\"Most serious electrical injuries happen when someone touches a part they believed was de-energised, even though it was still live.\",\"tip\":\"Think about mistaken assumptions, not faulty equipment.\",\"evidenceIds\":[\"ev-s5\",\"ev-s6\"]},{\"front\":\"What is isolation?\",\"back\":\"Isolation is the process of disconnecting equipment from every source of electrical energy before work begins, removing the hazard rather than just managing it.\",\"tip\":null,\"evidenceIds\":[\"ev-s7\",\"ev-s8\",\"ev-s10\"]},{\"front\":\"Name three typical hazards a worker should look for before isolating equipment.\",\"back\":\"Typical hazards include damaged insulation, exposed conductors, moisture near live parts, stored energy in capacitors, and equipment fed from more than one supply.\",\"tip\":\"Think about physical damage, environment, and power sources.\",\"evidenceIds\":[\"ev-s28\",\"ev-s29\",\"ev-s30\",\"ev-s31\"]},{\"front\":\"Why is equipment with two supplies especially dangerous?\",\"back\":\"Isolating one supply leaves the other supply live, so the equipment can still carry dangerous voltage even after one source is disconnected.\",\"tip\":null,\"evidenceIds\":[\"ev-s32\",\"ev-s33\"]},{\"front\":\"What must happen before any work begins, according to the isolation permit process?\",\"back\":\"The worker records the hazards found and the controls chosen on the isolation permit, and the permit must be signed by the worker and a supervisor.\",\"tip\":null,\"evidenceIds\":[\"ev-s34\",\"ev-s35\",\"ev-s36\"]},{\"front\":\"What is a lockout device?\",\"back\":\"A lockout device is a padlock or hasp that physically prevents an isolator from being closed, keeping isolated equipment isolated.\",\"tip\":null,\"evidenceIds\":[\"ev-s15\",\"ev-s16\",\"ev-s17\"]},{\"front\":\"What information does a tag show, and what is its limitation?\",\"back\":\"A tag is a warning label attached to the lockout device that names the worker, the date and the reason for isolation, but a tag without a lock is only a warning, not a control.\",\"tip\":\"Remember: a tag alone cannot physically stop re-energisation.\",\"evidenceIds\":[\"ev-s18\",\"ev-s19\",\"ev-s24\",\"ev-s25\"]},{\"front\":\"Who may remove a lock from an isolation point, and how are multiple workers managed?\",\"back\":\"Only the worker who applied a lock may remove it, and when several workers are involved, each applies their own lock to a multi-lock hasp so the equipment cannot be re-energised until all locks are removed.\",\"tip\":null,\"evidenceIds\":[\"ev-s20\",\"ev-s21\",\"ev-s22\"]},{\"front\":\"How is a voltage tester proved before and after testing for dead?\",\"back\":\"The tester is proved on a known live source immediately before the test and again immediately after it, and if it fails either check, the test result is discarded and the tester is replaced.\",\"tip\":\"A tester must be checked on both sides of the actual test.\",\"evidenceIds\":[\"ev-s43\",\"ev-s44\",\"ev-s45\",\"ev-s46\"]},{\"front\":\"What does testing for dead confirm, and where must the result be recorded?\",\"back\":\"Testing for dead confirms that the conductors to be worked on carry no voltage, and the result of the test is written on the permit before work begins.\",\"tip\":null,\"evidenceIds\":[\"ev-s42\",\"ev-s51\",\"ev-s52\"]},{\"front\":\"What steps must a worker complete before removing locks at the end of a job?\",\"back\":\"The worker removes tools and materials, checks that guards and covers are refitted, and confirms that everyone has left the isolated zone before any locks are removed.\",\"tip\":null,\"evidenceIds\":[\"ev-s56\",\"ev-s57\",\"ev-s58\"]},{\"front\":\"In what order are locks removed, and when does lockout and tagout officially end?\",\"back\":\"Each worker removes only their own lock, with the permit holder removing the last lock only after the supervisor has countersigned the completion section, and lockout and tagout ends only when the permit is closed.\",\"tip\":\"The permit holder always goes last.\",\"evidenceIds\":[\"ev-s59\",\"ev-s60\",\"ev-s61\",\"ev-s62\",\"ev-s63\"]}]}",
+    "rawUsage": {
+      "input_tokens": 473,
+      "cache_creation_input_tokens": 2922,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 2922,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 1504,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "usage": {
+      "inputTokens": 473,
+      "outputTokens": 1504,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 2922
+    },
+    "latencyMs": 12996
+  }
+}
