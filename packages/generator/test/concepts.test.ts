@@ -4,11 +4,15 @@ import { alignConcepts, chunkSentences, extractConceptMap, MAX_ALIGN_QUOTES, ver
 import { createRunner } from "../src/llm/runner.js";
 import { FakeProvider, fakeResponse } from "../src/llm/fake-provider.js";
 import { createBudget } from "../src/llm/budget.js";
-import { criteriaOf, type Concept, type UnitOfCompetency } from "@leaplearn/shared";
+import { targetsOf, type Concept, type UnitOfCompetency } from "@leaplearn/shared";
 import { conceptResponses, MemoryRecorder, sid, syntheticDoc, SYNTHETIC_CHUNK_TOKENS } from "./helpers/synthetic.js";
 
 const unit: UnitOfCompetency = {
-  code: "SYNELE001", title: "Isolate and test electrical equipment", textHash: "0".repeat(64), knowledgeEvidence: [], performanceEvidence: [],
+  code: "SYNELE001", title: "Isolate and test electrical equipment", release: null, assessmentConditions: null, textHash: "0".repeat(64), performanceEvidence: [],
+  knowledgeEvidence: [
+    { id: "KE1", text: "types of electrical hazards", children: [] },
+    { id: "KE2", text: "lockout devices, including:", children: [{ id: "KE2.1", text: "personal padlocks", children: [] }, { id: "KE2.2", text: "multi-lock hasps", children: [] }] }
+  ],
   elements: [
     { id: "E1", number: "1", text: "Prepare", performanceCriteria: [{ id: "PC1.1", number: "1.1", text: "Identify hazards" }, { id: "PC1.2", number: "1.2", text: "Confirm every supply" }] },
     { id: "E2", number: "2", text: "Isolate", performanceCriteria: [{ id: "PC2.1", number: "2.1", text: "Apply lockout" }, { id: "PC2.2", number: "2.2", text: "Test for dead" }] },
@@ -61,8 +65,8 @@ describe("extractConceptMap", () => {
     const tfd = map.concepts.find((c) => c.name === "Testing for dead")!;
     expect(tfd.evidence.map((e) => e.sentenceId).sort()).toEqual([tfdA, tfdB].sort());
     for (const c of map.concepts) for (const e of c.evidence) expect(doc.text.slice(e.charStart, e.charEnd)).toBe(e.quote);
-    expect(map.alignment?.unsupportedCriteriaIds).toEqual(["PC3.2"]);
-    expect(map.alignment?.criteria.map((c) => c.criterionId)).toEqual(criteriaOf(unit).map((c) => c.id));
+    expect(map.alignment?.unsupportedCriteriaIds).toEqual(["PC3.2", "KE2.2"]);
+    expect(map.alignment?.criteria.map((c) => c.criterionId)).toEqual(targetsOf(unit).map((t) => t.id));
     expect(provider.requests.map((r) => r.purpose)).toEqual([...chunks.map(() => "extract"), "merge", "align"]);
     expect(provider.requests[0]?.user).toMatch(/\[s\d+\] /);
     const alignRequest = provider.requests.at(-1)!;
@@ -71,7 +75,7 @@ describe("extractConceptMap", () => {
   });
   it("rejects sentence ids outside the chunk as a content failure with feedback", async () => {
     const doc = buildDocument("markdown", markdownToText("One sentence here. Second sentence here."), { sourceId: "src" });
-    const bad = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "x", summary: "y", sentenceIds: ["s99"] }] }) });
+    const bad = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "x", summary: "y", kind: "content", sentenceIds: ["s99"] }] }) });
     const provider = new FakeProvider([bad, bad, bad]);
     const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op", origin: "shared", requestId: null, sleep: async () => undefined });
     await expect(extractConceptMap(doc, null, runner, { chunkTokens: 6000 })).rejects.toMatchObject({ name: "ContentFailure" });
@@ -82,8 +86,8 @@ describe("extractConceptMap", () => {
     const s1 = sid(doc, "Sentence one");
     const s2 = sid(doc, "Sentence two");
     const out = { concepts: [
-      { name: "First idea", summary: "About sentence one.", sentenceIds: [s1] },
-      { name: "Second idea", summary: "About sentence two.", sentenceIds: [s2] }
+      { name: "First idea", summary: "About sentence one.", kind: "content", sentenceIds: [s1] },
+      { name: "Second idea", summary: "About sentence two.", kind: "content", sentenceIds: [s2] }
     ] };
     const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(out) })]);
     const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-single", origin: "shared", requestId: null, sleep: async () => undefined });
@@ -95,7 +99,7 @@ describe("extractConceptMap", () => {
   it("omits the alignment key entirely when no unit is supplied", async () => {
     const doc = buildDocument("text", "Only sentence here.", { sourceId: "src" });
     const s1 = sid(doc, "Only sentence");
-    const out = { concepts: [{ name: "Idea", summary: "About the sentence.", sentenceIds: [s1] }] };
+    const out = { concepts: [{ name: "Idea", summary: "About the sentence.", kind: "content", sentenceIds: [s1] }] };
     const provider = new FakeProvider([fakeResponse({ outputText: JSON.stringify(out) })]);
     const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-no-unit", origin: "shared", requestId: null, sleep: async () => undefined });
     const map = await extractConceptMap(doc, null, runner, { chunkTokens: 6000 });
@@ -105,8 +109,8 @@ describe("extractConceptMap", () => {
     const doc = buildDocument("text", "Sentence one here. Sentence two here.", { sourceId: "src" });
     const s1 = sid(doc, "Sentence one");
     const s2 = sid(doc, "Sentence two");
-    const extract1 = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "First idea", summary: "About sentence one.", sentenceIds: [s1] }] }) });
-    const extract2 = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "Second idea", summary: "About sentence two.", sentenceIds: [s2] }] }) });
+    const extract1 = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "First idea", summary: "About sentence one.", kind: "content", sentenceIds: [s1] }] }) });
+    const extract2 = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "Second idea", summary: "About sentence two.", kind: "content", sentenceIds: [s2] }] }) });
     const badMerge = fakeResponse({ outputText: JSON.stringify({ concepts: [
       { name: "First idea", summary: "About sentence one.", memberIds: ["k0-0"] },
       { name: "Second idea", summary: "About sentence two.", memberIds: ["k1-0"] },
@@ -119,7 +123,7 @@ describe("extractConceptMap", () => {
   it("rejects an extract reply with an empty summary as a content failure", async () => {
     const doc = buildDocument("text", "Only sentence here.", { sourceId: "src" });
     const s1 = sid(doc, "Only sentence");
-    const bad = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "Idea", summary: "", sentenceIds: [s1] }] }) });
+    const bad = fakeResponse({ outputText: JSON.stringify({ concepts: [{ name: "Idea", summary: "", kind: "content", sentenceIds: [s1] }] }) });
     const provider = new FakeProvider([bad, bad, bad]);
     const runner = createRunner({ provider, recorder: new MemoryRecorder(), budget: createBudget({ usdMicro: 50_000_000 }), operationId: "op-extract-bad", origin: "shared", requestId: null, sleep: async () => undefined });
     await expect(extractConceptMap(doc, null, runner, { chunkTokens: 6000 })).rejects.toMatchObject({ name: "ContentFailure", reasons: expect.arrayContaining([expect.stringContaining("summary")]) });
@@ -131,9 +135,9 @@ describe("alignConcepts evidence quotes", () => {
     const doc = buildDocument("text", Array.from({ length: 10 }, (_, i) => `Sentence number ${i + 1} here.`).join(" "), { sourceId: "src" });
     expect(doc.sentences).toHaveLength(10);
     const evidence = doc.sentences.map((s) => evidenceForSentence(doc, s.sentenceId));
-    const concept: Concept = { conceptId: "c1", name: "Many sentences", summary: "Ten sentences of evidence.", evidence };
+    const concept: Concept = { conceptId: "c1", kind: "content", name: "Many sentences", summary: "Ten sentences of evidence.", evidence };
     const soloUnit: UnitOfCompetency = {
-      code: "TESTU", title: "Test unit", textHash: "1".repeat(64), knowledgeEvidence: [], performanceEvidence: [],
+      code: "TESTU", title: "Test unit", release: null, assessmentConditions: null, textHash: "1".repeat(64), knowledgeEvidence: [], performanceEvidence: [],
       elements: [{ id: "E1", number: "1", text: "Element", performanceCriteria: [{ id: "PC1.1", number: "1.1", text: "Some criterion" }] }]
     };
     const alignOut = { criteria: [{ criterionId: "PC1.1", conceptIds: ["c1"] }] };

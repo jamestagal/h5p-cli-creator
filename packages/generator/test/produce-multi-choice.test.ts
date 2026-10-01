@@ -15,7 +15,7 @@ const root = resolve(import.meta.dirname, "../../..");
 let registry: LibraryRegistry;
 beforeAll(async () => { registry = await createRegistry({ lockPath: resolve(root, "libraries/libraries.lock.json"), cacheDir: resolve(root, "libraries/cache") }); });
 
-const map: ConceptMap = { sourceId: "src", textHash: "0".repeat(64), concepts: [{ conceptId: "c1", name: "Lockout and tagout", summary: "s", evidence: [
+const map: ConceptMap = { sourceId: "src", textHash: "0".repeat(64), concepts: [{ conceptId: "c1", kind: "content", name: "Lockout and tagout", summary: "s", evidence: [
   { evidenceId: "ev-s1", sentenceId: "s1", charStart: 0, charEnd: 50, quote: "Only the worker who applied a lock may remove it." },
   { evidenceId: "ev-s2", sentenceId: "s2", charStart: 51, charEnd: 101, quote: "A tag names the worker, the date and the reason." }
 ] }] };
@@ -50,7 +50,7 @@ describe("multiChoice producer", () => {
     if (produced.spec.type === "multiChoice") expect(produced.spec.question).toBe("<p>Which rule applies to locks &amp; tags?</p>");
   });
   it("derives criteria from the alignment: a question citing only one concept's evidence keeps only that concept's criteria", async () => {
-    const aligned: ConceptMap = { ...map, concepts: [map.concepts[0]!, { conceptId: "c2", name: "Testing for dead", summary: "s", evidence: [{ evidenceId: "ev-s3", sentenceId: "s3", charStart: 102, charEnd: 120, quote: "Test for dead now." }] }],
+    const aligned: ConceptMap = { ...map, concepts: [map.concepts[0]!, { conceptId: "c2", kind: "content", name: "Testing for dead", summary: "s", evidence: [{ evidenceId: "ev-s3", sentenceId: "s3", charStart: 102, charEnd: 120, quote: "Test for dead now." }] }],
       alignment: { criteria: [{ criterionId: "PC2.1", conceptIds: ["c1"] }, { criterionId: "PC2.2", conceptIds: ["c2"] }], unsupportedCriteriaIds: [] } };
     const { runner } = mk([fakeResponse({ outputText: JSON.stringify(good) })]);
     const produced = await createProducers().get("multiChoice")!.produce({ ...input, map: aligned, plan: { ...input.plan, conceptIds: ["c1", "c2"], criteriaIds: ["PC2.1", "PC2.2"] } }, runner, { registry });

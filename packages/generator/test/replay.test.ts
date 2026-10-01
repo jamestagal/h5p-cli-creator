@@ -7,10 +7,11 @@ import { ingestPdf, textHash, type SourceDocument } from "../src/ingest/index.js
 import { computeCost } from "../src/llm/cost.js";
 import { ReplayProvider } from "../src/llm/replay-provider.js";
 import { MemoryStore } from "../src/store/memory-store.js";
-import { runImport } from "../src/pipeline/run-import.js";
+import { runImport, type RunImportDeps } from "../src/pipeline/run-import.js";
 import { DEFAULT_PROMPT_CONFIG } from "../src/prompts/system.js";
 import type { AttemptOutcome } from "../src/llm/types.js";
 import { testIdentity } from "./helpers/identity.js";
+import { S1_DEPS, S1_SETTINGS, s1Input, settingsOf } from "./helpers/s1-settings.js";
 
 const root = resolve(import.meta.dirname, "../../..");
 const fixtures = resolve(import.meta.dirname, "fixtures");
@@ -94,5 +95,37 @@ describe("historical pipeline compatibility: recorded responses over the frozen 
     const summed = outcomes.reduce((total, o) => total + (o.costUsdMicro ?? 0), 0);
     expect(summed).toBe(record.budgetUsed.spentUsdMicro);
     expect(Math.max(0, record.budgetUsed.spentUsdMicro - record.budget.usdMicro)).toBe(0);
+  });
+});
+
+/**
+ * S1 (plan Task 10, R12): current PDF ingestion replayed from the recordings S1 makes, under S1_SETTINGS. Until S1 is
+ * recorded the replay misses at the first changed request (parseUnit); scripts/expect-replay-miss.mjs checks that this
+ * is the only reason this file fails.
+ */
+describe("S1: current PDF ingestion replayed under S1_SETTINGS", () => {
+  /** This consumer's runImport arguments: everything that decides request content and order comes from S1_SETTINGS. */
+  async function s1Run(store: MemoryStore) {
+    const input = await s1Input(1_000_000);
+    const deps: RunImportDeps = { store, provider: new ReplayProvider(replayDir), registry, engineIdentity: testIdentity("replay-s1"), ...S1_DEPS };
+    return { input, deps };
+  }
+
+  it("this consumer's inputs deep-equal S1_SETTINGS", async () => {
+    const { input, deps } = await s1Run(new MemoryStore());
+    expect(await settingsOf(input, deps)).toEqual(S1_SETTINGS);
+    // the comparison can fail: a different lane count, unit text or chunk budget each shows
+    expect(await settingsOf(input, { ...deps, concurrency: 3 })).not.toEqual(S1_SETTINGS);
+    expect(await settingsOf({ ...input, unitText: `${input.unitText}\n` }, deps)).not.toEqual(S1_SETTINGS);
+    const withoutChunkTokens: RunImportDeps = { ...deps }; delete withoutChunkTokens.chunkTokens;
+    expect(await settingsOf(input, withoutChunkTokens)).toEqual(S1_SETTINGS); // runImport's default is S1's
+    expect(await settingsOf(input, { ...deps, chunkTokens: 4000 })).not.toEqual(S1_SETTINGS);
+  });
+
+  it("replays S1 from the recorded responses without network access", async () => {
+    const store = new MemoryStore();
+    const { input, deps } = await s1Run(store);
+    const record = await runImport(input, deps);
+    expect(["ready", "ready_with_failures"]).toContain(record.status);
   });
 });

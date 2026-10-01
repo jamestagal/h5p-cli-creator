@@ -667,7 +667,7 @@ describe("current PDF ingestion through the pipeline (offline; replay of the cur
     expect(doc.metadata.extractionVersion).toBe(EXTRACTION_VERSION);
     // Every supporting passage is cited in full: pinned ids, and their texts joined are exactly the passage.
     const evidence = passageEvidence(doc);
-    expect(evidence).toEqual({ lotoEarly: ["s15"], lotoTag: ["s18", "s19"], lotoRemove: ["s20"], lotoLate: ["s62", "s63"], tfdA: ["s38", "s39"], tfdB: ["s42"], hazards: ["s29", "s30", "s31"] });
+    expect(evidence).toEqual({ lotoEarly: ["s15"], lotoTag: ["s18", "s19"], lotoRemove: ["s20"], lotoLate: ["s62", "s63"], tfdA: ["s38", "s39"], tfdB: ["s42"], hazards: ["s29", "s30", "s31"], rto: ["s80", "s81"] });
     const textOf = (id: string) => doc.sentences.find((x) => x.sentenceId === id)!.text;
     for (const [key, ids] of Object.entries(evidence) as Array<[keyof FixtureEvidence, string[]]>) expect(ids.map(textOf).join(" "), key).toBe(EVIDENCE_PASSAGES[key]);
     const store = new MemoryStore();

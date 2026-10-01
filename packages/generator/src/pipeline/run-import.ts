@@ -183,7 +183,7 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
     for (const [i, p] of plan.entries()) {
       if (known.has(p.activityId)) continue;
 
-      await store.putActivity({ activityId: p.activityId, importId: input.importId, type: p.type, order: i, status: "planned", currentRevision: null, conceptIds: p.conceptIds, criteriaIds: p.criteriaIds, error: null, dropped: false });
+      await store.putActivity({ activityId: p.activityId, importId: input.importId, type: p.type, order: i, status: "planned", currentRevision: null, conceptIds: p.conceptIds, criteriaIds: p.criteriaIds, error: null, dropped: false, unitTextHash: unit?.textHash ?? null });
     }
 
     await setStatus("generating");

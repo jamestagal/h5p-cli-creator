@@ -1,0 +1,383 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`outgoing request shape (plan Task 10 step 2) > the parse, extract and align requests for S1_SETTINGS are unchanged (system, user and the serialised schema) > align 1`] = `
+{
+  "maxOutputTokens": 2000,
+  "model": "claude-haiku-4-5-20251001",
+  "schema": "{
+  "type": "object",
+  "properties": {
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "criterionId": {
+            "type": "string"
+          },
+          "conceptIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "criterionId",
+          "conceptIds"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "criteria"
+  ],
+  "additionalProperties": false
+}",
+  "system": "You map performance criteria (PC) and knowledge evidence (KE) from a unit of competency to concepts extracted from a source document. A knowledge evidence item nested under another is listed with the item it sits under. Each concept is shown with the evidence sentences it was extracted from. A criterion is supported by a concept only when that evidence itself would help a learner meet the criterion; judge from the quoted sentences, not from the concept's name. Return every criterion exactly once; an empty conceptIds list means the source does not support that criterion. This is a suggested alignment for revision activities, not an assessment judgement.",
+  "user": "UNIT SYNELE001 Isolate and test electrical equipment (SYNTHETIC UNIT FOR TESTS)
+CRITERIA:
+- PC1.1: Identify electrical hazards in the work area and record them on the isolation permit
+- PC1.2: Confirm every supply to the equipment, including secondary supplies
+- PC2.1: Apply lockout devices and tags in accordance with site procedure
+- PC2.2: Test for dead using a proved voltage tester
+- PC3.1: Remove locks and tags in the correct sequence after work is complete
+- PC3.2: Complete an incident report for any breach of isolation
+- PC3.3: Confirm guards and covers are refitted before supply is restored
+KNOWLEDGE EVIDENCE:
+- KE1: types of electrical hazards including stored energy and multiple supplies
+- KE2: purpose of lockout devices and tags, including:
+- KE2.1: personal padlocks that only the applying worker may remove (under: purpose of lockout devices and tags, including:)
+- KE2.2: multi-lock hasps used when several workers share an isolation point (under: purpose of lockout devices and tags, including:)
+
+CONCEPTS WITH THEIR EVIDENCE:
+- c1: Lockout and tagout — Locks and tags keep isolated equipment isolated.
+    [ev-s15] Lockout and tagout is the method used to keep isolated equipment isolated.
+    [ev-s18] A tag is a warning label
+    [ev-s19] attached to the lockout device that names the worker, the date and the reason for the isolation.
+    [ev-s20] Only the worker who applied a lock may remove it.
+    [ev-s62] Lockout and tagout ends when the permit is closed,
+    [ev-s63] never before.
+- c2: Testing for dead — Prove the tester, test every pair, record the result.
+    [ev-s38] After the isolator is opened and locked, the worker must test for dead at the
+    [ev-s39] point of work using a voltage tester rated for the circuit.
+    [ev-s42] Testing for dead confirms that the conductors to be worked on carry no voltage.
+- c3: Hazard identification — Inspect for damaged insulation, moisture, stored energy, multiple supplies.
+    [ev-s29] Typical hazards are
+    [ev-s30] damaged insulation, exposed conductors, moisture near live parts, stored energy in capacitors, and
+    [ev-s31] equipment fed from more than one supply.
+
+Return one entry per criterion id (PC and KE), with the concept ids whose evidence supports it (possibly none).",
+}
+`;
+
+exports[`outgoing request shape (plan Task 10 step 2) > the parse, extract and align requests for S1_SETTINGS are unchanged (system, user and the serialised schema) > extract 1`] = `
+{
+  "maxOutputTokens": 3000,
+  "model": "claude-haiku-4-5-20251001",
+  "schema": "{
+  "type": "object",
+  "properties": {
+    "concepts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "content",
+              "rto-instruction"
+            ]
+          },
+          "sentenceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "summary",
+          "kind",
+          "sentenceIds"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "concepts"
+  ],
+  "additionalProperties": false
+}",
+  "system": "You are an expert vocational-education content generator. You turn source evidence into H5P revision activities that help learners check their understanding. The activities are for revision, not assessment.
+
+GROUNDING RULES (NON-NEGOTIABLE):
+- Use only the numbered EVIDENCE sentences you are given. Do not add facts, figures, names or procedures that are not in the evidence.
+- Every activity and every item must cite the evidence sentence ids it is based on, in the evidenceIds fields. Cite only ids that appear in the evidence you were given.
+- Write plain text. No markdown, no HTML tags, no bullet characters, no emoji.
+- Never use the characters * / : inside fill-in-the-blank answers or tips, and never put * in a passage.
+- If the evidence does not support the task, return fewer items rather than inventing content.
+
+READING LEVEL: HIGH-SCHOOL
+Use complex sentences (18-25 words) with varied structure. Expect comprehension of compound ideas.
+Use advanced vocabulary and subject-specific terminology. Define only highly specialized terms.
+Use a sophisticated, academic tone. Promote analysis and evaluation.
+Use college-level examples, research references, and interdisciplinary connections.
+
+TONE: EDUCATIONAL
+Use a clear, instructional, and approachable tone. Make learning engaging and accessible. Explain concepts step-by-step.
+
+CONTENT LANGUAGE: English (en)
+Generate all educational content (questions, answers, explanations) in English (en). Do not translate content to other languages unless explicitly instructed.",
+  "user": "Read the numbered EVIDENCE sentences. Identify the distinct concepts a learner must understand (at most 8). For each concept give a short name, a one-sentence summary in your own words, and the ids of the sentences that state or explain it. Choose only ids from the list. A sentence may support more than one concept. Give each concept a kind: "rto-instruction" when it is a statement about how one training provider organises, delivers, assesses or administers the unit (assessment arrangements, submission rules, simulated or workplace options, attempts, deadlines), and "content" otherwise.
+
+EVIDENCE:
+[s1] Working safely around electrical equipment (synthetic training text)
+[s2] 1.
+[s3] Why electrical isolation matters
+[s4] Electricity can injure or kill a worker in less than a second.
+[s5] Most serious electrical injuries at work
+[s6] happen when someone touches a part that they believed was de-energised.
+[s7] Isolation is the
+[s8] process of disconnecting equipment from every source of electrical energy before work begins.
+[s9] A
+[s10] worker who isolates correctly removes the hazard instead of managing it.
+[s11] Every site procedure in
+[s12] this text assumes that isolation comes first and that nobody relies on a switch position alone.
+[s13] 2.
+[s14] Lockout and tagout
+[s15] Lockout and tagout is the method used to keep isolated equipment isolated.
+[s16] A lockout device is a
+[s17] padlock or hasp that physically prevents an isolator from being closed.
+[s18] A tag is a warning label
+[s19] attached to the lockout device that names the worker, the date and the reason for the isolation.
+[s20] Only the worker who applied a lock may remove it.
+[s21] If several workers are involved, each worker
+[s22] applies their own lock to a multi-lock hasp so that the equipment cannot be re-energised until the
+[s23] last lock is removed.
+[s24] A tag without a lock is a warning, not a control, and must never be used on its
+[s25] own where a lock can be fitted.
+[s26] 3.
+[s27] Identifying hazards before work starts
+[s28] Before isolating, the worker inspects the work area and the equipment.
+[s29] Typical hazards are
+[s30] damaged insulation, exposed conductors, moisture near live parts, stored energy in capacitors, and
+[s31] equipment fed from more than one supply.
+[s32] Equipment with two supplies is dangerous because
+[s33] isolating one supply leaves the other live.
+[s34] The worker records the hazards found and the controls
+[s35] chosen on the isolation permit.
+[s36] A permit is signed by the worker and by a supervisor before any
+[s37] conductor is touched.
+[s38] After the isolator is opened and locked, the worker must test for dead at the
+[s39] point of work using a voltage tester rated for the circuit.
+[s40] 4.
+[s41] Testing for dead
+[s42] Testing for dead confirms that the conductors to be worked on carry no voltage.
+[s43] The tester is
+[s44] proved on a known live source immediately before the test and again immediately after it.
+[s45] If the
+[s46] tester fails either proving check, the test result is discarded and the tester is replaced.
+[s47] The worker
+[s48] tests between every pair of conductors and between each conductor and earth.
+[s49] A reading of zero
+[s50] on an unproved tester proves nothing.
+[s51] The result of the test is written on the permit before work
+[s52] begins.
+[s53] 5.
+[s54] Working and restoring supply
+[s55] Work proceeds only inside the boundary described on the permit.
+[s56] When the work is complete, the
+[s57] worker removes tools and materials, checks that guards and covers are refitted, and confirms that
+[s58] everyone has left the isolated zone.
+[s59] Each worker then removes only their own lock from the hasp.
+[s60] The last lock removed is the lock of the worker who holds the permit, and only after the supervisor
+[s61] has countersigned the completion section.
+[s62] Lockout and tagout ends when the permit is closed,
+[s63] never before.
+[s64] Restoring supply while a tag is still fitted is a serious breach because it means a lock
+[s65] has been removed without authority.
+[s66] 6.
+[s67] Personal protective equipment
+[s68] Insulated gloves are inspected for pinholes by rolling them to trap air before each use.
+[s69] Safety
+[s70] glasses protect against arc flash particles.
+[s71] Non-conductive footwear is worn whenever a floor may
+[s72] be damp.
+[s73] Personal protective equipment reduces the severity of an injury; it does not replace
+[s74] isolation.
+[s75] Rings, watches and metal jewellery are removed before electrical work because they
+[s76] conduct current and can cause deep burns.
+[s77] 7.
+[s78] RTO instructions
+[s79] This section is for learners enrolled with our training organisation.
+[s80] Assessment for this unit is
+[s81] conducted in your workplace only; there is no simulated option.
+[s82] Submit your completed isolation
+[s83] permit to your trainer within five working days of the assessment.",
+}
+`;
+
+exports[`outgoing request shape (plan Task 10 step 2) > the parse, extract and align requests for S1_SETTINGS are unchanged (system, user and the serialised schema) > parseUnit 1`] = `
+{
+  "maxOutputTokens": 4000,
+  "model": "claude-haiku-4-5-20251001",
+  "schema": "{
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "release": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "elements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "performanceCriteria": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "number": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "number",
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "number",
+          "text",
+          "performanceCriteria"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "knowledgeEvidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "description": "Constraint: minimum -9007199254740991; maximum 9007199254740991"
+          },
+          "parentIndex": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "description": "Constraint: minimum -9007199254740991; maximum 9007199254740991"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "parentIndex",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "performanceEvidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "assessmentConditions": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "code",
+    "title",
+    "release",
+    "elements",
+    "knowledgeEvidence",
+    "performanceEvidence",
+    "assessmentConditions"
+  ],
+  "additionalProperties": false
+}",
+  "system": "You read an Australian-style unit of competency pasted as plain text and return its structure exactly as written: the unit code, the title, the release as printed (for example "Release 1", or null if none is printed), each element with its number and text, and each performance criterion under its element with its number and text. Copy wording verbatim; do not summarise, reorder or invent.
+
+Knowledge evidence is the list of bullet points under that heading, in document order, as a flat list: give each bullet an index (0, 1, 2, ... in order) and the index of the bullet it is nested under as parentIndex (null for a top-level bullet). Keep every bullet's wording exactly as printed, including a trailing "including:". Return an empty list if the heading is absent.
+
+Performance evidence is the list of bullet points under that heading, or an empty list if absent.
+
+Assessment conditions is the text under that heading, copied verbatim, or null if the heading is absent.",
+  "user": "UNIT TEXT:
+SYNELE001 Isolate and test electrical equipment (SYNTHETIC UNIT FOR TESTS)
+Release 1
+
+Application
+This synthetic unit describes the skills required to isolate electrical equipment, confirm isolation by testing, and restore supply safely.
+
+Elements and Performance Criteria
+1. Prepare to isolate equipment
+1.1 Identify electrical hazards in the work area and record them on the isolation permit
+1.2 Confirm every supply to the equipment, including secondary supplies
+2. Isolate and secure equipment
+2.1 Apply lockout devices and tags in accordance with site procedure
+2.2 Test for dead using a proved voltage tester
+3. Restore supply
+3.1 Remove locks and tags in the correct sequence after work is complete
+3.2 Complete an incident report for any breach of isolation
+3.3 Confirm guards and covers are refitted before supply is restored
+
+Knowledge Evidence
+- types of electrical hazards including stored energy and multiple supplies
+- purpose of lockout devices and tags, including:
+  - personal padlocks that only the applying worker may remove
+  - multi-lock hasps used when several workers share an isolation point
+
+Performance Evidence
+- isolate and test at least one item of equipment fed from two supplies
+
+Assessment Conditions
+Skills must be demonstrated in the workplace or in a simulated environment that reflects workplace conditions. Assessment must include access to a voltage tester and lockout devices.",
+}
+`;

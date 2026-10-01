@@ -50,7 +50,7 @@ export function passageIds(doc: SourceDocument, passage: string): string[] {
 }
 
 /** The evidence the fake concept and produce responses cite, as sentence ids per supporting passage. */
-export interface FixtureEvidence { lotoEarly: string[]; lotoTag: string[]; lotoRemove: string[]; lotoLate: string[]; tfdA: string[]; tfdB: string[]; hazards: string[] }
+export interface FixtureEvidence { lotoEarly: string[]; lotoTag: string[]; lotoRemove: string[]; lotoLate: string[]; tfdA: string[]; tfdB: string[]; hazards: string[]; rto: string[] }
 
 /** The complete supporting passages, as they appear in the synthetic source. */
 export const EVIDENCE_PASSAGES: Record<keyof FixtureEvidence, string> = {
@@ -60,7 +60,8 @@ export const EVIDENCE_PASSAGES: Record<keyof FixtureEvidence, string> = {
   lotoLate: "Lockout and tagout ends when the permit is closed, never before.",
   tfdA: "After the isolator is opened and locked, the worker must test for dead at the point of work using a voltage tester rated for the circuit.",
   tfdB: "Testing for dead confirms that the conductors to be worked on carry no voltage.",
-  hazards: "Typical hazards are damaged insulation, exposed conductors, moisture near live parts, stored energy in capacitors, and equipment fed from more than one supply."
+  hazards: "Typical hazards are damaged insulation, exposed conductors, moisture near live parts, stored energy in capacitors, and equipment fed from more than one supply.",
+  rto: "Assessment for this unit is conducted in your workplace only; there is no simulated option."
 };
 
 /** Markdown: each passage is one sentence, found by its opening words (the ids every existing fixture has always used). */
@@ -68,7 +69,7 @@ export function markdownEvidence(doc: SourceDocument): FixtureEvidence {
   return {
     lotoEarly: [sid(doc, "Lockout and tagout is the method")], lotoTag: [sid(doc, "A tag is a warning label")], lotoRemove: [sid(doc, "Only the worker who applied a lock may remove it")],
     lotoLate: [sid(doc, "Lockout and tagout ends when the permit is closed")], tfdA: [sid(doc, "After the isolator is opened and locked")], tfdB: [sid(doc, "Testing for dead confirms")],
-    hazards: [sid(doc, "Typical hazards are damaged insulation")]
+    hazards: [sid(doc, "Typical hazards are damaged insulation")], rto: [sid(doc, "Assessment for this unit is conducted in your workplace only")]
   };
 }
 
@@ -85,21 +86,36 @@ export const unitOut = {
     { number: "2", text: "Isolate and secure equipment", performanceCriteria: [{ number: "2.1", text: "Apply lockout devices and tags in accordance with site procedure" }, { number: "2.2", text: "Test for dead using a proved voltage tester" }] },
     { number: "3", text: "Restore supply", performanceCriteria: [{ number: "3.1", text: "Remove locks and tags in the correct sequence after work is complete" }, { number: "3.2", text: "Complete an incident report for any breach of isolation" }, { number: "3.3", text: "Confirm guards and covers are refitted before supply is restored" }] }
   ],
-  knowledgeEvidence: ["types of electrical hazards including stored energy and multiple supplies", "purpose of lockout devices and tags"],
-  performanceEvidence: ["isolate and test at least one item of equipment fed from two supplies"]
+  knowledgeEvidence: [
+    { index: 0, parentIndex: null, text: "types of electrical hazards including stored energy and multiple supplies" },
+    { index: 1, parentIndex: null, text: "purpose of lockout devices and tags, including:" },
+    { index: 2, parentIndex: 1, text: "personal padlocks that only the applying worker may remove" },
+    { index: 3, parentIndex: 1, text: "multi-lock hasps used when several workers share an isolation point" }
+  ],
+  performanceEvidence: ["isolate and test at least one item of equipment fed from two supplies"],
+  assessmentConditions: "Skills must be demonstrated in the workplace or in a simulated environment that reflects workplace conditions. Assessment must include access to a voltage tester and lockout devices.",
+  release: "Release 1"
 };
 
-/** One extract response per chunk plus merge and align responses, built from the real sentence ids so the fixture never drifts (Task 8). */
-export function conceptResponses(doc: SourceDocument, evidence: FixtureEvidence = markdownEvidence(doc)): { perChunk: Array<Array<{ name: string; summary: string; sentenceIds: string[] }>>; mergeOut: { concepts: Array<{ name: string; summary: string; memberIds: string[] }> }; alignOut: { criteria: Array<{ criterionId: string; conceptIds: string[] }> }; script: ReturnType<typeof fakeResponse>[] } {
-  const chunks = chunkSentences(doc.sentences, SYNTHETIC_CHUNK_TOKENS);
-  const { lotoEarly, lotoTag, lotoRemove, lotoLate, tfdA, tfdB, hazards } = evidence;
+type FakeConcept = { name: string; summary: string; kind: "content" | "rto-instruction"; sentenceIds: string[] };
+
+/**
+ * One extract response per chunk plus merge (when there is more than one chunk) and align responses, built from the
+ * real sentence ids so the fixture never drifts (Task 8). Since Task 10 every concept has a kind: the RTO-instructions
+ * passage becomes an `rto-instruction` concept, merged last, never aligned or planned; the alignment covers every
+ * performance criterion and every Knowledge Evidence node, with KE2.2 unsupported.
+ */
+export function conceptResponses(doc: SourceDocument, evidence: FixtureEvidence = markdownEvidence(doc), chunkTokens = SYNTHETIC_CHUNK_TOKENS): { perChunk: FakeConcept[][]; mergeOut: { concepts: Array<{ name: string; summary: string; memberIds: string[] }> }; alignOut: { criteria: Array<{ criterionId: string; conceptIds: string[] }> }; script: ReturnType<typeof fakeResponse>[] } {
+  const chunks = chunkSentences(doc.sentences, chunkTokens);
+  const { lotoEarly, lotoTag, lotoRemove, lotoLate, tfdA, tfdB, hazards, rto } = evidence;
   const inChunk = (i: number, ids: string[]) => ids.filter((id) => chunks[i]!.sentences.some((s) => s.sentenceId === id));
   const perChunk = chunks.map((_, i) => {
-    const concepts: Array<{ name: string; summary: string; sentenceIds: string[] }> = [];
-    const loto = inChunk(i, [...lotoEarly, ...lotoTag, ...lotoRemove, ...lotoLate]); if (loto.length) concepts.push({ name: "Lockout and tagout", summary: "Locks and tags keep isolated equipment isolated.", sentenceIds: loto });
-    const tfd = inChunk(i, [...tfdA, ...tfdB]); if (tfd.length) concepts.push({ name: "Testing for dead", summary: "Prove the tester, test every pair, record the result.", sentenceIds: tfd });
-    const hz = inChunk(i, hazards); if (hz.length) concepts.push({ name: "Hazard identification", summary: "Inspect for damaged insulation, moisture, stored energy, multiple supplies.", sentenceIds: hz });
-    if (concepts.length === 0) concepts.push({ name: "Personal protective equipment", summary: "PPE reduces severity but does not replace isolation.", sentenceIds: [chunks[i]!.sentences[0]!.sentenceId] });
+    const concepts: FakeConcept[] = [];
+    const loto = inChunk(i, [...lotoEarly, ...lotoTag, ...lotoRemove, ...lotoLate]); if (loto.length) concepts.push({ name: "Lockout and tagout", summary: "Locks and tags keep isolated equipment isolated.", kind: "content", sentenceIds: loto });
+    const tfd = inChunk(i, [...tfdA, ...tfdB]); if (tfd.length) concepts.push({ name: "Testing for dead", summary: "Prove the tester, test every pair, record the result.", kind: "content", sentenceIds: tfd });
+    const hz = inChunk(i, hazards); if (hz.length) concepts.push({ name: "Hazard identification", summary: "Inspect for damaged insulation, moisture, stored energy, multiple supplies.", kind: "content", sentenceIds: hz });
+    const rt = inChunk(i, rto); if (rt.length) concepts.push({ name: "RTO assessment arrangements", summary: "This provider assesses the unit in the workplace only.", kind: "rto-instruction", sentenceIds: rt });
+    if (concepts.length === 0) concepts.push({ name: "Personal protective equipment", summary: "PPE reduces severity but does not replace isolation.", kind: "content", sentenceIds: [chunks[i]!.sentences[0]!.sentenceId] });
     return concepts;
   });
   const byName = (name: string) => perChunk.flatMap((cs, i) => cs.map((c, j) => ({ c, id: `k${i}-${j}` }))).filter((x) => x.c.name === name).map((x) => x.id);
@@ -107,13 +123,16 @@ export function conceptResponses(doc: SourceDocument, evidence: FixtureEvidence 
     { name: "Lockout and tagout", summary: "Locks and tags keep isolated equipment isolated until the permit closes.", memberIds: byName("Lockout and tagout") },
     { name: "Testing for dead", summary: "Prove the tester before and after; test every pair; record it.", memberIds: byName("Testing for dead") },
     { name: "Hazard identification", summary: "Inspect and record hazards on the permit.", memberIds: byName("Hazard identification") },
-    { name: "Personal protective equipment", summary: "PPE reduces severity but does not replace isolation.", memberIds: byName("Personal protective equipment") }
+    { name: "Personal protective equipment", summary: "PPE reduces severity but does not replace isolation.", memberIds: byName("Personal protective equipment") },
+    { name: "RTO assessment arrangements", summary: "This provider assesses the unit in the workplace only.", memberIds: byName("RTO assessment arrangements") }
   ].filter((c) => c.memberIds.length > 0) };
   const alignOut = { criteria: [
     { criterionId: "PC1.1", conceptIds: ["c3"] }, { criterionId: "PC1.2", conceptIds: ["c3"] }, { criterionId: "PC2.1", conceptIds: ["c1"] }, { criterionId: "PC2.2", conceptIds: ["c2"] },
-    { criterionId: "PC3.1", conceptIds: ["c1"] }, { criterionId: "PC3.2", conceptIds: [] }, { criterionId: "PC3.3", conceptIds: ["c1"] }
+    { criterionId: "PC3.1", conceptIds: ["c1"] }, { criterionId: "PC3.2", conceptIds: [] }, { criterionId: "PC3.3", conceptIds: ["c1"] },
+    { criterionId: "KE1", conceptIds: ["c3"] }, { criterionId: "KE2", conceptIds: ["c1"] }, { criterionId: "KE2.1", conceptIds: ["c1"] }, { criterionId: "KE2.2", conceptIds: [] }
   ] };
-  const script = [...perChunk.map((c) => fakeResponse({ outputText: JSON.stringify({ concepts: c }) })), fakeResponse({ outputText: JSON.stringify(mergeOut) }), fakeResponse({ outputText: JSON.stringify(alignOut) })];
+  const merge = chunks.length > 1 ? [fakeResponse({ outputText: JSON.stringify(mergeOut) })] : [];
+  const script = [...perChunk.map((c) => fakeResponse({ outputText: JSON.stringify({ concepts: c }) })), ...merge, fakeResponse({ outputText: JSON.stringify(alignOut) })];
   return { perChunk, mergeOut, alignOut, script };
 }
 

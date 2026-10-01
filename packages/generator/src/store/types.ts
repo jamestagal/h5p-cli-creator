@@ -26,6 +26,8 @@ export interface ImportRecord {
 export interface ActivityRecord {
   activityId: string; importId: string; type: PlannedType; order: number; status: ActivityStatus;
   currentRevision: number | null; conceptIds: string[]; criteriaIds: string[]; error: string | null; dropped: boolean;
+  /** The unit text that `criteriaIds` (PC and KE IDs) were assigned from; null when the import has no unit. Records written before KE IDs existed have none. */
+  unitTextHash: string | null;
 }
 /** Which command produced a revision: the first pass (`generate`) or a reviewer-requested regeneration. */
 export type RevisionOrigin = "generate" | "regenerate";

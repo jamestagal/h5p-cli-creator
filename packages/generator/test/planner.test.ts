@@ -9,7 +9,7 @@ import type { AttemptEvent, AttemptRecorder } from "../src/llm/types.js";
 class MemoryRecorder implements AttemptRecorder { events: AttemptEvent[] = []; async recordStart(e: AttemptEvent) { this.events.push(e); } async recordOutcome(e: AttemptEvent) { this.events.push(e); } }
 const ev = (id: string) => ({ evidenceId: `ev-${id}`, sentenceId: id, charStart: 0, charEnd: 5, quote: "Hello" });
 const map: ConceptMap = { sourceId: "src", textHash: "0".repeat(64), concepts: [
-  { conceptId: "c1", name: "Lockout and tagout", summary: "s", evidence: [ev("s1")] }, { conceptId: "c2", name: "Testing for dead", summary: "s", evidence: [ev("s2")] }, { conceptId: "c3", name: "Hazards", summary: "s", evidence: [ev("s3")] }
+  { conceptId: "c1", kind: "content", name: "Lockout and tagout", summary: "s", evidence: [ev("s1")] }, { conceptId: "c2", kind: "content", name: "Testing for dead", summary: "s", evidence: [ev("s2")] }, { conceptId: "c3", kind: "content", name: "Hazards", summary: "s", evidence: [ev("s3")] }
 ], alignment: { criteria: [{ criterionId: "PC2.1", conceptIds: ["c1"] }, { criterionId: "PC2.2", conceptIds: ["c2"] }, { criterionId: "PC3.2", conceptIds: [] }], unsupportedCriteriaIds: ["PC3.2"] } };
 
 describe("planner", () => {

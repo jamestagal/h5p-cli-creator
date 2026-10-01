@@ -1,4 +1,4 @@
-import { CONCEPT_NAME_MAX, CONCEPT_SUMMARY_MAX, type Evidence } from "@leaplearn/shared";
+import { CONCEPT_NAME_MAX, CONCEPT_SUMMARY_MAX, type ConceptKind, type Evidence } from "@leaplearn/shared";
 import type { SourceDocument } from "../ingest/source-document.js";
 import { reserveInputTokens } from "../llm/cost.js";
 import { MAX_INPUT_TOKENS, modelForRole } from "../llm/models.js";
@@ -9,10 +9,10 @@ import { ConceptsOut, ConceptsOutSchema } from "../schemas/model-output.js";
 import type { Chunk } from "./chunk.js";
 import { evidenceForSentence, EvidenceMismatchError, verifyEvidence } from "./verify.js";
 
-export interface ChunkConcept { tempId: string; name: string; summary: string; evidence: Evidence[]; }
+export interface ChunkConcept { tempId: string; name: string; summary: string; kind: ConceptKind; evidence: Evidence[]; }
 export interface ExtractOptions { promptConfig?: PromptConfig; maxConceptsPerChunk?: number; }
 
-const TASK = (max: number) => `Read the numbered EVIDENCE sentences. Identify the distinct concepts a learner must understand (at most ${max}). For each concept give a short name, a one-sentence summary in your own words, and the ids of the sentences that state or explain it. Choose only ids from the list. A sentence may support more than one concept.`;
+const TASK = (max: number) => `Read the numbered EVIDENCE sentences. Identify the distinct concepts a learner must understand (at most ${max}). For each concept give a short name, a one-sentence summary in your own words, and the ids of the sentences that state or explain it. Choose only ids from the list. A sentence may support more than one concept. Give each concept a kind: "rto-instruction" when it is a statement about how one training provider organises, delivers, assesses or administers the unit (assessment arrangements, submission rules, simulated or workplace options, attempts, deadlines), and "content" otherwise.`;
 
 /**
  * `[s3] text` per sentence. A sentence in a list gets `(list level n) ` before its text (n = depth + 1), because the
@@ -104,6 +104,6 @@ export async function extractChunkConcepts(doc: SourceDocument, chunk: Chunk, ru
   return value.concepts.map((c, i) => {
     const evidence = [...new Set(c.sentenceIds)].map((id) => evidenceForSentence(doc, id));
     for (const e of evidence) { const bad = verifyEvidence(doc.text, e); if (bad) throw new EvidenceMismatchError(bad); }
-    return { tempId: `k${chunk.chunkIndex}-${i}`, name: c.name.trim(), summary: c.summary.trim(), evidence };
+    return { tempId: `k${chunk.chunkIndex}-${i}`, name: c.name.trim(), summary: c.summary.trim(), kind: c.kind, evidence };
   });
 }
