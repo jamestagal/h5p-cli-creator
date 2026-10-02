@@ -1,7 +1,8 @@
 import type { AttemptEvent, AttemptRecorder } from "../llm/types.js";
-import { canonicalRecordJson, sameSheet, sha256Hex, sortBuilds, sortSheets } from "./builds.js";
+import { canonicalRecordJson, latestAcceptances, sameSheet, sha256Hex, sortBatches, sortBuilds, sortSheets } from "./builds.js";
+import { replayCommittedBatches } from "../review/batches.js";
 import { assertSameOriginal } from "./originals.js";
-import { BuildIntegrityError, SheetIntegrityError, StoreLockedError, type AcceptanceRecord, type ScoreRecord, type SheetManifest, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "./types.js";
+import { BuildIntegrityError, SheetIntegrityError, StoreLockedError, type AcceptanceRecord, type ReviewBatch, type ScoreRecord, type SheetManifest, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "./types.js";
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const reviewKey = (r: AlignmentReviewRecord): string => `${r.activityId}/${r.revision}/${r.itemId ?? ""}/${r.criterionId}`;
@@ -16,7 +17,8 @@ export class MemoryStore implements ImportStore {
   private builds = new Map<string, Buffer>();
   private buildRecords = new Map<string, BuildRecord>();
   private originals = new Map<string, { ext: OriginalSourceExt; bytes: Buffer }>();
-  private acceptances = new Map<string, AcceptanceRecord>();
+  private acceptances: AcceptanceRecord[] = [];
+  private batches: ReviewBatch[] = [];
   private sheets = new Map<string, SheetManifest>();
   private scores: ScoreRecord[] = [];
   private alignmentReviews = new Map<string, AlignmentReviewRecord>();
@@ -25,7 +27,9 @@ export class MemoryStore implements ImportStore {
   async lock(importId: string): Promise<StoreLock> {
     if (this.locks.has(importId)) throw new StoreLockedError(importId, "this process");
     this.locks.add(importId);
-    return { release: async () => { this.locks.delete(importId); } };
+    const release = async (): Promise<void> => { this.locks.delete(importId); };
+    try { await replayCommittedBatches(this, importId); } catch (err) { await release(); throw err; }
+    return { release };
   }
   async getImport(importId: string) { const r = this.imports.get(importId); return r ? clone(r) : null; }
   async putImport(record: ImportRecord) { this.imports.set(record.importId, clone(record)); }
@@ -63,8 +67,9 @@ export class MemoryStore implements ImportStore {
   }
   async getBuildRecord(buildId: string) { const r = this.buildRecords.get(buildId); return r ? clone(r) : null; }
   async listBuilds(activityId: string) { return sortBuilds([...this.buildRecords.values()].filter((r) => r.activityId === activityId).map(clone)); }
-  async listAcceptances(importId: string) { return [...this.acceptances.values()].filter((a) => a.importId === importId).map(clone); }
-  async putAcceptance(record: AcceptanceRecord) { this.acceptances.set(`${record.activityId}/${record.revision}`, clone(record)); }
+  async listAcceptances(importId: string) { return latestAcceptances(this.acceptances.filter((a) => a.importId === importId)).map(clone); }
+  async listAcceptanceRecords(importId: string) { return this.acceptances.filter((a) => a.importId === importId).map(clone); }
+  async putAcceptance(record: AcceptanceRecord) { this.acceptances.push(clone(record)); }
   async putSheet(manifest: SheetManifest) {
     const key = `${manifest.importId}/${manifest.sheetId}`;
     const existing = this.sheets.get(key);
@@ -79,6 +84,12 @@ export class MemoryStore implements ImportStore {
   async listSheets(importId: string) { return sortSheets([...this.sheets.values()].filter((m) => m.importId === importId).map(clone)); }
   async putScore(record: ScoreRecord) { this.scores.push(clone(record)); }
   async listScores(importId: string) { return this.scores.filter((r) => r.importId === importId).map(clone); }
+  async commitBatch(batch: ReviewBatch) {
+    if (this.batches.some((b) => b.importId === batch.importId && b.batchId === batch.batchId)) return false;
+    this.batches.push(clone(batch));
+    return true;
+  }
+  async listBatches(importId: string) { return sortBatches(this.batches.filter((b) => b.importId === importId).map(clone)); }
   async listAlignmentReviews(importId: string) { return [...this.alignmentReviews.values()].filter((a) => a.importId === importId).map(clone); }
   async putAlignmentReview(record: AlignmentReviewRecord) { this.alignmentReviews.set(reviewKey(record), clone(record)); }
 }

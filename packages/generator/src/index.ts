@@ -27,4 +27,7 @@ export * from "./store/layout.js";
 export * from "./pipeline/index.js";
 export * from "./pilot/ledger.js";
 export * from "./review/scores.js";
+export * from "./review/rubric.js";
+export * from "./review/batches.js";
+export * from "./review/import.js";
 export * from "./review/sheet.js";

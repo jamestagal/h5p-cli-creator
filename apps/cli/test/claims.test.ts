@@ -49,7 +49,7 @@ async function sourcesUnder(dir: string): Promise<string[]> {
 /** The text a user or a model reads: CLI help for every command, the README, every module that builds a prompt, and the report and sheet writers. */
 async function claimSurfaces(): Promise<Array<{ file: string; text: string }>> {
   const surfaces: Array<{ file: string; text: string }> = [];
-  for (const command of ["", "generate", "extract", "review", "review-sheet", "flashcards"]) {
+  for (const command of ["", "generate", "extract", "review", "review-sheet", "review-import", "flashcards"]) {
     const run = spawnSync(process.execPath, [cliDist, ...(command ? [command] : []), "--help"], { encoding: "utf8" });
     expect(run.status, `leap ${command} --help: ${run.stderr}`).toBe(0);
     surfaces.push({ file: `leap ${command} --help`.replace("  ", " "), text: run.stdout });
@@ -57,7 +57,7 @@ async function claimSurfaces(): Promise<Array<{ file: string; text: string }>> {
   surfaces.push({ file: "README.md", text: await readFile(resolve(root, "README.md"), "utf8") });
   const generator = resolve(root, "packages/generator/src");
   const promptDirs = ["prompts", "competency", "concepts", "plan", "produce", "review"].map((d) => resolve(generator, d));
-  const files = [...(await Promise.all(promptDirs.map(sourcesUnder))).flat(), resolve(root, "apps/cli/src/report.ts"), resolve(root, "apps/cli/src/review-sheet.ts")];
+  const files = [...(await Promise.all(promptDirs.map(sourcesUnder))).flat(), resolve(root, "apps/cli/src/report.ts"), resolve(root, "apps/cli/src/review-sheet.ts"), resolve(root, "apps/cli/src/review-import.ts")];
   for (const f of files) surfaces.push({ file: relative(root, f), text: await readFile(f, "utf8") });
   return surfaces;
 }
@@ -72,7 +72,7 @@ describe("claims wording (design §4.5)", () => {
     // every allowed phrase is still in use; a stale entry would silently widen the list
     const readme = surfaces.find((s) => s.file === "README.md")!.text.toLowerCase();
     for (const { phrase } of ALLOWED_PHRASES) expect(readme, phrase).toContain(phrase.toLowerCase());
-  });
+  }, 30_000); // spawns leap once per command, like the other process tests
 
   it("fails on a planted phrase, in any surface, whatever the case", () => {
     expect(claimsViolations("planted", "Completing these activities shows the learner is Competent.")).toMatchObject([{ word: "Competent", line: 1 }]);

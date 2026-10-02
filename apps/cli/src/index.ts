@@ -10,6 +10,7 @@ import { generate } from "./generate.js";
 import { localImageResolver, networkImageResolver } from "./image-resolver.js";
 import { review } from "./review.js";
 import { reviewSheet } from "./review-sheet.js";
+import { reviewImport } from "./review-import.js";
 
 let reported = false;
 function reportFailure(msg: string | null | undefined, err: Error | undefined): void {
@@ -70,7 +71,7 @@ try {
       async (argv) => {
         process.exitCode = await extract({ source: argv.source, out: argv.out, chunkTokens: argv["chunk-tokens"] }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
       })
-    .command("review", "Record a human acceptance or alignment decision against a promoted activity and refresh mapping.csv and cost.json", (y) => y
+    .command("review", "Record an alignment decision against a promoted activity and refresh mapping.csv and cost.json (acceptance comes from leap review-sheet and leap review-import)", (y) => y
       .option("out", { type: "string", demandOption: true, describe: "the import directory" })
       .option("activity", { type: "string", demandOption: true })
       .option("reviewer", { type: "string", demandOption: true })
@@ -87,6 +88,14 @@ try {
       .option("out", { type: "string", demandOption: true, describe: "the import directory" }),
       async (argv) => {
         process.exitCode = await reviewSheet({ out: argv.out }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
+      })
+    .command("review-import", "Import a filled-in review sheet: checks every row and finding first, then commits the new scores as one batch with their derived decisions", (y) => y
+      .option("out", { type: "string", demandOption: true, describe: "the import directory" })
+      .option("scores", { type: "string", demandOption: true, describe: "the filled-in scores.csv" })
+      .option("findings", { type: "string", describe: "the filled-in findings.csv (default: findings.csv beside the scores file)" })
+      .option("reviewer", { type: "string", demandOption: true, describe: "the person who scored the sheet" }),
+      async (argv) => {
+        process.exitCode = await reviewImport({ out: argv.out, scores: argv.scores, ...(argv.findings ? { findings: argv.findings } : {}), reviewer: argv.reviewer }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
       })
     .demandCommand(1)
     .strict()

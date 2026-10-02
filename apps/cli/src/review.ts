@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { targetsOf, type AcceptanceDecision, type AlignmentDecision, type UnitOfCompetency } from "@leaplearn/shared";
-import { assertCurrentLayout, assertWritableStoreVersion, isStoreVersionError, StoreLockedError, type AcceptanceRecord, type AlignmentReviewRecord, type ImportStore } from "@leaplearn/generator";
+import { assertCurrentLayout, assertWritableStoreVersion, isStoreVersionError, StoreLockedError, type AlignmentReviewRecord, type ImportStore } from "@leaplearn/generator";
 import { FileStore } from "./file-store.js";
 import { importIdFor } from "./generate.js";
 import { formatCostReport, writeReports } from "./report.js";
@@ -19,23 +19,20 @@ function itemProvenance(spec: { type: string; blanks?: Array<{ id: string; prove
   return item.provenance;
 }
 
-/** Records a human decision against the activity's promoted revision. Every check names the id it failed on. */
-export async function recordReview(store: ImportStore, importId: string, input: ReviewInput, clock: () => Date = () => new Date()): Promise<AcceptanceRecord | AlignmentReviewRecord> {
+/** Records an alignment decision against the activity's promoted revision; an acceptance decision is refused on a version-2 store (C5). Every check names the id it failed on. */
+export async function recordReview(store: ImportStore, importId: string, input: ReviewInput, clock: () => Date = () => new Date()): Promise<AlignmentReviewRecord> {
   const importRecord = await store.getImport(importId);
   if (!importRecord) throw new ReviewError(`import ${importId} is not in this directory`);
   assertWritableStoreVersion(importRecord, `import ${importId}`);
   await assertCurrentLayout(store, importId, `import ${importId}`);
+  // C5: on a version-2 store a decision must come with rubric scores, which only the sheet carries
+  if (input.kind === "acceptance") throw new ReviewError("acceptance is recorded through leap review-sheet and leap review-import");
   const activity = (await store.listActivities(importId)).find((a) => a.activityId === input.activityId);
   if (!activity) throw new ReviewError(`activity ${input.activityId} is not in import ${importId}`);
   if (activity.currentRevision === null) throw new ReviewError(`activity ${input.activityId} has no promoted revision (status ${activity.status}); only promoted activities can be reviewed`);
   const revision = await store.getRevision(activity.activityId, activity.currentRevision);
   if (!revision) throw new ReviewError(`revision ${activity.currentRevision} of ${input.activityId} is missing from the store`);
   const decidedAt = clock().toISOString();
-  if (input.kind === "acceptance") {
-    const record: AcceptanceRecord = { importId, activityId: activity.activityId, revision: revision.revision, decision: input.decision, reviewer: input.reviewer, notes: input.notes, decidedAt };
-    await store.putAcceptance(record);
-    return record;
-  }
   const unit = await store.getArtifact<UnitOfCompetency>(importId, "unit");
   if (!unit) throw new ReviewError(`import ${importId} has no unit of competency, so there is no alignment to review`);
   if (!targetsOf(unit).some((t) => t.id === input.criterionId)) throw new ReviewError(`criterion ${input.criterionId} is not in unit ${unit.code}`);

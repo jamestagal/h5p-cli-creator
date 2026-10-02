@@ -4,8 +4,11 @@ export const IMPORT_STATUSES = ["queued", "ingesting", "extracting", "planning",
 export const ACTIVITY_STATUSES = ["planned", "generating", "generated", "built", "promoted", "failed", "dropped"] as const;
 export const REVISION_STATES = ["candidate", "promoted", "superseded", "rejected"] as const;
 export const COST_STATUSES = ["known", "estimated", "unavailable"] as const;
-/** Spec §4 acceptance_decisions.decision: a human judged the promoted revision good or not. */
-export const ACCEPTANCE_DECISIONS = ["accepted", "rejected"] as const;
+/**
+ * Spec §4 acceptance_decisions.decision. Phase 3 derives it from rubric scores (design §5); `needs-revision` is only
+ * ever derived. Only `accepted` counts as accepted, anywhere.
+ */
+export const ACCEPTANCE_DECISIONS = ["accepted", "needs-revision", "rejected"] as const;
 /** Spec §4 alignment_reviews.decision, bound to one revision (and one item when the criterion is on an item). */
 export const ALIGNMENT_DECISIONS = ["confirmed", "rejected", "added"] as const;
 /**

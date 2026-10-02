@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { BuildRecord, SheetManifest } from "./types.js";
+import type { AcceptanceRecord, BuildRecord, ReviewBatch, SheetManifest } from "./types.js";
 
 /** `sha256([activityId, revision, engineFingerprint])`, first 16 hex characters: one id per revision per engine. */
 export function buildIdFor(activityId: string, revision: number, engineFingerprint: string): string {
@@ -33,4 +33,29 @@ export function sameSheet(a: SheetManifest, b: SheetManifest): boolean {
 /** Sorted by createdAt, then sheetId, so listings are stable. */
 export function sortSheets(manifests: SheetManifest[]): SheetManifest[] {
   return manifests.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.sheetId < b.sheetId ? -1 : a.sheetId > b.sheetId ? 1 : 0));
+}
+
+/** Batches in commit order: by sequence (R8). */
+export function sortBatches(batches: ReviewBatch[]): ReviewBatch[] {
+  return batches.sort((a, b) => a.sequence - b.sequence);
+}
+
+/**
+ * The acceptance record that counts per `(activityId, revision)` (R8): a record from a committed batch beats any
+ * unscored one, and among those the latest by `(sequence, rowIndex)` wins. Unscored records (phase-2 and
+ * `review --decision`) are ordered by append order among themselves. Append order never decides between scored ones.
+ */
+export function latestAcceptances(records: AcceptanceRecord[]): AcceptanceRecord[] {
+  const later = (a: AcceptanceRecord, b: AcceptanceRecord): boolean => {
+    if (a.sequence === undefined) return b.sequence === undefined; // unscored: append order, so a later one wins
+    if (b.sequence === undefined) return true;
+    return a.sequence > b.sequence || (a.sequence === b.sequence && (a.rowIndex ?? 0) > (b.rowIndex ?? 0));
+  };
+  const latest = new Map<string, AcceptanceRecord>();
+  for (const r of records) {
+    const key = `${r.activityId}/${r.revision}`;
+    const current = latest.get(key);
+    if (!current || later(r, current)) latest.set(key, r);
+  }
+  return [...latest.values()];
 }

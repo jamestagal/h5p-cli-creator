@@ -51,14 +51,10 @@ describe("leap review", () => {
     await expect(recordReview(store, "imp", { kind: "alignment", activityId: "act-4", reviewer: "owner", criterionId: "KE1", decision: "added", itemId: "b1" })).rejects.toThrow(/criterion KE1 is not in unit SYNELE001/);
     expect(await recordReview(store, "imp", { kind: "alignment", activityId: "act-4", reviewer: "owner", criterionId: "PC2.2", decision: "added", itemId: "b2" })).toMatchObject({ criterionId: "PC2.2" });
   });
-  it("records an acceptance bound to the promoted revision and changes cost per accepted activity", async () => {
+  it("refuses an acceptance decision on a version-2 store: acceptance comes only from scored sheets (C5), and nothing is written", async () => {
     const store = await seeded();
-    const record = await recordReview(store, "imp", { kind: "acceptance", activityId: "act-4", reviewer: "owner", decision: "accepted", notes: "plumbing check" }, () => new Date("2026-09-19T00:00:00Z"));
-    expect(record).toEqual({ importId: "imp", activityId: "act-4", revision: 1, decision: "accepted", reviewer: "owner", notes: "plumbing check", decidedAt: "2026-09-19T00:00:00.000Z" });
-    const report = await costReport(store, "imp");
-    expect(report.accepted).toBe(1);
-    expect(report.costPerAcceptedActivityUsdMicro).toBe(900);
-    await recordReview(store, "imp", { kind: "acceptance", activityId: "act-4", reviewer: "owner", decision: "rejected", notes: null });
+    await expect(recordReview(store, "imp", { kind: "acceptance", activityId: "act-4", reviewer: "owner", decision: "accepted", notes: "plumbing check" })).rejects.toMatchObject({ name: "ReviewError", message: "acceptance is recorded through leap review-sheet and leap review-import" });
+    expect(await store.listAcceptanceRecords("imp")).toEqual([]);
     expect((await costReport(store, "imp")).accepted).toBe(0);
   });
   it("records alignment decisions per item and criterion, and the mapping status follows them", async () => {
@@ -82,8 +78,8 @@ describe("leap review", () => {
   });
   it("refuses decisions that do not bind to a real promoted revision, item, unit criterion or mapping state", async () => {
     const store = await seeded();
-    await expect(recordReview(store, "imp", { kind: "acceptance", activityId: "act-5", reviewer: "o", decision: "accepted", notes: null })).rejects.toMatchObject({ name: "ReviewError", message: expect.stringMatching(/act-5.*promoted/) });
-    await expect(recordReview(store, "imp", { kind: "acceptance", activityId: "act-9", reviewer: "o", decision: "accepted", notes: null })).rejects.toBeInstanceOf(ReviewError);
+    await expect(recordReview(store, "imp", { kind: "alignment", activityId: "act-5", reviewer: "o", criterionId: "PC2.1", decision: "confirmed", itemId: null })).rejects.toMatchObject({ name: "ReviewError", message: expect.stringMatching(/act-5.*promoted/) });
+    await expect(recordReview(store, "imp", { kind: "alignment", activityId: "act-9", reviewer: "o", criterionId: "PC2.1", decision: "confirmed", itemId: null })).rejects.toBeInstanceOf(ReviewError);
     await expect(recordReview(store, "imp", { kind: "alignment", activityId: "act-4", reviewer: "o", criterionId: "PC2.1", decision: "confirmed", itemId: "b9" })).rejects.toMatchObject({ message: expect.stringMatching(/b9/) });
     await expect(recordReview(store, "imp", { kind: "alignment", activityId: "act-4", reviewer: "o", criterionId: "PC9.9", decision: "added", itemId: null })).rejects.toMatchObject({ message: expect.stringMatching(/PC9\.9.*not in unit SYNELE001/) });
     await expect(recordReview(store, "imp", { kind: "alignment", activityId: "act-4", reviewer: "o", criterionId: "PC2.2", decision: "confirmed", itemId: null })).rejects.toMatchObject({ message: expect.stringMatching(/PC2\.2.*not in/) });
@@ -91,6 +87,5 @@ describe("leap review", () => {
     const noUnit = await seeded();
     await noUnit.putArtifact("imp", "unit", null);
     await expect(recordReview(noUnit, "imp", { kind: "alignment", activityId: "act-4", reviewer: "o", criterionId: "PC2.1", decision: "confirmed", itemId: null })).rejects.toMatchObject({ message: expect.stringMatching(/no unit/) });
-    await expect(recordReview(noUnit, "imp", { kind: "acceptance", activityId: "act-4", reviewer: "o", decision: "accepted", notes: null })).resolves.toMatchObject({ decision: "accepted" }); // acceptance needs no unit
   });
 });

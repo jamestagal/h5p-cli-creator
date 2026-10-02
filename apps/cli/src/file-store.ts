@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFile, link, mkdir, readFile, rename, truncate, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { assertCurrentLayout, assertSameOriginal, assertWritableStoreVersion, BuildIntegrityError, canonicalRecordJson, sameSheet, sha256Hex, SheetIntegrityError, sortBuilds, sortSheets, storeVersionOf, type AcceptanceRecord, type ScoreRecord, type SheetManifest, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
+import { assertCurrentLayout, assertSameOriginal, assertWritableStoreVersion, BuildIntegrityError, canonicalRecordJson, latestAcceptances, replayCommittedBatches, sameSheet, sortBatches, sha256Hex, SheetIntegrityError, sortBuilds, sortSheets, storeVersionOf, type AcceptanceRecord, type ReviewBatch, type ScoreRecord, type SheetManifest, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
 import { listIfPresent } from "./list-if-present.js";
 import { acquireDirectoryLock, type HeldLock, type LockOptions } from "./lock.js";
 
@@ -87,7 +87,10 @@ export class FileStore implements ImportStore {
   async lock(importId: string): Promise<StoreLock> {
     const held = await acquireDirectoryLock(this.dir, importId, this.options.lock ?? {});
     this.held = held;
-    return { release: async () => { this.held = null; await held.release(); } };
+    const release = async (): Promise<void> => { this.held = null; await held.release(); };
+    // recovery (design §7.3): a committed batch whose ledger records a crash left unwritten is completed first
+    try { await replayCommittedBatches(this, importId); } catch (err) { await release(); throw err; }
+    return { release };
   }
 
   /**
@@ -222,11 +225,8 @@ export class FileStore implements ImportStore {
     const all = await Promise.all(names.filter((n) => /^[0-9a-f]{16}\.json$/.test(n)).map((n) => readJson<BuildRecord>(join(dir, n))));
     return sortBuilds(all.filter((r): r is BuildRecord => r !== null && r.activityId === activityId));
   }
-  async listAcceptances(importId: string) {
-    const latest = new Map<string, AcceptanceRecord>();
-    for (const a of (await readJsonl<AcceptanceRecord>(this.p("acceptances.jsonl"))).records) if (a.importId === importId) latest.set(`${a.activityId}/${a.revision}`, a);
-    return [...latest.values()];
-  }
+  async listAcceptances(importId: string) { return latestAcceptances(await this.listAcceptanceRecords(importId)); }
+  async listAcceptanceRecords(importId: string) { return (await readJsonl<AcceptanceRecord>(this.p("acceptances.jsonl"))).records.filter((a) => a.importId === importId); }
   putAcceptance(record: AcceptanceRecord) { return this.append("acceptances.jsonl", record); }
   async listAlignmentReviews(importId: string) {
     const latest = new Map<string, AlignmentReviewRecord>();
@@ -256,5 +256,19 @@ export class FileStore implements ImportStore {
     return sortSheets(all.filter((m): m is SheetManifest => m !== null && m.importId === importId));
   }
   putScore(record: ScoreRecord) { return this.append("scores.jsonl", record); }
+  /** Batches live at reviews/batches/<sequence, 6 digits>-<batchId>.json; the file appears whole, by link, or not at all, and never replaces another. */
+  async commitBatch(batch: ReviewBatch) {
+    if (!/^[0-9a-f]{64}$/.test(batch.batchId)) throw new Error(`${JSON.stringify(batch.batchId)} is not a batch id; expected 64 hex characters`);
+    if ((await this.listBatches(batch.importId)).some((b) => b.batchId === batch.batchId)) return false;
+    const name = `${String(batch.sequence).padStart(6, "0")}-${batch.batchId}.json`;
+    await this.putImmutable(this.p("reviews", "batches", name), Buffer.from(JSON.stringify(batch, null, 2) + "\n"), `review batch ${batch.batchId}`, () => false, sha256Hex);
+    return true;
+  }
+  async listBatches(importId: string) {
+    const dir = this.p("reviews", "batches");
+    const names = (await listIfPresent(dir)).filter((n) => n.endsWith(".json"));
+    const all = await Promise.all(names.map((n) => readJson<ReviewBatch>(join(dir, n))));
+    return sortBatches(all.filter((b): b is ReviewBatch => b !== null && b.importId === importId));
+  }
   async listScores(importId: string) { return (await readJsonl<ScoreRecord>(this.p("scores.jsonl"))).records.filter((r) => r.importId === importId); }
 }

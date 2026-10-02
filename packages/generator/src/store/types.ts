@@ -60,7 +60,15 @@ export interface OperationRecord {
   idempotencyKey: string; contentAttempts: number; outcome: string | null; billingUncertain: boolean; startedAt: string; completedAt: string | null;
 }
 /** Spec §4 acceptance_decisions: a human judged the promoted revision good or not. Distinct from promotion. */
-export interface AcceptanceRecord { importId: string; activityId: string; revision: number; decision: AcceptanceDecision; reviewer: string; notes: string | null; decidedAt: string; }
+/**
+ * Spec §4 acceptance_decisions: a decision on a promoted revision. Phase 3 records one per scored row of a committed
+ * review batch (Task 12), with the batch position and the build it reviewed; records written by `leap review
+ * --decision` before that carry none of those fields and are kept as history (C5).
+ */
+export interface AcceptanceRecord {
+  importId: string; activityId: string; revision: number; decision: AcceptanceDecision; reviewer: string; notes: string | null; decidedAt: string;
+  batchId?: string; sequence?: number; rowIndex?: number; scoreRowKey?: string; buildId?: string;
+}
 /** Spec §4 alignment_reviews, bound to the exact revision (and item). A new revision starts with no reviews. */
 export interface AlignmentReviewRecord { importId: string; activityId: string; revision: number; itemId: string | null; unitTextHash: string | null; criterionId: string; decision: AlignmentDecision; reviewer: string; decidedAt: string; }
 /**
@@ -82,6 +90,12 @@ export interface ScoreRecord {
   activityId: string; revision: number; buildId: string; unitTextHash: string | null; rubricVersion: string; reviewer: string;
   scores: Record<Dimension, DimensionScore>; findings: Finding[]; minutes: number; decision: ScoreDecision; decidedAt: string;
 }
+/**
+ * One committed import of scored rows (design §7.3, R8): the commit point is the batch file's atomic rename. `sequence`
+ * is assigned under the import's lock as 1 + the highest committed sequence, read from the batch files themselves.
+ */
+export interface ReviewBatch { batchId: string; sequence: number; importId: string; sheetId: string; reviewer: string; importedAt: string; rows: ScoreRecord[] }
+
 export class SheetIntegrityError extends Error {
   constructor(sheetId: string) { super(`review sheet ${sheetId} already exists with different entries; a sheet manifest is never changed`); this.name = "SheetIntegrityError"; }
 }
@@ -185,7 +199,10 @@ export interface ImportStore {
   /** Stores a structured source's original bytes once (design §4.2). The same bytes again are a no-op; different bytes, or an original under the other extension, throw OriginalSourceError. Never overwrites. */
   putOriginalSource(importId: string, ext: OriginalSourceExt, bytes: Buffer): Promise<void>;
   getOriginalSource(importId: string): Promise<{ ext: OriginalSourceExt; bytes: Buffer } | null>;
+  /** The decision that counts per activity revision: scored records (with a sequence) by `(sequence, rowIndex)` (R8), ahead of earlier unscored ones, which go by append order. */
   listAcceptances(importId: string): Promise<AcceptanceRecord[]>;
+  /** Every acceptance record in the ledger, as appended: for replay and history. */
+  listAcceptanceRecords(importId: string): Promise<AcceptanceRecord[]>;
   putAcceptance(record: AcceptanceRecord): Promise<void>;
   listAlignmentReviews(importId: string): Promise<AlignmentReviewRecord[]>;
   putAlignmentReview(record: AlignmentReviewRecord): Promise<void>;
@@ -197,4 +214,11 @@ export interface ImportStore {
   /** Appends a score record. Ordering is by (sequence, rowIndex) in the record, never by append order. */
   putScore(record: ScoreRecord): Promise<void>;
   listScores(importId: string): Promise<ScoreRecord[]>;
+  /**
+   * Commits a review batch: written whole by temporary file and atomic rename, the commit point. Returns false, writing
+   * nothing, when a batch with the same batchId is already committed. The caller holds the import's lock.
+   */
+  commitBatch(batch: ReviewBatch): Promise<boolean>;
+  /** Every committed batch of an import, by `sequence` (never by file name or directory order). */
+  listBatches(importId: string): Promise<ReviewBatch[]>;
 }

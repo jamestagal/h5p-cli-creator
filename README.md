@@ -76,8 +76,8 @@ the reservation underestimate and any spend over the cap separately); `--max-req
 
 The store's layout is `import.json`, `artifacts/`, `activities/`, `revisions/`, `builds/`, the
 append-only ledgers `operations.jsonl`, `attempts.jsonl`, `acceptances.jsonl`,
-`alignment-reviews.jsonl` and `scores.jsonl`, the review sheet manifests under `reviews/sheets/`, plus the
-generated `mapping.csv` and `cost.json`.
+`alignment-reviews.jsonl` and `scores.jsonl`, the review sheet manifests and bundles under `reviews/sheets/`,
+the committed score batches under `reviews/batches/`, plus the generated `mapping.csv` and `cost.json`.
 
 ### The output directory's lock, and `lock.stale-*` tombstones
 
@@ -128,17 +128,15 @@ the listed strings exactly, before any IPv6 or embedded-IPv4 canonicalisation, s
 `127.0.0.1` does not also permit `::ffff:7f00:1`. The metadata address, and any IPv6 embedding of it,
 stays blocked unconditionally even when listed.
 
-### Recording a review decision: `leap review`
+### Recording an alignment decision: `leap review`
 
-A human judgement about a promoted activity is a record, not an edit. `leap review` writes it against
-the activity's **current promoted revision** (a new revision starts with no reviews), then rewrites
-`mapping.csv` and `cost.json`:
+A human judgement about a promoted activity is a record, not an edit. `leap review` writes an alignment
+decision against the activity's **current promoted revision** (a new revision starts with no reviews),
+then rewrites `mapping.csv` and `cost.json`. Acceptance is not recorded here: it comes only from a scored
+review sheet (`leap review-sheet`, then `leap review-import`), and `--decision` exits 1 on a phase-3 output
+directory.
 
 ```bash
-# accept or reject the activity itself
-node apps/cli/dist/index.js review --out ./out/synele001 \
-  --activity act-1 --reviewer "$USER" --decision accepted --notes "answers check out"
-
 # confirm, reject or add a suggested criterion mapping (optionally for one item)
 node apps/cli/dist/index.js review --out ./out/synele001 \
   --activity act-4 --reviewer "$USER" --criterion PC2.2 --alignment confirmed --item b1
@@ -183,13 +181,35 @@ as it was. A new bundle appears whole or not at all, and nothing is ever written
 Like every phase-3 write command, it refuses a phase-2 output directory, and it refuses an import whose
 promoted activities have a missing revision or build record rather than skipping them.
 
+### Importing scores: `leap review-import`
+
+```bash
+node apps/cli/dist/index.js review-import --out ./out/synele001 \
+  --scores ./out/synele001/reviews/sheets/<sheetId>/scores.csv --reviewer "$USER"
+```
+
+`review-import` reads the filled-in `scores.csv` and, by default, the `findings.csv` beside it. It checks
+the whole file before writing anything and lists every problem at once: rows that do not match their
+sheet, duplicate rows, partly scored rows, `na` where a dimension applies, findings on items or dimensions
+that do not exist or do not apply, a 0 or 1 without a finding (each dimension's score must be the lowest
+of its findings, or 2 with none), missing minutes, and a `decision` that disagrees with the scores (the
+derived decision is shown). A row with no scores is skipped as not scored yet. A row whose activity has
+since been regenerated, or whose build or unit text has changed, is **stale** and named; any problem or
+stale row means nothing is written.
+
+The new rows are committed as one batch, `reviews/batches/<sequence>-<batchId>.json`, then appended to
+`scores.jsonl` and `acceptances.jsonl` with their derived decision (`accepted`, `needs-revision` or
+`rejected`). Importing the same file again says `nothing new to import`; completing more rows of the same
+sheet later imports just those. A corrected row is a new review and the latest batch wins. If a run is
+interrupted after the batch is committed, the next `leap` command on the directory completes its records.
+
 ### Exit codes
 
-| Code | `leap generate` | `leap review` | `leap review-sheet` |
-|---|---|---|---|
-| `0` | every planned activity was promoted (`ready`) | the decision was recorded | the sheet was written, or nothing needs a review |
-| `2` | some activities were promoted and some failed (`ready_with_failures`); the per-activity lines name each failure and its reason | — | — |
-| `1` | nothing was promoted, or the run was refused: the directory is locked by another `leap` process, the inputs no longer match the import's fingerprint, or an argument was rejected | the import, activity, revision or criterion named does not exist, the activity has no promoted revision, or the directory is locked | the directory holds no import or a phase-2 import, or it is locked |
+| Code | `leap generate` | `leap review` | `leap review-sheet` | `leap review-import` |
+|---|---|---|---|---|
+| `0` | every planned activity was promoted (`ready`) | the decision was recorded | the sheet was written, or nothing needs a review | the new rows were committed, or there was nothing new |
+| `2` | some activities were promoted and some failed (`ready_with_failures`); the per-activity lines name each failure and its reason | — | — | — |
+| `1` | nothing was promoted, or the run was refused: the directory is locked by another `leap` process, the inputs no longer match the import's fingerprint, or an argument was rejected | the import, activity, revision or criterion named does not exist, the activity has no promoted revision, `--decision` was given, or the directory is locked | the directory holds no import or a phase-2 import, an activity's revision or build record is missing, or it is locked | any problem or stale row (nothing was written), or the directory holds no import or a phase-2 import, or it is locked |
 
 A `2` is a real result to read, not a crash: the failed activities carry a reason (`content:`, `budget:`, `system:` or `skipped:`), and rerunning the same command resumes the import and re-dispatches everything except the `content:` failures.
 
