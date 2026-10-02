@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import { MemoryStore, StoreLockedError, type AttemptStart } from "@leaplearn/generator";
+import { MemoryStore, StoreLockedError, type AttemptStart, type ScoreRecord } from "@leaplearn/generator";
+import { RUBRIC_VERSION } from "@leaplearn/shared";
 import { FileStore } from "../src/file-store.js";
 import { recordReview } from "../src/review.js";
 import { costReport, formatCostReport, mappingRows, writeReports, writeReportsLocked } from "../src/report.js";
@@ -78,6 +79,41 @@ async function seededDir(): Promise<{ dir: string; store: FileStore }> {
   await store.putRevision({ activityId: "act-1", revision: 1, state: "promoted", spec: { id: "act-1", title: "T", type: "multiChoice", language: "en", schemaVersion: 1, question: "<p>q</p>", answers: [{ text: "a", correct: true }, { text: "b", correct: false }], randomAnswers: true, provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1"], criteriaIds: ["PC2.1"] } }, schemaVersion: 1, promptVersion: "p", origin: "generate" as const, requestId: null, modelConfig: { provider: "fake", models: {}, profiles: {} }, note: null, currentBuildId: null, attemptIds: [], createdAt: "t" });
   return { dir, store };
 }
+
+describe("mapping.csv claims wording (design §4.5)", () => {
+  const score = (overrides: Partial<ScoreRecord>): ScoreRecord => ({
+    rowKey: "k", batchId: "b", sequence: 1, rowIndex: 0, sheetId: "s", importId: "imp", activityId: "act-1", revision: 1, buildId: "build-1", unitTextHash: "u".repeat(64), rubricVersion: RUBRIC_VERSION, reviewer: "r",
+    scores: { correctness: 2, support: 2, distractors: 2, mapping: 2, usefulness: 2 }, findings: [], minutes: 3, decision: "accepted", decidedAt: "2026-10-02T00:00:00.000Z", ...overrides
+  });
+  const NOTICE = "# Suggested alignment of revision activities; not an assessment record. Rows marked reviewed were checked by a person against the cited passages and the unit.";
+
+  it("starts with the notice line and carries kind, targetText and unitTextHash on every row", async () => {
+    const { dir, store } = await seededDir();
+    await writeReports(store, "imp", dir);
+    const lines = (await readFile(join(dir, "mapping.csv"), "utf8")).trimEnd().split("\n");
+    expect(lines[0]).toBe(NOTICE);
+    expect(lines[1]).toBe("activityId,type,title,revision,itemId,criterionId,status,conceptIds,evidenceIds,firstQuote,kind,targetText,unitTextHash");
+    expect(lines[2]).toBe(`act-1,multiChoice,T,1,,PC2.1,suggested,c1,ev-s1,,pc,Apply lockout devices and tags,${"u".repeat(64)}`);
+  });
+
+  it("marks a row reviewed only when the current build has a counted scored review with decision accepted; an alignment review keeps its own status", async () => {
+    const { store } = await seededDir();
+    const rev = (await store.getRevision("act-1", 1))!;
+    await store.putRevision({ ...rev, currentBuildId: "build-1" });
+    const status = async () => (await mappingRows(store, "imp")).map((r) => r.status);
+    await store.putScore(score({ buildId: "an-older-build" }));
+    expect(await status()).toEqual(["suggested"]); // a review of another build does not count
+    await store.putScore(score({ decision: "needs-revision", rowKey: "k2", sequence: 2 }));
+    expect(await status()).toEqual(["suggested"]);
+    await store.putScore(score({ decision: "accepted", rowKey: "k3", sequence: 3 }));
+    expect(await status()).toEqual(["reviewed"]);
+    await store.putScore(score({ decision: "rejected", rowKey: "k4", sequence: 4 }));
+    expect(await status()).toEqual(["suggested"]); // the latest review, by sequence, is the one that counts
+    await store.putScore(score({ decision: "accepted", rowKey: "k5", sequence: 5 }));
+    await recordReview(store, "imp", { kind: "alignment", activityId: "act-1", reviewer: "o", criterionId: "PC2.1", decision: "rejected", itemId: null });
+    expect(await status()).toEqual(["rejected"]);
+  });
+});
 
 describe("reports are written under the import's directory lock", () => {
   it("refuses to rewrite the reports while another process holds the lock, and leaves the ones on disk alone", async () => {

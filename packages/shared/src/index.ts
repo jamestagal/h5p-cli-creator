@@ -18,4 +18,5 @@ export * from "./activities/interactive-book.js";
 export * from "./activities/index.js";
 export * from "./competency.js";
 export * from "./concepts.js";
+export * from "./review.js";
 export * from "./generation.js";

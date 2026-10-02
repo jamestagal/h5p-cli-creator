@@ -167,6 +167,27 @@ describe("FileStore", () => {
     expect((await readdir(dir, { recursive: true })).some((f) => /\.tmp-/.test(f))).toBe(false);
   });
 
+  it("writes a sheet manifest once: the same sheetId again is a no-op that keeps the first createdAt, different content under that id throws, and scores round-trip", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "leap-fs-sheet-"));
+    const manifest = { sheetId: "a".repeat(64), importId: "imp", unitTextHash: null, rubricVersion: "r1", createdAt: "2026-10-02T01:00:00.000Z", entries: [{ activityId: "act-1", revision: 1, buildId: "b1", type: "multiChoice" as const, itemIds: ["act-1"] }] };
+    const store = new FileStore(dir);
+    expect(await store.putSheet(manifest)).toBe(true);
+    const path = join(dir, "reviews", "sheets", `${manifest.sheetId}.json`);
+    const written = await readFile(path, "utf8");
+    expect(await store.putSheet({ ...manifest, createdAt: "2026-10-09T00:00:00.000Z" })).toBe(false);
+    expect(await readFile(path, "utf8")).toBe(written);
+    await expect(store.putSheet({ ...manifest, entries: [{ ...manifest.entries[0]!, buildId: "b2" }] })).rejects.toThrow(/already exists with different entries/);
+    const reopened = new FileStore(dir);
+    expect(await reopened.getSheet("imp", manifest.sheetId)).toEqual(manifest);
+    expect(await reopened.getSheet("imp", "b".repeat(64))).toBeNull();
+    expect(await reopened.listSheets("imp")).toEqual([manifest]);
+    await expect(reopened.getSheet("imp", "../x")).rejects.toThrow(/not a sheet id/);
+    const score = { rowKey: "k", batchId: "b", sequence: 1, rowIndex: 0, sheetId: manifest.sheetId, importId: "imp", activityId: "act-1", revision: 1, buildId: "b1", unitTextHash: null, rubricVersion: "r1", reviewer: "r", scores: { correctness: 2 as const, support: 2 as const, distractors: 2 as const, mapping: "na" as const, usefulness: 2 as const }, findings: [], minutes: 4, decision: "accepted" as const, decidedAt: "t" };
+    await reopened.putScore(score);
+    expect(await new FileStore(dir).listScores("imp")).toEqual([score]);
+    expect(await new FileStore(await mkdtemp(join(tmpdir(), "leap-fs-empty-"))).listScores("imp")).toEqual([]);
+  });
+
   it("refuses a build key outside builds/", async () => {
     const store = new FileStore(await mkdtemp(join(tmpdir(), "leap-builds-key-")));
     await expect(store.putBuild("../escape.h5p", Buffer.from("PK.."))).rejects.toThrow(/build key/);

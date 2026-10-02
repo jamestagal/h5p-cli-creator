@@ -1,6 +1,6 @@
 import type { EngineIdentityInputs } from "@leaplearn/engine";
 import { ObsoleteStoreLayoutError } from "./layout.js";
-import type { AcceptanceDecision, ActivitySpec, ActivityStatus, AlignmentDecision, ImportStatus, RevisionState } from "@leaplearn/shared";
+import type { AcceptanceDecision, ActivitySpec, ActivityStatus, AlignmentDecision, Dimension, DimensionScore, Finding, ImportStatus, RevisionState, ScoreDecision } from "@leaplearn/shared";
 import type { SourceKind } from "../ingest/source-document.js";
 import type { BudgetLimits } from "../llm/budget.js";
 import type { RequestProfile } from "../llm/models.js";
@@ -63,6 +63,28 @@ export interface OperationRecord {
 export interface AcceptanceRecord { importId: string; activityId: string; revision: number; decision: AcceptanceDecision; reviewer: string; notes: string | null; decidedAt: string; }
 /** Spec §4 alignment_reviews, bound to the exact revision (and item). A new revision starts with no reviews. */
 export interface AlignmentReviewRecord { importId: string; activityId: string; revision: number; itemId: string | null; unitTextHash: string | null; criterionId: string; decision: AlignmentDecision; reviewer: string; decidedAt: string; }
+/**
+ * One exported review sheet (design §7.1, R1): which build of which revision each row reviews, so a score can be checked
+ * against what was on the sheet. `sheetId` hashes everything but `createdAt` (review/sheet.ts), and the manifest is
+ * written once and never changed.
+ */
+export interface SheetManifest {
+  sheetId: string; importId: string; unitTextHash: string | null; rubricVersion: string; createdAt: string;
+  entries: Array<{ activityId: string; revision: number; buildId: string; type: PlannedType; itemIds: string[] }>;
+}
+/**
+ * One scored review of one build (design §7.3, plan Task 12). The latest record per `(activityId, revision, buildId)`,
+ * by `(sequence, rowIndex)`, is the review that counts for that build. Task 12 writes these through committed batches;
+ * Task 11 only reads them.
+ */
+export interface ScoreRecord {
+  rowKey: string; batchId: string; sequence: number; rowIndex: number; sheetId: string; importId: string;
+  activityId: string; revision: number; buildId: string; unitTextHash: string | null; rubricVersion: string; reviewer: string;
+  scores: Record<Dimension, DimensionScore>; findings: Finding[]; minutes: number; decision: ScoreDecision; decidedAt: string;
+}
+export class SheetIntegrityError extends Error {
+  constructor(sheetId: string) { super(`review sheet ${sheetId} already exists with different entries; a sheet manifest is never changed`); this.name = "SheetIntegrityError"; }
+}
 export type ArtifactName = "source" | "unit" | "conceptMap" | "plan" | `chunk-${number}`;
 
 /**
@@ -167,4 +189,12 @@ export interface ImportStore {
   putAcceptance(record: AcceptanceRecord): Promise<void>;
   listAlignmentReviews(importId: string): Promise<AlignmentReviewRecord[]>;
   putAlignmentReview(record: AlignmentReviewRecord): Promise<void>;
+  /** Writes a sheet manifest once: returns true when written, false when the same sheetId exists with the same entries. Different entries under an existing sheetId throw SheetIntegrityError. Never overwrites. */
+  putSheet(manifest: SheetManifest): Promise<boolean>;
+  getSheet(importId: string, sheetId: string): Promise<SheetManifest | null>;
+  /** Every sheet manifest of an import, by createdAt then sheetId. */
+  listSheets(importId: string): Promise<SheetManifest[]>;
+  /** Appends a score record. Ordering is by (sequence, rowIndex) in the record, never by append order. */
+  putScore(record: ScoreRecord): Promise<void>;
+  listScores(importId: string): Promise<ScoreRecord[]>;
 }

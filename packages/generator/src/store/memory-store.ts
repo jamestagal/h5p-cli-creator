@@ -1,7 +1,7 @@
 import type { AttemptEvent, AttemptRecorder } from "../llm/types.js";
-import { canonicalRecordJson, sha256Hex, sortBuilds } from "./builds.js";
+import { canonicalRecordJson, sameSheet, sha256Hex, sortBuilds, sortSheets } from "./builds.js";
 import { assertSameOriginal } from "./originals.js";
-import { BuildIntegrityError, StoreLockedError, type AcceptanceRecord, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "./types.js";
+import { BuildIntegrityError, SheetIntegrityError, StoreLockedError, type AcceptanceRecord, type ScoreRecord, type SheetManifest, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "./types.js";
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const reviewKey = (r: AlignmentReviewRecord): string => `${r.activityId}/${r.revision}/${r.itemId ?? ""}/${r.criterionId}`;
@@ -17,6 +17,8 @@ export class MemoryStore implements ImportStore {
   private buildRecords = new Map<string, BuildRecord>();
   private originals = new Map<string, { ext: OriginalSourceExt; bytes: Buffer }>();
   private acceptances = new Map<string, AcceptanceRecord>();
+  private sheets = new Map<string, SheetManifest>();
+  private scores: ScoreRecord[] = [];
   private alignmentReviews = new Map<string, AlignmentReviewRecord>();
   private locks = new Set<string>();
 
@@ -63,6 +65,20 @@ export class MemoryStore implements ImportStore {
   async listBuilds(activityId: string) { return sortBuilds([...this.buildRecords.values()].filter((r) => r.activityId === activityId).map(clone)); }
   async listAcceptances(importId: string) { return [...this.acceptances.values()].filter((a) => a.importId === importId).map(clone); }
   async putAcceptance(record: AcceptanceRecord) { this.acceptances.set(`${record.activityId}/${record.revision}`, clone(record)); }
+  async putSheet(manifest: SheetManifest) {
+    const key = `${manifest.importId}/${manifest.sheetId}`;
+    const existing = this.sheets.get(key);
+    if (existing) {
+      if (!sameSheet(existing, manifest)) throw new SheetIntegrityError(manifest.sheetId);
+      return false;
+    }
+    this.sheets.set(key, clone(manifest));
+    return true;
+  }
+  async getSheet(importId: string, sheetId: string) { const m = this.sheets.get(`${importId}/${sheetId}`); return m ? clone(m) : null; }
+  async listSheets(importId: string) { return sortSheets([...this.sheets.values()].filter((m) => m.importId === importId).map(clone)); }
+  async putScore(record: ScoreRecord) { this.scores.push(clone(record)); }
+  async listScores(importId: string) { return this.scores.filter((r) => r.importId === importId).map(clone); }
   async listAlignmentReviews(importId: string) { return [...this.alignmentReviews.values()].filter((a) => a.importId === importId).map(clone); }
   async putAlignmentReview(record: AlignmentReviewRecord) { this.alignmentReviews.set(reviewKey(record), clone(record)); }
 }

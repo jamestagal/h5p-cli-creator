@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { ConceptMap, CostStatus, MappingStatus } from "@leaplearn/shared";
-import { PRICING, type AttemptOutcome, type AttemptStart, type ImportStore, type PlannedType } from "@leaplearn/generator";
+import { targetsOf, type ConceptMap, type CostStatus, type MappingStatus, type UnitOfCompetency } from "@leaplearn/shared";
+import { countedScore, PRICING, type AttemptOutcome, type AttemptStart, type ImportStore, type PlannedType } from "@leaplearn/generator";
 
 export interface CostReport {
   pricingVersion: string;
@@ -83,12 +83,19 @@ export function formatCostReport(r: CostReport): string {
   return lines.join("\n");
 }
 
-export interface MappingRow { activityId: string; type: string; title: string; revision: number; itemId: string; criterionId: string; status: MappingStatus; conceptIds: string; evidenceIds: string; firstQuote: string; }
+/** The first line of mapping.csv (design §4.5): what the file is, and what `reviewed` means. */
+export const MAPPING_NOTICE = "# Suggested alignment of revision activities; not an assessment record. Rows marked reviewed were checked by a person against the cited passages and the unit.";
+
+export interface MappingRow { activityId: string; type: string; title: string; revision: number; itemId: string; criterionId: string; status: MappingStatus; conceptIds: string; evidenceIds: string; firstQuote: string; kind: "pc" | "ke" | ""; targetText: string; unitTextHash: string; }
 
 export async function mappingRows(store: ImportStore, importId: string): Promise<MappingRow[]> {
   const map = await store.getArtifact<ConceptMap>(importId, "conceptMap");
   const quoteOf = new Map(map?.concepts.flatMap((c) => c.evidence.map((e) => [e.evidenceId, e.quote] as const)) ?? []);
   const reviews = await store.listAlignmentReviews(importId);
+  const scores = await store.listScores(importId);
+  const unit = await store.getArtifact<UnitOfCompetency>(importId, "unit");
+  const targets = new Map(unit ? targetsOf(unit).map((t) => [t.id, t] as const) : []);
+  const importUnitHash = (await store.getImport(importId))?.unitTextHash ?? null;
   const rows: MappingRow[] = [];
   for (const a of await store.listActivities(importId)) {
     if (a.currentRevision === null) continue;
@@ -97,17 +104,22 @@ export async function mappingRows(store: ImportStore, importId: string): Promise
     if (!rev) continue;
 
     const spec = rev.spec;
+    // `reviewed` only when the current build's counted scored review accepted it (design §4.5); never from a stale build
+    const counted = rev.currentBuildId === null ? null : countedScore(scores, a.activityId, rev.revision, rev.currentBuildId);
+    const reviewed = counted?.decision === "accepted";
+    const unitTextHash = a.unitTextHash ?? importUnitHash ?? "";
+    const target = (criterionId: string) => { const t = targets.get(criterionId); return { kind: t?.kind ?? ("" as const), targetText: t?.text ?? "", unitTextHash }; };
     const reviewFor = (itemId: string | null, criterionId: string) => reviews.find((r) => r.activityId === a.activityId && r.revision === rev.revision && (r.itemId ?? null) === itemId && r.criterionId === criterionId);
     const push = (itemId: string, prov: { conceptIds: string[]; evidenceIds: string[]; criteriaIds: string[] } | undefined): void => {
       const base = { activityId: a.activityId, type: a.type, title: spec.title, revision: rev.revision, itemId, conceptIds: (prov?.conceptIds ?? []).join(" "), evidenceIds: (prov?.evidenceIds ?? []).join(" "), firstQuote: quoteOf.get(prov?.evidenceIds[0] ?? "") ?? "" };
       const criteria = prov?.criteriaIds.length ? prov.criteriaIds : [""];
       for (const criterionId of criteria) {
         const review = criterionId ? reviewFor(itemId || null, criterionId) : undefined;
-        const status: MappingStatus = review && review.decision !== "added" ? review.decision : "suggested";
-        rows.push({ ...base, criterionId, status });
+        const status: MappingStatus = review && review.decision !== "added" ? review.decision : reviewed ? "reviewed" : "suggested";
+        rows.push({ ...base, criterionId, status, ...target(criterionId) });
       }
       // criteria a reviewer attached: any review for a criterion outside the original provenance means it was added; a later confirmed/rejected decision on it shows as that decision
-      for (const extra of reviews.filter((r) => r.activityId === a.activityId && r.revision === rev.revision && (r.itemId ?? null) === (itemId || null) && !(prov?.criteriaIds.includes(r.criterionId) ?? false))) rows.push({ ...base, criterionId: extra.criterionId, status: extra.decision });
+      for (const extra of reviews.filter((r) => r.activityId === a.activityId && r.revision === rev.revision && (r.itemId ?? null) === (itemId || null) && !(prov?.criteriaIds.includes(r.criterionId) ?? false))) rows.push({ ...base, criterionId: extra.criterionId, status: extra.decision, ...target(extra.criterionId) });
     };
     push("", spec.provenance);
     if (spec.type === "blanks") for (const b of spec.blanks) push(b.id, b.provenance);
@@ -119,8 +131,8 @@ export async function mappingRows(store: ImportStore, importId: string): Promise
 const csvCell = (v: string | number): string => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
 export async function writeMappingCsv(store: ImportStore, importId: string, path: string): Promise<number> {
   const rows = await mappingRows(store, importId);
-  const header = ["activityId", "type", "title", "revision", "itemId", "criterionId", "status", "conceptIds", "evidenceIds", "firstQuote"] as const;
-  const lines = [header.join(","), ...rows.map((r) => header.map((h) => csvCell(r[h])).join(","))];
+  const header = ["activityId", "type", "title", "revision", "itemId", "criterionId", "status", "conceptIds", "evidenceIds", "firstQuote", "kind", "targetText", "unitTextHash"] as const;
+  const lines = [MAPPING_NOTICE, header.join(","), ...rows.map((r) => header.map((h) => csvCell(r[h])).join(","))];
   await writeFile(path, lines.join("\n") + "\n");
   return rows.length;
 }

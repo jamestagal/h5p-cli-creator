@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { BuildRecord } from "./types.js";
+import type { BuildRecord, SheetManifest } from "./types.js";
 
 /** `sha256([activityId, revision, engineFingerprint])`, first 16 hex characters: one id per revision per engine. */
 export function buildIdFor(activityId: string, revision: number, engineFingerprint: string): string {
@@ -22,4 +22,15 @@ export function sortBuilds(records: BuildRecord[]): BuildRecord[] {
 export function canonicalRecordJson(value: unknown): string {
   const sort = (v: unknown): unknown => Array.isArray(v) ? v.map(sort) : v !== null && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sort((v as Record<string, unknown>)[k])])) : v;
   return JSON.stringify(sort(value));
+}
+
+/** Two manifests with the same sheetId describe the same sheet when everything but createdAt is equal. */
+export function sameSheet(a: SheetManifest, b: SheetManifest): boolean {
+  const content = (m: SheetManifest) => ({ sheetId: m.sheetId, importId: m.importId, unitTextHash: m.unitTextHash, rubricVersion: m.rubricVersion, entries: m.entries });
+  return canonicalRecordJson(content(a)) === canonicalRecordJson(content(b));
+}
+
+/** Sorted by createdAt, then sheetId, so listings are stable. */
+export function sortSheets(manifests: SheetManifest[]): SheetManifest[] {
+  return manifests.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.sheetId < b.sheetId ? -1 : a.sheetId > b.sheetId ? 1 : 0));
 }

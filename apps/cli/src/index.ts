@@ -9,6 +9,7 @@ import { DEFAULT_CHUNK_TOKENS, extract } from "./extract.js";
 import { generate } from "./generate.js";
 import { localImageResolver, networkImageResolver } from "./image-resolver.js";
 import { review } from "./review.js";
+import { reviewSheet } from "./review-sheet.js";
 
 let reported = false;
 function reportFailure(msg: string | null | undefined, err: Error | undefined): void {
@@ -81,6 +82,11 @@ try {
       async (argv) => {
         const code = await review({ out: argv.out, activity: argv.activity, reviewer: argv.reviewer, ...(argv.decision ? { decision: argv.decision } : {}), ...(argv.notes ? { notes: argv.notes } : {}), ...(argv.criterion ? { criterion: argv.criterion } : {}), ...(argv.alignment ? { alignment: argv.alignment } : {}), ...(argv.item ? { item: argv.item } : {}) }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
         process.exitCode = code;
+      })
+    .command("review-sheet", "Export a review sheet (review-sheet.md, scores.csv, findings.csv) for every promoted activity whose current build has no scored review; its manifest is kept under reviews/sheets/", (y) => y
+      .option("out", { type: "string", demandOption: true, describe: "the import directory" }),
+      async (argv) => {
+        process.exitCode = await reviewSheet({ out: argv.out }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
       })
     .demandCommand(1)
     .strict()

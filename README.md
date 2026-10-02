@@ -12,7 +12,7 @@ This is a pnpm workspace monorepo:
 
 - `packages/shared` — the Zod activity contract shared by the engine and its callers.
 - `packages/engine` — the registry, validator, handlers, assembler and public API for the new generation engine.
-- `apps/cli` — `leap`, the CLI on the new engine (`leap flashcards` and `leap generate`).
+- `apps/cli` — `leap`, the CLI on the new engine (`leap flashcards`, `leap generate`, `leap extract`, `leap review` and `leap review-sheet`).
 - `apps/cli-legacy` — the original `h5p-cli-creator` tool, frozen (bug fixes only). **The rest of this
   README, and `CONTRIBUTING.md`'s handler-development guide, document this legacy CLI**; its own
   docs and examples live under `apps/cli-legacy/` (`apps/cli-legacy/developer-guides/`,
@@ -75,8 +75,9 @@ the reservation underestimate and any spend over the cap separately); `--max-req
 `--max-seconds` are **hard** limits, and `--max-seconds` counts across every run of the import.
 
 The store's layout is `import.json`, `artifacts/`, `activities/`, `revisions/`, `builds/`, the
-append-only ledgers `operations.jsonl`, `attempts.jsonl`, `acceptances.jsonl` and
-`alignment-reviews.jsonl`, plus the generated `mapping.csv` and `cost.json`.
+append-only ledgers `operations.jsonl`, `attempts.jsonl`, `acceptances.jsonl`,
+`alignment-reviews.jsonl` and `scores.jsonl`, the review sheet manifests under `reviews/sheets/`, plus the
+generated `mapping.csv` and `cost.json`.
 
 ### The output directory's lock, and `lock.stale-*` tombstones
 
@@ -143,17 +144,45 @@ node apps/cli/dist/index.js review --out ./out/synele001 \
   --activity act-4 --reviewer "$USER" --criterion PC2.2 --alignment confirmed --item b1
 ```
 
-A `mapping.csv` row says `suggested` until a review exists for it, then `confirmed`, `rejected` or
-`added`. Acceptances drive the cost report's accepted count and cost per accepted activity. `review`
-takes the same directory lock as `generate`, so it refuses to run while a generation is in progress.
+`mapping.csv` is a **suggested alignment** of revision activities to the unit's performance criteria
+(`PC…`) and Knowledge Evidence (`KE…`), not an assessment record; its first line says so. Each row gives the
+target's `kind` (`pc` or `ke`), its `targetText` and the `unitTextHash` the IDs were assigned from. A row
+says `suggested` until someone reviews it: `reviewed` when the activity's current build has a scored
+review whose decision is `accepted` (checked by a person against the cited passages and the unit), or
+the alignment decision `confirmed`, `rejected` or `added`. An activity's evidence IDs are **source
+citations**: a resolved ID shows that the quoted sentence exists in the source, not that it supports the
+answer. Nothing here says that completing the activities demonstrates competency or satisfies an RTO's
+assessment requirements. Acceptances drive the cost report's accepted count and cost per accepted
+activity. `review` takes the same directory lock as `generate`, so it refuses to run while a generation
+is in progress.
+
+### Exporting a review sheet: `leap review-sheet`
+
+```bash
+node apps/cli/dist/index.js review-sheet --out ./out/synele001
+```
+
+`review-sheet` lists every promoted activity whose current build has no scored review, scored against
+rubric `r1` (correctness, source support, distractors, mapping, usefulness; 0, 1 or 2 each). It writes
+the sheet's manifest once to `reviews/sheets/<sheetId>.json`, then three files in the output directory:
+
+- `review-sheet.md`: per activity, the content and keyed answers, the item IDs and count, **(a)** the cited
+  passages in full with their sentence IDs and sections, **(b)** the PC and KE targets with their text,
+  **(c)** any cited passage the extractor classed as an RTO instruction, flagged, and the `.h5p` to play;
+- `scores.csv`: one row per activity, with `na` filled in where a dimension does not apply (distractors on
+  anything but multiChoice, mapping without a unit) and every other score left blank;
+- `findings.csv`: a header for the reviewer's failing items, one row per item and dimension.
+
+Exporting again with nothing changed gives the same `sheetId` and leaves the manifest untouched. Like
+every phase-3 write command, it refuses a phase-2 output directory.
 
 ### Exit codes
 
-| Code | `leap generate` | `leap review` |
-|---|---|---|
-| `0` | every planned activity was promoted (`ready`) | the decision was recorded |
-| `2` | some activities were promoted and some failed (`ready_with_failures`); the per-activity lines name each failure and its reason | — |
-| `1` | nothing was promoted, or the run was refused: the directory is locked by another `leap` process, the inputs no longer match the import's fingerprint, or an argument was rejected | the import, activity, revision or criterion named does not exist, the activity has no promoted revision, or the directory is locked |
+| Code | `leap generate` | `leap review` | `leap review-sheet` |
+|---|---|---|---|
+| `0` | every planned activity was promoted (`ready`) | the decision was recorded | the sheet was written, or nothing needs a review |
+| `2` | some activities were promoted and some failed (`ready_with_failures`); the per-activity lines name each failure and its reason | — | — |
+| `1` | nothing was promoted, or the run was refused: the directory is locked by another `leap` process, the inputs no longer match the import's fingerprint, or an argument was rejected | the import, activity, revision or criterion named does not exist, the activity has no promoted revision, or the directory is locked | the directory holds no import or a phase-2 import, or it is locked |
 
 A `2` is a real result to read, not a crash: the failed activities carry a reason (`content:`, `budget:`, `system:` or `skipped:`), and rerunning the same command resumes the import and re-dispatches everything except the `content:` failures.
 

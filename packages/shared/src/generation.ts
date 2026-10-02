@@ -8,8 +8,11 @@ export const COST_STATUSES = ["known", "estimated", "unavailable"] as const;
 export const ACCEPTANCE_DECISIONS = ["accepted", "rejected"] as const;
 /** Spec §4 alignment_reviews.decision, bound to one revision (and one item when the criterion is on an item). */
 export const ALIGNMENT_DECISIONS = ["confirmed", "rejected", "added"] as const;
-/** The status column of mapping.csv: `suggested` until a review exists for that row. */
-export const MAPPING_STATUSES = ["suggested", "confirmed", "rejected", "added"] as const;
+/**
+ * The status column of mapping.csv. `suggested` until someone reviews the row; `reviewed` when the activity's current
+ * build has a scored review whose decision is `accepted` (design §4.5); an alignment review's own decision otherwise.
+ */
+export const MAPPING_STATUSES = ["suggested", "reviewed", "confirmed", "rejected", "added"] as const;
 
 export const ImportStatus = z.enum(IMPORT_STATUSES);
 export const ActivityStatus = z.enum(ACTIVITY_STATUSES);

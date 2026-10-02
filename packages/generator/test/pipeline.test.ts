@@ -14,11 +14,11 @@ import { FakeProvider, fakeResponse } from "../src/llm/fake-provider.js";
 import { DEFAULT_BUDGET_LIMITS } from "../src/llm/budget.js";
 import { chunkSentences } from "../src/concepts/chunk.js";
 import { DEFAULT_PROMPT_CONFIG } from "../src/prompts/system.js";
-import type { AttemptStart, ModelResponse } from "../src/llm/types.js";
+import type { AttemptStart } from "../src/llm/types.js";
 import type { PlanRules } from "../src/plan/planner.js";
 import { ProviderError } from "../src/llm/provider.js";
 import { ANTHROPIC_TIMEOUT_MS } from "../src/llm/anthropic-provider.js";
-import { conceptResponses, EVIDENCE_PASSAGES, markdownEvidence, passageEvidence, passageIds, syntheticDoc, syntheticUnitText, unitOut, planOutFor, SYNTHETIC_CHUNK_TOKENS, type FixtureEvidence } from "./helpers/synthetic.js";
+import { conceptResponses, fullScript, produceResponses, EVIDENCE_PASSAGES, passageEvidence, passageIds, syntheticDoc, syntheticUnitText, unitOut, planOutFor, SYNTHETIC_CHUNK_TOKENS, type FixtureEvidence } from "./helpers/synthetic.js";
 import { crashBefore, CrashError, failOnce, failOutcomeOnce, withBuildBytes } from "./helpers/crashing-store.js";
 import { RoutedProvider } from "./helpers/routed-provider.js";
 import { electricalDocx, electricalOdt } from "./helpers/structured-sources.js";
@@ -30,28 +30,8 @@ let registry: LibraryRegistry;
 beforeAll(async () => { registry = await createRegistry({ lockPath: resolve(root, "libraries/libraries.lock.json"), cacheDir: resolve(root, "libraries/cache") }); });
 const rules: PlanRules = { multiChoice: { perImport: 1 }, blanks: { perImport: 1 }, flashcards: { specs: 1, cardsMin: 4, cardsMax: 12 } };
 type Doc = Awaited<ReturnType<typeof syntheticDoc>>;
-
-/** Produce fixtures cite only evidence that belongs to the concept each plan slot targets (planOutFor: multiChoice → c1, a second multiChoice → c2, blanks → c2, flashcards → c1 + c2). */
-function produceResponses(doc: Doc, evidence: FixtureEvidence = markdownEvidence(doc)) {
-  const ev = (ids: string[]) => ids.map((id) => `ev-${id}`);
-  const remove = ev(evidence.lotoRemove);   // concept c1 (lockout and tagout)
-  const tag = ev(evidence.lotoTag);         // concept c1
-  const tfdA = ev(evidence.tfdA);           // concept c2 (testing for dead)
-  const tfdB = ev(evidence.tfdB);           // concept c2
-  const mc = { title: "Removing a lock", question: "Who may remove a lockout device from an isolator?", answers: [{ text: "The worker who applied it", correct: true, feedback: "Only the worker who applied a lock may remove it." }, { text: "Any supervisor", correct: false, feedback: "" }, { text: "The site electrician", correct: false, feedback: "" }], evidenceIds: remove };
-  const mc2 = { title: "Testing for dead", question: "What does testing for dead confirm before work starts?", answers: [{ text: "That the conductors carry no voltage", correct: true, feedback: "Testing for dead confirms that the conductors to be worked on carry no voltage." }, { text: "That the permit is closed", correct: false, feedback: "" }, { text: "That the tag has been removed", correct: false, feedback: "" }], evidenceIds: tfdB };
-  const bl = { title: "Testing for dead", taskDescription: "Complete the sentences about testing for dead.", passage: "After the isolator is opened and locked, the worker must test for {{b1}} at the point of work using a voltage tester rated for the circuit. Testing for dead confirms that the conductors to be worked on carry no {{b2}}.", blanks: [{ answers: ["dead"], tip: null, evidenceIds: tfdA }, { answers: ["voltage"], tip: null, evidenceIds: tfdB }] };
-  const fc = { title: "Key terms", description: "Isolation vocabulary.", cards: [{ front: "Who may remove a lock", back: "Only the worker who applied it", tip: null, evidenceIds: remove }, { front: "Tag", back: "A warning label attached to the lockout device naming the worker, the date and the reason", tip: null, evidenceIds: tag }, { front: "When to test for dead", back: "After the isolator is opened and locked, at the point of work, with a tester rated for the circuit", tip: null, evidenceIds: tfdA }, { front: "What testing for dead confirms", back: "That the conductors to be worked on carry no voltage", tip: null, evidenceIds: tfdB }] };
-  return { mc, mc2, bl, fc };
-}
-
 const r = (value: unknown) => fakeResponse({ outputText: JSON.stringify(value) });
-/** Typed as the provider script union so tests can splice a ProviderError into it. */
-async function fullScript(doc: Doc, evidence: FixtureEvidence = markdownEvidence(doc)): Promise<Array<ModelResponse | Error>> {
-  const { script } = conceptResponses(doc, evidence);
-  const { mc, bl, fc } = produceResponses(doc, evidence);
-  return [r(unitOut), ...script, r(planOutFor(["multiChoice", "blanks", "flashcards"])), r(mc), r(bl), r(fc)];
-}
+
 const callsThroughPlan = (doc: Doc) => 1 + chunkSentences(doc.sentences, SYNTHETIC_CHUNK_TOKENS).length + 2 + 1; // parseUnit, extract per chunk, merge, align, plan
 
 const input = async (importId: string, overrides: Partial<RunImportInput> = {}): Promise<RunImportInput> => ({ importId, name: "Synthetic import", source: await syntheticDoc(), unitText: await syntheticUnitText(), selectedTypes: ["multiChoice", "blanks", "flashcards"] as const, budget: { usdMicro: 5_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null, ...overrides });

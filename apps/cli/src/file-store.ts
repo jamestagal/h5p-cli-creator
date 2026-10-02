@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFile, link, mkdir, readFile, rename, truncate, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { assertCurrentLayout, assertSameOriginal, assertWritableStoreVersion, BuildIntegrityError, canonicalRecordJson, sha256Hex, sortBuilds, storeVersionOf, type AcceptanceRecord, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
+import { assertCurrentLayout, assertSameOriginal, assertWritableStoreVersion, BuildIntegrityError, canonicalRecordJson, sameSheet, sha256Hex, SheetIntegrityError, sortBuilds, sortSheets, storeVersionOf, type AcceptanceRecord, type ScoreRecord, type SheetManifest, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
 import { listIfPresent } from "./list-if-present.js";
 import { acquireDirectoryLock, type HeldLock, type LockOptions } from "./lock.js";
 
@@ -12,9 +12,13 @@ export class StoreCorruptError extends Error {
 const isEnoent = (err: unknown): boolean => (err as { code?: string }).code === "ENOENT";
 const BUILD_KEY = /^builds\/[A-Za-z0-9._-]+\.h5p$/;
 const BUILD_ID = /^[0-9a-f]{16}$/;
+const SHEET_ID = /^[0-9a-f]{64}$/;
 
 function checkBuildKey(buildKey: string): void {
   if (!BUILD_KEY.test(buildKey)) throw new Error(`invalid build key ${JSON.stringify(buildKey)}; expected builds/<name>.h5p`);
+}
+function checkSheetId(sheetId: string): void {
+  if (!SHEET_ID.test(sheetId)) throw new Error(`${JSON.stringify(sheetId)} is not a sheet id; expected 64 hex characters`);
 }
 function checkBuildId(buildId: string): void {
   if (!BUILD_ID.test(buildId)) throw new Error(`invalid build id ${JSON.stringify(buildId)}; expected 16 hex characters`);
@@ -230,4 +234,27 @@ export class FileStore implements ImportStore {
     return [...latest.values()];
   }
   putAlignmentReview(record: AlignmentReviewRecord) { return this.append("alignment-reviews.jsonl", record); }
+  /** Manifests live at reviews/sheets/<sheetId>.json, written once through putImmutable (R1). */
+  async putSheet(manifest: SheetManifest) {
+    checkSheetId(manifest.sheetId);
+    const existing = await this.getSheet(manifest.importId, manifest.sheetId);
+    if (existing) { if (!sameSheet(existing, manifest)) throw new SheetIntegrityError(manifest.sheetId); return false; }
+    const same = (b: Buffer): boolean => sameSheet(JSON.parse(b.toString("utf8")) as SheetManifest, manifest);
+    try {
+      await this.putImmutable(this.p("reviews", "sheets", `${manifest.sheetId}.json`), Buffer.from(JSON.stringify(manifest, null, 2) + "\n"), `review sheet ${manifest.sheetId}`, same, sha256Hex);
+    } catch (err) {
+      if (err instanceof BuildIntegrityError) throw new SheetIntegrityError(manifest.sheetId);
+      throw err;
+    }
+    return true;
+  }
+  async getSheet(_importId: string, sheetId: string) { checkSheetId(sheetId); return readJson<SheetManifest>(this.p("reviews", "sheets", `${sheetId}.json`)); }
+  async listSheets(importId: string) {
+    const dir = this.p("reviews", "sheets");
+    const names = (await listIfPresent(dir)).filter((n) => /^[0-9a-f]{64}\.json$/.test(n));
+    const all = await Promise.all(names.map((n) => readJson<SheetManifest>(join(dir, n))));
+    return sortSheets(all.filter((m): m is SheetManifest => m !== null && m.importId === importId));
+  }
+  putScore(record: ScoreRecord) { return this.append("scores.jsonl", record); }
+  async listScores(importId: string) { return (await readJsonl<ScoreRecord>(this.p("scores.jsonl"))).records.filter((r) => r.importId === importId); }
 }

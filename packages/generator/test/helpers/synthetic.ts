@@ -4,7 +4,7 @@ import type { SourceDocument } from "../../src/ingest/index.js";
 import { ingestMarkdown } from "../../src/ingest/index.js";
 import { chunkSentences } from "../../src/concepts/chunk.js";
 import { fakeResponse } from "../../src/llm/fake-provider.js";
-import type { AttemptEvent, AttemptOutcome, AttemptRecorder, AttemptStart } from "../../src/llm/types.js";
+import type { AttemptEvent, AttemptOutcome, AttemptRecorder, AttemptStart, ModelResponse } from "../../src/llm/types.js";
 
 export const fixtures = resolve(import.meta.dirname, "../fixtures/synthetic");
 
@@ -158,3 +158,25 @@ export const planOutFor = (types: FixtureType[]) => {
     return { slot: i + 1, type, conceptIds, criteriaIds: criteriaFor(conceptIds), focus: `${type} focus ${i + 1}` };
   }) };
 };
+
+/** Produce fixtures cite only evidence that belongs to the concept each plan slot targets (planOutFor: multiChoice → c1, a second multiChoice → c2, blanks → c2, flashcards → c1 + c2). */
+export function produceResponses(doc: SourceDocument, evidence: FixtureEvidence = markdownEvidence(doc)) {
+  const ev = (ids: string[]) => ids.map((id) => `ev-${id}`);
+  const remove = ev(evidence.lotoRemove);   // concept c1 (lockout and tagout)
+  const tag = ev(evidence.lotoTag);         // concept c1
+  const tfdA = ev(evidence.tfdA);           // concept c2 (testing for dead)
+  const tfdB = ev(evidence.tfdB);           // concept c2
+  const mc = { title: "Removing a lock", question: "Who may remove a lockout device from an isolator?", answers: [{ text: "The worker who applied it", correct: true, feedback: "Only the worker who applied a lock may remove it." }, { text: "Any supervisor", correct: false, feedback: "" }, { text: "The site electrician", correct: false, feedback: "" }], evidenceIds: remove };
+  const mc2 = { title: "Testing for dead", question: "What does testing for dead confirm before work starts?", answers: [{ text: "That the conductors carry no voltage", correct: true, feedback: "Testing for dead confirms that the conductors to be worked on carry no voltage." }, { text: "That the permit is closed", correct: false, feedback: "" }, { text: "That the tag has been removed", correct: false, feedback: "" }], evidenceIds: tfdB };
+  const bl = { title: "Testing for dead", taskDescription: "Complete the sentences about testing for dead.", passage: "After the isolator is opened and locked, the worker must test for {{b1}} at the point of work using a voltage tester rated for the circuit. Testing for dead confirms that the conductors to be worked on carry no {{b2}}.", blanks: [{ answers: ["dead"], tip: null, evidenceIds: tfdA }, { answers: ["voltage"], tip: null, evidenceIds: tfdB }] };
+  const fc = { title: "Key terms", description: "Isolation vocabulary.", cards: [{ front: "Who may remove a lock", back: "Only the worker who applied it", tip: null, evidenceIds: remove }, { front: "Tag", back: "A warning label attached to the lockout device naming the worker, the date and the reason", tip: null, evidenceIds: tag }, { front: "When to test for dead", back: "After the isolator is opened and locked, at the point of work, with a tester rated for the circuit", tip: null, evidenceIds: tfdA }, { front: "What testing for dead confirms", back: "That the conductors to be worked on carry no voltage", tip: null, evidenceIds: tfdB }] };
+  return { mc, mc2, bl, fc };
+}
+
+const r = (value: unknown) => fakeResponse({ outputText: JSON.stringify(value) });
+/** Typed as the provider script union so tests can splice a ProviderError into it. */
+export async function fullScript(doc: SourceDocument, evidence: FixtureEvidence = markdownEvidence(doc)): Promise<Array<ModelResponse | Error>> {
+  const { script } = conceptResponses(doc, evidence);
+  const { mc, bl, fc } = produceResponses(doc, evidence);
+  return [r(unitOut), ...script, r(planOutFor(["multiChoice", "blanks", "flashcards"])), r(mc), r(bl), r(fc)];
+}
