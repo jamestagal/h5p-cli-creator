@@ -1,8 +1,8 @@
 import type { AttemptEvent, AttemptRecorder } from "../llm/types.js";
-import { canonicalRecordJson, latestAcceptances, sameSheet, sha256Hex, sortBatches, sortBuilds, sortSheets } from "./builds.js";
+import { canonicalRecordJson, latestAcceptances, latestRegenerations, sameSheet, sha256Hex, sortBatches, sortBuilds, sortSheets } from "./builds.js";
 import { replayCommittedBatches } from "../review/batches.js";
 import { assertSameOriginal } from "./originals.js";
-import { BuildIntegrityError, SheetIntegrityError, StoreLockedError, type AcceptanceRecord, type ReviewBatch, type ScoreRecord, type SheetManifest, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "./types.js";
+import { BuildIntegrityError, SheetIntegrityError, StoreLockedError, type AcceptanceRecord, type RegenerationRequest, type ReviewBatch, type ScoreRecord, type SheetManifest, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "./types.js";
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const reviewKey = (r: AlignmentReviewRecord): string => `${r.activityId}/${r.revision}/${r.itemId ?? ""}/${r.criterionId}`;
@@ -19,6 +19,7 @@ export class MemoryStore implements ImportStore {
   private originals = new Map<string, { ext: OriginalSourceExt; bytes: Buffer }>();
   private acceptances: AcceptanceRecord[] = [];
   private batches: ReviewBatch[] = [];
+  private regenerations: RegenerationRequest[] = [];
   private sheets = new Map<string, SheetManifest>();
   private scores: ScoreRecord[] = [];
   private alignmentReviews = new Map<string, AlignmentReviewRecord>();
@@ -89,6 +90,8 @@ export class MemoryStore implements ImportStore {
     this.batches.push(clone(batch));
     return true;
   }
+  async putRegeneration(record: RegenerationRequest) { this.regenerations.push(clone(record)); }
+  async listRegenerations(importId: string) { return latestRegenerations(this.regenerations.filter((r) => r.importId === importId)).map(clone); }
   async listBatches(importId: string) { return sortBatches(this.batches.filter((b) => b.importId === importId).map(clone)); }
   async listAlignmentReviews(importId: string) { return [...this.alignmentReviews.values()].filter((a) => a.importId === importId).map(clone); }
   async putAlignmentReview(record: AlignmentReviewRecord) { this.alignmentReviews.set(reviewKey(record), clone(record)); }

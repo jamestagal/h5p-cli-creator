@@ -203,13 +203,29 @@ The new rows are committed as one batch, `reviews/batches/<sequence>-<batchId>.j
 sheet later imports just those. A corrected row is a new review and the latest batch wins. If a run is
 interrupted after the batch is committed, the next `leap` command on the directory completes its records.
 
+### Regenerating an activity: `leap regenerate`
+
+```bash
+node apps/cli/dist/index.js regenerate --out ./out/synele001 --activity act-2 \
+  --note "The second blank's answer is ambiguous; key it to the cited sentence" \
+  --ledger docs/uoc/pilot-ledger.json --run P1
+```
+
+There is no field editing: a defect is fixed by producing a new revision with the reviewer's note, which is
+then reviewed from scratch. Only an activity whose current build has a scored review of `needs-revision` or
+`rejected` can be regenerated, and each activity gets at most **two** requests in the pilot, counting failed
+ones. The request is recorded before any model call. If a run is interrupted, rerunning the command for that
+activity (the note may be left out) finishes the same request without producing again when the new revision
+already exists. The new revision is built and promoted only on success; the previous one keeps its builds and
+reviews. A paid provider needs the same ledger entry as `generate`.
+
 ### Exit codes
 
-| Code | `leap generate` | `leap review` | `leap review-sheet` | `leap review-import` |
-|---|---|---|---|---|
-| `0` | every planned activity was promoted (`ready`) | the decision was recorded | the sheet was written, or nothing needs a review | the new rows were committed, or there was nothing new |
-| `2` | some activities were promoted and some failed (`ready_with_failures`); the per-activity lines name each failure and its reason | — | — | — |
-| `1` | nothing was promoted, or the run was refused: the directory is locked by another `leap` process, the inputs no longer match the import's fingerprint, or an argument was rejected | the import, activity, revision or criterion named does not exist, the activity has no promoted revision, `--decision` was given, or the directory is locked | the directory holds no import or a phase-2 import, an activity's revision or build record is missing, or it is locked | any problem or stale row (nothing was written), or the directory holds no import or a phase-2 import, or it is locked |
+| Code | `leap generate` | `leap review` | `leap review-sheet` | `leap review-import` | `leap regenerate` |
+|---|---|---|---|---|---|
+| `0` | every planned activity was promoted (`ready`) | the decision was recorded | the sheet was written, or nothing needs a review | the new rows were committed, or there was nothing new  the new revision was promoted |
+| `2` | some activities were promoted and some failed (`ready_with_failures`); the per-activity lines name each failure and its reason | — | — | — | — |
+| `1` | nothing was promoted, or the run was refused: the directory is locked by another `leap` process, the inputs no longer match the import's fingerprint, or an argument was rejected | the import, activity, revision or criterion named does not exist, the activity has no promoted revision, `--decision` was given, or the directory is locked | the directory holds no import or a phase-2 import, an activity's revision or build record is missing, or it is locked | any problem or stale row (nothing was written), or the directory holds no import or a phase-2 import, or it is locked | the activity is not eligible, has used its two requests, the ledger refused the run, or the request failed (recorded, and it counts) |
 
 A `2` is a real result to read, not a crash: the failed activities carry a reason (`content:`, `budget:`, `system:` or `skipped:`), and rerunning the same command resumes the import and re-dispatches everything except the `content:` failures.
 

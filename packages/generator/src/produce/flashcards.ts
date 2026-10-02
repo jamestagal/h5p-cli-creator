@@ -4,7 +4,7 @@ import type { StageRunner } from "../llm/runner.js";
 import { buildSystemPrompt } from "../prompts/system.js";
 import { checkAgainstExisting, checkFlashcards, checkReferences } from "../quality/checks.js";
 import { FlashcardsOut, FlashcardsOutSchema } from "../schemas/model-output.js";
-import { criteriaBlock, deriveProvenance, engineIssues, evidenceBlock, tryConvert, type EngineHandle, type EvidenceBlock, type Produced, type ProduceInput, type Producer } from "./producer.js";
+import { criteriaBlock, noteBlock, deriveProvenance, engineIssues, evidenceBlock, tryConvert, type EngineHandle, type EvidenceBlock, type Produced, type ProduceInput, type Producer } from "./producer.js";
 
 const TASK = (min: number, max: number) => `Write a set of ${min} to ${max} revision flashcards from the evidence.
 - front is a term, question or prompt (short); back is the answer or definition in one or two sentences drawn from the evidence; tip is an optional hint or null.
@@ -31,7 +31,7 @@ export const flashcardsProducer: Producer = {
     const evidence = evidenceBlock(input.map, input.plan.conceptIds);
     const { value, attempts, attemptIds } = await runner.run({
       key: `produce:${input.plan.activityId}`,
-      request: { purpose: "produce", model: modelForRole("produce"), system: buildSystemPrompt(input.promptConfig), cachedContext: evidence.text, user: `${TASK(cardsMin, cardsMax)}\n\nFOCUS: ${input.plan.focus}${criteriaBlock(input)}`, maxOutputTokens: 3000, outputSchema: FlashcardsOutSchema },
+      request: { purpose: "produce", model: modelForRole("produce"), system: buildSystemPrompt(input.promptConfig), cachedContext: evidence.text, user: `${TASK(cardsMin, cardsMax)}\n\nFOCUS: ${input.plan.focus}${criteriaBlock(input)}${noteBlock(input)}`, maxOutputTokens: 3000, outputSchema: FlashcardsOutSchema },
       schema: FlashcardsOut,
       verify: async (out) => {
         const issues = [

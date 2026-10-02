@@ -11,6 +11,7 @@ import { localImageResolver, networkImageResolver } from "./image-resolver.js";
 import { review } from "./review.js";
 import { reviewSheet } from "./review-sheet.js";
 import { reviewImport } from "./review-import.js";
+import { regenerate } from "./regenerate.js";
 
 let reported = false;
 function reportFailure(msg: string | null | undefined, err: Error | undefined): void {
@@ -96,6 +97,19 @@ try {
       .option("reviewer", { type: "string", demandOption: true, describe: "the person who scored the sheet" }),
       async (argv) => {
         process.exitCode = await reviewImport({ out: argv.out, scores: argv.scores, ...(argv.findings ? { findings: argv.findings } : {}), reviewer: argv.reviewer }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
+      })
+    .command("regenerate", "Produce a new revision of a reviewed needs-revision or rejected activity, with the reviewer's note; at most two requests per activity, and an interrupted request is finished first", (y) => y
+      .option("out", { type: "string", demandOption: true, describe: "the import directory" })
+      .option("activity", { type: "string", demandOption: true })
+      .option("note", { type: "string", describe: "what the reviewer wants changed; required for a new request, optional when finishing an interrupted one" })
+      .option("libraries", { type: "string", default: resolve(process.cwd(), "libraries") })
+      .option("provider", { choices: ["anthropic", "replay", "record"] as const, default: "anthropic" as const })
+      .option("fixtures", { type: "string", describe: "fixture directory for --provider replay|record" })
+      .option("budget-usd", { type: "number", describe: "estimated spend cap for this request (at most the run's ledger cap); the import's own budget applies otherwise" })
+      .option("ledger", { type: "string", describe: "pilot ledger (JSON) authorising paid runs; required with --provider anthropic or record" })
+      .option("run", { type: "string", describe: "the run's id in the ledger; required with --provider anthropic or record" }),
+      async (argv) => {
+        process.exitCode = await regenerate({ out: argv.out, activity: argv.activity, libraries: argv.libraries, provider: argv.provider, ...(argv.note !== undefined ? { note: argv.note } : {}), ...(argv.fixtures ? { fixtures: argv.fixtures } : {}), ...(argv["budget-usd"] !== undefined ? { budgetUsd: argv["budget-usd"] } : {}), ...(argv.ledger ? { ledger: argv.ledger } : {}), ...(argv.run ? { run: argv.run } : {}) }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
       })
     .demandCommand(1)
     .strict()

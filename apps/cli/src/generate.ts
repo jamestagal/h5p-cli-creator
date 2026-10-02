@@ -38,7 +38,8 @@ export function importIdFor(outDir: string): string {
   return basename(resolve(outDir)).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "import";
 }
 
-function providerFor(args: GenerateArgs): ModelProvider {
+/** The provider --provider names (and --fixtures for replay and record). */
+export function providerFor(args: Pick<GenerateArgs, "provider" | "fixtures">): ModelProvider {
   if (args.provider === "replay") { if (!args.fixtures) throw new Error("--fixtures is required with --provider replay"); return new ReplayProvider(resolve(args.fixtures)); }
 
   const live = createAnthropicProvider();
@@ -52,7 +53,7 @@ function providerFor(args: GenerateArgs): ModelProvider {
  * ledger, and an existing directory's spend so far, read from its attempt records, must be below the run's cap. Returns
  * the per-import estimated budget in µUSD, or an error message. Caps are estimates; so is the spend.
  */
-async function authorisePaidRun(args: GenerateArgs, outDir: string): Promise<{ ok: true; budgetUsdMicro: number } | { ok: false; message: string }> {
+export async function authorisePaidRun(args: Pick<GenerateArgs, "provider" | "ledger" | "run" | "budgetUsd">, outDir: string): Promise<{ ok: true; budgetUsdMicro: number } | { ok: false; message: string }> {
   if (!args.ledger || !args.run) return { ok: false, message: `--provider ${args.provider} can make paid calls, so it needs --ledger <file> and --run <id>: the ledger entry authorising this run` };
   let ledger: Awaited<ReturnType<typeof readLedger>>;
   try { ledger = await readLedger(resolve(args.ledger)); } catch (err) { if (err instanceof LedgerError) return { ok: false, message: err.message }; throw err; }

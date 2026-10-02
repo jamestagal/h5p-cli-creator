@@ -5,7 +5,7 @@ import type { StageRunner } from "../llm/runner.js";
 import { buildSystemPrompt } from "../prompts/system.js";
 import { checkAgainstExisting, checkBlanks, checkReferences } from "../quality/checks.js";
 import { BlanksOut, BlanksOutSchema } from "../schemas/model-output.js";
-import { criteriaBlock, deriveProvenance, engineIssues, evidenceBlock, evidenceQuotesFor, tryConvert, type EngineHandle, type EvidenceBlock, type Produced, type ProduceInput, type Producer } from "./producer.js";
+import { criteriaBlock, noteBlock, deriveProvenance, engineIssues, evidenceBlock, evidenceQuotesFor, tryConvert, type EngineHandle, type EvidenceBlock, type Produced, type ProduceInput, type Producer } from "./producer.js";
 
 const TASK = `Write ONE fill-in-the-blanks revision passage from the evidence.
 - The passage is 2 to 4 sentences of plain text that closely follows the evidence, with 2 to 4 blanks written as {{b1}}, {{b2}}, ... in order of appearance, each exactly once.
@@ -37,7 +37,7 @@ export const blanksProducer: Producer = {
       request: {
         purpose: "produce", model: modelForRole("produce"),
         system: buildSystemPrompt(input.promptConfig), cachedContext: evidence.text,
-        user: `${TASK}\n\nFOCUS: ${input.plan.focus}${criteriaBlock(input)}`,
+        user: `${TASK}\n\nFOCUS: ${input.plan.focus}${criteriaBlock(input)}${noteBlock(input)}`,
         maxOutputTokens: 1500, outputSchema: BlanksOutSchema
       },
       schema: BlanksOut,

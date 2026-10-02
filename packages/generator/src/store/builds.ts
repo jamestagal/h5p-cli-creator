@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { AcceptanceRecord, BuildRecord, ReviewBatch, SheetManifest } from "./types.js";
+import type { AcceptanceRecord, BuildRecord, RegenerationRequest, ReviewBatch, SheetManifest } from "./types.js";
 
 /** `sha256([activityId, revision, engineFingerprint])`, first 16 hex characters: one id per revision per engine. */
 export function buildIdFor(activityId: string, revision: number, engineFingerprint: string): string {
@@ -58,4 +58,11 @@ export function latestAcceptances(records: AcceptanceRecord[]): AcceptanceRecord
     if (!current || later(r, current)) latest.set(key, r);
   }
   return [...latest.values()];
+}
+
+/** The latest event per requestId (append order: a later event supersedes an earlier one), ordered by activity then index. */
+export function latestRegenerations(events: RegenerationRequest[]): RegenerationRequest[] {
+  const latest = new Map<string, RegenerationRequest>();
+  for (const e of events) latest.set(e.requestId, e);
+  return [...latest.values()].sort((a, b) => (a.activityId < b.activityId ? -1 : a.activityId > b.activityId ? 1 : a.index - b.index));
 }

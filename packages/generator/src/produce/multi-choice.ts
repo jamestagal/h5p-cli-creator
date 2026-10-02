@@ -4,7 +4,7 @@ import type { StageRunner } from "../llm/runner.js";
 import { buildSystemPrompt } from "../prompts/system.js";
 import { checkAgainstExisting, checkMultiChoice, checkReferences } from "../quality/checks.js";
 import { MultiChoiceOut, MultiChoiceOutSchema } from "../schemas/model-output.js";
-import { criteriaBlock, deriveProvenance, engineIssues, evidenceBlock, paragraph, tryConvert, type EngineHandle, type EvidenceBlock, type Produced, type ProduceInput, type Producer } from "./producer.js";
+import { criteriaBlock, noteBlock, deriveProvenance, engineIssues, evidenceBlock, paragraph, tryConvert, type EngineHandle, type EvidenceBlock, type Produced, type ProduceInput, type Producer } from "./producer.js";
 
 const TASK = `Write ONE multiple-choice revision question from the evidence.
 - The question tests understanding of the focus, not recall of exact wording.
@@ -32,7 +32,7 @@ export const multiChoiceProducer: Producer = {
       request: {
         purpose: "produce", model: modelForRole("produce"),
         system: buildSystemPrompt(input.promptConfig), cachedContext: evidence.text,
-        user: `${TASK}\n\nFOCUS: ${input.plan.focus}${criteriaBlock(input)}`,
+        user: `${TASK}\n\nFOCUS: ${input.plan.focus}${criteriaBlock(input)}${noteBlock(input)}`,
         maxOutputTokens: 1500, outputSchema: MultiChoiceOutSchema
       },
       schema: MultiChoiceOut,

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFile, link, mkdir, readFile, rename, truncate, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { assertCurrentLayout, assertSameOriginal, assertWritableStoreVersion, BuildIntegrityError, canonicalRecordJson, latestAcceptances, replayCommittedBatches, sameSheet, sortBatches, sha256Hex, SheetIntegrityError, sortBuilds, sortSheets, storeVersionOf, type AcceptanceRecord, type ReviewBatch, type ScoreRecord, type SheetManifest, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
+import { assertCurrentLayout, assertSameOriginal, assertWritableStoreVersion, BuildIntegrityError, canonicalRecordJson, latestAcceptances, latestRegenerations, replayCommittedBatches, sameSheet, sortBatches, sha256Hex, SheetIntegrityError, sortBuilds, sortSheets, storeVersionOf, type AcceptanceRecord, type RegenerationRequest, type ReviewBatch, type ScoreRecord, type SheetManifest, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
 import { listIfPresent } from "./list-if-present.js";
 import { acquireDirectoryLock, type HeldLock, type LockOptions } from "./lock.js";
 
@@ -264,6 +264,8 @@ export class FileStore implements ImportStore {
     await this.putImmutable(this.p("reviews", "batches", name), Buffer.from(JSON.stringify(batch, null, 2) + "\n"), `review batch ${batch.batchId}`, () => false, sha256Hex);
     return true;
   }
+  putRegeneration(record: RegenerationRequest) { return this.append("regenerations.jsonl", record); }
+  async listRegenerations(importId: string) { return latestRegenerations((await readJsonl<RegenerationRequest>(this.p("regenerations.jsonl"))).records.filter((r) => r.importId === importId)); }
   async listBatches(importId: string) {
     const dir = this.p("reviews", "batches");
     const names = (await listIfPresent(dir)).filter((n) => n.endsWith(".json"));

@@ -96,10 +96,20 @@ export interface ScoreRecord {
  */
 export interface ReviewBatch { batchId: string; sequence: number; importId: string; sheetId: string; reviewer: string; importedAt: string; rows: ScoreRecord[] }
 
+/**
+ * One logical regeneration of one activity (design §6, C2): persisted as `running` before any dispatch, then finished
+ * as `succeeded` or `failed`. Events are appended; the latest per `requestId` wins. Every request counts towards the
+ * activity's allowance, whatever its outcome.
+ */
+export interface RegenerationRequest {
+  requestId: string; importId: string; activityId: string; index: number; baseRevision: number; targetRevision: number; note: string;
+  status: "running" | "succeeded" | "failed"; outcome: string | null; createdAt: string; completedAt: string | null;
+}
+
 export class SheetIntegrityError extends Error {
   constructor(sheetId: string) { super(`review sheet ${sheetId} already exists with different entries; a sheet manifest is never changed`); this.name = "SheetIntegrityError"; }
 }
-export type ArtifactName = "source" | "unit" | "conceptMap" | "plan" | `chunk-${number}`;
+export type ArtifactName = "source" | "unit" | "conceptMap" | "plan" | "settings" | `chunk-${number}`;
 
 /**
  * The store version of an import record as parsed from disk, where the TypeScript type is not enforced. An absent
@@ -219,6 +229,10 @@ export interface ImportStore {
    * nothing, when a batch with the same batchId is already committed. The caller holds the import's lock.
    */
   commitBatch(batch: ReviewBatch): Promise<boolean>;
+  /** Appends a regeneration request event. */
+  putRegeneration(record: RegenerationRequest): Promise<void>;
+  /** The latest event per requestId, by append order, ordered by activity then index. */
+  listRegenerations(importId: string): Promise<RegenerationRequest[]>;
   /** Every committed batch of an import, by `sequence` (never by file name or directory order). */
   listBatches(importId: string): Promise<ReviewBatch[]>;
 }

@@ -14,6 +14,8 @@ export interface ProduceInput {
   language: string;
   existing: { questions: string[]; passages: string[]; fronts: string[] };
   rules: PlanRules;
+  /** A reviewer's note on the previous revision, for a regeneration (design §6); absent on first-pass generation. */
+  note?: string;
 }
 export interface EngineHandle { registry: LibraryRegistry; }
 export interface Produced { spec: ActivitySpec; attempts: number; attemptIds: string[]; }
@@ -62,6 +64,11 @@ export function deriveProvenance(input: ProduceInput, block: EvidenceBlock, evid
     ? input.plan.criteriaIds.filter((id) => alignment.criteria.find((c) => c.criterionId === id)?.conceptIds.some((c) => conceptIds.includes(c)) ?? false)
     : [...input.plan.criteriaIds];
   return { conceptIds, evidenceIds: cited, criteriaIds };
+}
+
+/** The reviewer's note, appended to a regeneration's request (parent §5); empty on first-pass generation, whose requests are unchanged. */
+export function noteBlock(input: ProduceInput): string {
+  return input.note ? `\nREVIEWER NOTE ON THE PREVIOUS VERSION (write a new version that addresses it):\n${input.note}` : "";
 }
 
 export function criteriaBlock(input: ProduceInput): string {

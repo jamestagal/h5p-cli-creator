@@ -37,6 +37,9 @@ export interface RunImportDeps {
 /** The adapter's request timeout is the bound on one call, so it is also the tail a killed run is charged; taken from the adapter so the two cannot drift. */
 export const DEFAULT_MAX_ATTEMPT_MS = ANTHROPIC_TIMEOUT_MS;
 
+/** The production settings an import was generated with, stored as the `settings` artifact for regeneration. */
+export interface ImportSettings { promptConfig: PromptConfig; rules: PlanRules; language: string }
+
 export const SKIPPED_PREFIX = "skipped: ";
 const RETRIABLE_PREFIXES = [SKIPPED_PREFIX, "budget: ", "system: "];
 
@@ -47,7 +50,8 @@ export function isPending(activity: ActivityRecord): boolean {
   return true;
 }
 
-function existingTexts(revisions: RevisionRecord[]): { questions: string[]; passages: string[]; fronts: string[] } {
+/** The texts of promoted revisions of a type, which a new activity must not repeat. */
+export function existingTexts(revisions: RevisionRecord[]): { questions: string[]; passages: string[]; fronts: string[] } {
   const out = { questions: [] as string[], passages: [] as string[], fronts: [] as string[] };
   for (const r of revisions) {
     const s = r.spec;
@@ -115,6 +119,9 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
     ? { ...existing, budget: limits, updatedAt: now() }
     : { storeVersion: STORE_VERSION, importId: input.importId, orgId: input.orgId ?? "local", name: input.name, sourceType: input.source.kind, status: "queued", customisation: input.customisation, language: input.language, unitTextHash: null, selectedTypes: [...input.selectedTypes], fingerprint, budget: limits, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: input.importId, createdAt: now(), updatedAt: now() };
   await store.putImport(record);
+  // What production needs besides the source and plan, so `leap regenerate` produces exactly as this run did. The
+  // fingerprint pins these values, so writing them on any run of the import, including one that finished earlier, is safe.
+  if (!(await store.getArtifact<ImportSettings>(input.importId, "settings"))) await store.putArtifact(input.importId, "settings", { promptConfig: input.promptConfig, rules, language: input.language } satisfies ImportSettings);
   if (record.status === "ready") return record;
 
   if (record.status === "ready_with_failures" && !(await store.listActivities(input.importId)).some(isPending)) return record;
