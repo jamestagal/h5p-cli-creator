@@ -80,6 +80,25 @@ describe("leap review-import", () => {
     expect(await snapshot()).toEqual(before);
   });
 
+  it("a 400-digit minutes value and malformed CSV quoting each exit 1 and leave the batch files and ledger bytes unchanged", async () => {
+    const { dir, sheetId, scores, findings } = await exported();
+    await writeFile(scores, [header, row(sheetId, "act-1", "0123456789abcdef", "2,2,2,2,2,4,")].join("\n") + "\n");
+    await reviewImport({ out: dir, scores, reviewer: "Benjamin" }, io().io);
+    const snapshot = async () => [await readFile(join(dir, "scores.jsonl")), await readFile(join(dir, "acceptances.jsonl")), (await readdir(join(dir, "reviews", "batches"))).join()];
+    const before = await snapshot();
+    const attempts: Array<[string, string, RegExp]> = [
+      [[header, row(sheetId, "act-1", "0123456789abcdef", "2,2,2,2,2,4,"), row(sheetId, "act-2", "fedcba9876543210", `2,2,2,2,2,${"9".repeat(400)},`)].join("\n") + "\n", "sheetId,activityId,dimension,itemId,score,reason\n", /row 2 \(act-2\): minutes must be a finite, non-negative number/],
+      [[header, row(sheetId, "act-2", "fedcba9876543210", "2,1,2,2,2,5,")].join("\n") + "\n", `sheetId,activityId,dimension,itemId,score,reason\n${sheetId},act-2,support,act-2,1,"cited passage is partial\n`, /findings\.csv: malformed CSV at line 2: a quoted field is never closed/]
+    ];
+    for (const [scoresCsv, findingsCsv, message] of attempts) {
+      await writeFile(scores, scoresCsv); await writeFile(findings, findingsCsv);
+      const run = io();
+      expect(await reviewImport({ out: dir, scores, reviewer: "Benjamin" }, run.io)).toBe(1);
+      expect(run.err.join("")).toMatch(message);
+      expect(await snapshot()).toEqual(before);
+    }
+  });
+
   it("orders batches by their recorded sequence, not their file names; a committed batch with missing ledger records is completed on the next lock", async () => {
     const { dir, importId, sheetId, scores } = await exported();
     await writeFile(scores, [header, row(sheetId, "act-1", "0123456789abcdef", "2,2,2,2,2,4,")].join("\n") + "\n");

@@ -5,24 +5,43 @@ import { appendMissingRecords } from "./batches.js";
 import { activityScoreProblems, deriveDecision } from "./rubric.js";
 import { FINDINGS_HEADER, SCORES_HEADER } from "./sheet.js";
 
-/** RFC 4180 CSV: quoted fields may hold commas, quotes ("") and newlines. A trailing newline and a BOM are ignored. */
+/** A CSV file that is not well formed: the import refuses it rather than guess where a field ends. */
+export class CsvSyntaxError extends Error {
+  constructor(readonly line: number, message: string) { super(`line ${line}: ${message}`); this.name = "CsvSyntaxError"; }
+}
+
+/**
+ * Strict RFC 4180 CSV: a quoted field may hold commas, doubled quotes ("") and newlines, and must be closed; a quote
+ * may not appear inside an unquoted field, and nothing but a comma or the end of the line may follow a closing quote.
+ * Anything else throws CsvSyntaxError naming the line. A trailing newline and a BOM are ignored.
+ */
 export function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
-  let row: string[] = []; let field = ""; let quoted = false; let i = 0;
+  let row: string[] = []; let field = ""; let quoted = false; let closed = false; let i = 0;
+  let line = 1; let quoteLine = 1;
   const src = text.replace(/^\uFEFF/, "");
   while (i < src.length) {
     const ch = src[i]!;
     if (quoted) {
-      if (ch === "\"") { if (src[i + 1] === "\"") { field += "\""; i += 2; continue; } quoted = false; i += 1; continue; }
+      if (ch === "\"") {
+        if (src[i + 1] === "\"") { field += "\""; i += 2; continue; }
+        quoted = false; closed = true; i += 1; continue;
+      }
+      if (ch === "\n") line += 1;
       field += ch; i += 1; continue;
     }
-    if (ch === "\"" && field === "") { quoted = true; i += 1; continue; }
-    if (ch === ",") { row.push(field); field = ""; i += 1; continue; }
+    if (ch === ",") { row.push(field); field = ""; closed = false; i += 1; continue; }
     if (ch === "\r" && src[i + 1] === "\n") { i += 1; continue; }
-    if (ch === "\n") { row.push(field); rows.push(row); row = []; field = ""; i += 1; continue; }
+    if (ch === "\n") { row.push(field); rows.push(row); row = []; field = ""; closed = false; line += 1; i += 1; continue; }
+    if (closed) throw new CsvSyntaxError(line, `text after a closing quote (${JSON.stringify(ch)}); a quoted field must end at a comma or the end of the line`);
+    if (ch === "\"") {
+      if (field !== "") throw new CsvSyntaxError(line, "a quote inside an unquoted field; quote the whole field and double any quote in it");
+      quoted = true; quoteLine = line; i += 1; continue;
+    }
     field += ch; i += 1;
   }
-  if (field !== "" || row.length > 0) { row.push(field); rows.push(row); }
+  if (quoted) throw new CsvSyntaxError(quoteLine, "a quoted field is never closed");
+  if (field !== "" || row.length > 0 || closed) { row.push(field); rows.push(row); }
   return rows.filter((r) => !(r.length === 1 && r[0] === ""));
 }
 
@@ -42,7 +61,8 @@ export interface Validation {
   notScored: number;
 }
 
-const numberCell = (v: string): number | null => (/^\d+(\.\d+)?$/.test(v) ? Number(v) : null);
+/** A non-negative decimal that is finite as a number: a 400-digit "minutes" is refused, not stored as Infinity (null in JSON). */
+const numberCell = (v: string): number | null => { if (!/^\d+(\.\d+)?$/.test(v)) return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
 const findingOrder = (a: Finding, b: Finding): number => canonicalRecordJson(a) < canonicalRecordJson(b) ? -1 : canonicalRecordJson(a) > canonicalRecordJson(b) ? 1 : 0;
 
 /** `sha256(canonical({ sheetId, activityId, revision, buildId, scores, findings sorted, minutes, reviewer }))` (plan Task 12 step 8). */
@@ -57,7 +77,11 @@ export function rowKeyFor(r: { sheetId: string; activityId: string; revision: nu
  */
 export async function validateImport(store: ImportStore, importId: string, files: ImportFiles, clock: () => Date = () => new Date()): Promise<Validation> {
   const problems: string[] = []; const stale: string[] = [];
-  const scoreRows = parseCsv(files.scoresCsv); const findingRows = parseCsv(files.findingsCsv);
+  const parse = (text: string, file: string): string[][] | null => {
+    try { return parseCsv(text); } catch (err) { if (err instanceof CsvSyntaxError) { problems.push(`${file}: malformed CSV at ${err.message}`); return null; } throw err; }
+  };
+  const scoreRows = parse(files.scoresCsv, "scores.csv"); const findingRows = parse(files.findingsCsv, "findings.csv");
+  if (!scoreRows || !findingRows) return { problems, stale, fresh: [], committed: 0, notScored: 0 };
   const header = (rows: string[][], expected: readonly string[], file: string): boolean => {
     const got = (rows[0] ?? []).map((c) => c.trim());
     if (got.join(",") === expected.join(",")) return true;
@@ -67,6 +91,10 @@ export async function validateImport(store: ImportStore, importId: string, files
   const scoresOk = header(scoreRows, SCORES_HEADER, "scores.csv");
   const findingsOk = header(findingRows, FINDINGS_HEADER, "findings.csv");
   if (!scoresOk || !findingsOk) return { problems, stale, fresh: [], committed: 0, notScored: 0 };
+
+  // One sheet per file, judged on every row: committed, unscored and new rows alike.
+  const fileSheets = [...new Set(scoreRows.slice(1).map((cells) => (cells[SCORES_HEADER.indexOf("sheetId")] ?? "").trim()).filter((id) => id !== ""))];
+  if (fileSheets.length > 1) problems.push(`scores.csv mixes rows from ${fileSheets.length} sheets (${fileSheets.join(", ")}); import one sheet at a time`);
 
   const sheets = new Map<string, SheetManifest | null>();
   const sheetOf = async (sheetId: string): Promise<SheetManifest | null> => {
@@ -111,7 +139,7 @@ export async function validateImport(store: ImportStore, importId: string, files
       else { if (v !== "") fail(`${d} must be 0, 1 or 2, got ${v}`); scores[d] = "na"; }
     }
     const minutes = numberCell(cell("minutes"));
-    if (minutes === null) fail(`minutes must be a non-negative number on a scored row, got "${cell("minutes")}"`);
+    if (minutes === null) fail(`minutes must be a finite, non-negative number on a scored row, got "${cell("minutes").length > 20 ? `${cell("minutes").slice(0, 20)}…` : cell("minutes")}"`);
     rows.set(activityId, { n, activityId, sheetId, manifest, entry, scores, minutes: minutes ?? 0, decision: cell("decision"), ok: ok.value, findings: [] });
   }
 
@@ -169,8 +197,6 @@ export async function validateImport(store: ImportStore, importId: string, files
       rubricVersion: row.manifest.rubricVersion, reviewer: files.reviewer, scores: row.scores, findings, minutes: row.minutes, decision: derived, decidedAt: clock().toISOString()
     } });
   }
-  const sheetIds = [...new Set(fresh.map((c) => c.row.sheetId))];
-  if (sheetIds.length > 1) problems.push(`scores.csv mixes rows from ${sheetIds.length} sheets (${sheetIds.join(", ")}); import one sheet at a time`);
   return { problems, stale, fresh, committed, notScored };
 }
 

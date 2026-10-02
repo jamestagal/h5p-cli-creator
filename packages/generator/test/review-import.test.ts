@@ -9,7 +9,7 @@ import { DEFAULT_PROMPT_CONFIG } from "../src/prompts/system.js";
 import type { PlanRules } from "../src/plan/planner.js";
 import type { ImportStore } from "../src/store/types.js";
 import { exportReviewSheet, type ReviewSheet } from "../src/review/sheet.js";
-import { importScores, parseCsv, validateImport, type ImportResult } from "../src/review/import.js";
+import { CsvSyntaxError, importScores, parseCsv, validateImport, type ImportResult } from "../src/review/import.js";
 import { activityScoreProblems, deriveDecision } from "../src/review/rubric.js";
 import { appendMissingRecords } from "../src/review/batches.js";
 import { countedScore } from "../src/review/scores.js";
@@ -193,6 +193,7 @@ describe("score import: every problem at once (design §7.2)", () => {
     const finds = findings(sheet, [["act-4", "support", "c9", "1", "no such card"], ["act-4", "distractors", "c1", "1", "flashcards have no distractors"]]);
     const v = await validateImport(store, "imp-errors", { scoresCsv: csv, findingsCsv: finds, reviewer: "B" });
     expect(v.problems).toEqual([
+      `scores.csv mixes rows from 2 sheets (${id}, ${"f".repeat(64)}); import one sheet at a time`, // the unknown sheet's row counts too
       "row 2 (act-2): partly scored: distractors, mapping, usefulness are blank; score every applicable dimension or none",
       "row 3 (act-3): correctness applies to blanks; na is not allowed, score it 0, 1 or 2",
       "row 5 (act-1): act-1 appears more than once in scores.csv",
@@ -215,6 +216,67 @@ describe("score import: every problem at once (design §7.2)", () => {
       const ok = await validateImport(store, "imp-decision", { scoresCsv: filled(sheet, { "act-1": { ...ALL2, decision } }), findingsCsv: noFindings(sheet), reviewer: "B" });
       expect(ok.problems, decision).toEqual([]);
     }
+  });
+});
+
+describe("refusals that must leave batches and ledgers unchanged (Task 12 review)", () => {
+  /** The store's batches and both ledgers, for before/after comparison. */
+  const snapshot = async (store: MemoryStore, id: string) => JSON.stringify([await store.listBatches(id), await store.listScores(id), await store.listAcceptanceRecords(id)]);
+
+  it("parseCsv accepts quoted commas, doubled quotes and newlines, and refuses an unclosed quote, a quote inside an unquoted field, and text after a closing quote, naming the line", () => {
+    expect(parseCsv('a,b\n"x, y","say ""hi""","two\nlines"\n')).toEqual([["a", "b"], ["x, y", 'say "hi"', "two\nlines"]]);
+    expect(parseCsv('a,""\n')).toEqual([["a", ""]]);
+    const refused = (text: string) => { try { parseCsv(text); return null; } catch (err) { return err; } };
+    expect(refused('a,b\nx,"never closed\n')).toMatchObject({ name: "CsvSyntaxError", line: 2, message: "line 2: a quoted field is never closed" });
+    expect(refused('a,b\nx,ab"c\n')).toMatchObject({ line: 2, message: "line 2: a quote inside an unquoted field; quote the whole field and double any quote in it" });
+    expect(refused('a,b\n"x"y,z\n')).toMatchObject({ line: 2, message: 'line 2: text after a closing quote ("y"); a quoted field must end at a comma or the end of the line' });
+    expect(refused('a\n"multi\nline" x\n')).toBeInstanceOf(CsvSyntaxError); // reported on the line where the text follows
+  });
+
+  it("a 400-digit minutes value is refused as not finite (it would be stored as null), as are negative and non-numeric minutes; nothing is written", async () => {
+    const store = await fourActivities("imp-minutes");
+    const sheet = (await exportReviewSheet(store, "imp-minutes"))!;
+    await importLocked(store, "imp-minutes", filled(sheet, { "act-1": ALL2 }), noFindings(sheet));
+    const before = await snapshot(store, "imp-minutes");
+    for (const minutes of ["9".repeat(400), "-1", "1e3", "abc", ""]) {
+      const result = await importLocked(store, "imp-minutes", filled(sheet, { "act-1": ALL2, "act-2": { ...ALL2, minutes } }), noFindings(sheet));
+      expect(result, minutes).toMatchObject({ status: "refused", problems: [expect.stringMatching(/^row 2 \(act-2\): minutes must be a finite, non-negative number on a scored row/)] });
+      expect(await snapshot(store, "imp-minutes"), minutes).toBe(before);
+    }
+    const long = await validateImport(store, "imp-minutes", { scoresCsv: filled(sheet, { "act-2": { ...ALL2, minutes: "9".repeat(400) } }), findingsCsv: noFindings(sheet), reviewer: "B" });
+    expect(long.problems[0]).toBe(`row 2 (act-2): minutes must be a finite, non-negative number on a scored row, got "${"9".repeat(20)}…"`);
+  });
+
+  it("malformed quoting in scores.csv or findings.csv refuses the whole import and writes nothing", async () => {
+    const store = await fourActivities("imp-csv");
+    const sheet = (await exportReviewSheet(store, "imp-csv"))!;
+    await importLocked(store, "imp-csv", filled(sheet, { "act-1": ALL2 }), noFindings(sheet));
+    const before = await snapshot(store, "imp-csv");
+    const good = filled(sheet, { "act-1": ALL2, "act-2": ALL2 });
+    const unclosedScores = good.replace(/\n$/, "") + `\n${sheet.manifest.sheetId},act-3,1,x,"2,2,na,2,2,3,\n`; // the quote swallows the rest of the file
+    const badFindings = `sheetId,activityId,dimension,itemId,score,reason\n${sheet.manifest.sheetId},act-2,support,act-2,1,"partial\n`;
+    for (const [scoresCsv, findingsCsv, file] of [[unclosedScores, noFindings(sheet), "scores.csv"], [good, badFindings, "findings.csv"]] as const) {
+      const result = await importLocked(store, "imp-csv", scoresCsv, findingsCsv);
+      expect(result, file).toMatchObject({ status: "refused", problems: [expect.stringMatching(new RegExp(`^${file.replace(".", "\\.")}: malformed CSV at line \\d+: a quoted field is never closed$`))] });
+      expect(await snapshot(store, "imp-csv"), file).toBe(before);
+    }
+  });
+
+  it("the one-sheet check covers committed and unscored rows too: a committed row from sheet A beside a new row from sheet B is refused", async () => {
+    const store = await fourActivities("imp-sheets");
+    const a = (await exportReviewSheet(store, "imp-sheets"))!;
+    await importLocked(store, "imp-sheets", filled(a, { "act-1": ALL2 }), noFindings(a));
+    const b = (await exportReviewSheet(store, "imp-sheets"))!; // act-1 is reviewed now, so sheet B lists act-2..act-4
+    expect(b.manifest.sheetId).not.toBe(a.manifest.sheetId);
+    const rowsA = parseCsv(filled(a, { "act-1": ALL2 })); const rowsB = parseCsv(filled(b, { "act-2": ALL2 }));
+    const mixed = [rowsA[0]!, rowsA.find((r) => r[1] === "act-1")!, rowsB.find((r) => r[1] === "act-2")!].map((r) => r.join(",")).join("\n") + "\n";
+    const before = await snapshot(store, "imp-sheets");
+    const result = await importLocked(store, "imp-sheets", mixed, noFindings(a));
+    expect(result).toMatchObject({ status: "refused", problems: [`scores.csv mixes rows from 2 sheets (${a.manifest.sheetId}, ${b.manifest.sheetId}); import one sheet at a time`] });
+    expect(await snapshot(store, "imp-sheets")).toBe(before);
+    // an unscored row from another sheet counts as well
+    const unscored = [rowsB[0]!, rowsB.find((r) => r[1] === "act-2")!, parseCsv(a.scoresCsv).find((r) => r[1] === "act-3")!].map((r) => r.join(",")).join("\n") + "\n";
+    expect(await importLocked(store, "imp-sheets", unscored, noFindings(b))).toMatchObject({ status: "refused", problems: [expect.stringMatching(/^scores\.csv mixes rows from 2 sheets/)] });
   });
 });
 
