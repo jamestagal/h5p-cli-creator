@@ -164,17 +164,24 @@ node apps/cli/dist/index.js review-sheet --out ./out/synele001
 
 `review-sheet` lists every promoted activity whose current build has no scored review, scored against
 rubric `r1` (correctness, source support, distractors, mapping, usefulness; 0, 1 or 2 each). It writes
-the sheet's manifest once to `reviews/sheets/<sheetId>.json`, then three files in the output directory:
+the sheet's manifest once to `reviews/sheets/<sheetId>.json`, then the sheet's bundle beside it, in
+`reviews/sheets/<sheetId>/`:
 
-- `review-sheet.md`: per activity, the content and keyed answers, the item IDs and count, **(a)** the cited
-  passages in full with their sentence IDs and sections, **(b)** the PC and KE targets with their text,
-  **(c)** any cited passage the extractor classed as an RTO instruction, flagged, and the `.h5p` to play;
+- `review-sheet.md`: the unit with its published assessment conditions, verbatim, then per activity the content
+  and keyed answers, the item IDs and count, **(a)** the cited passages in full with their sentence IDs and
+  sections, **(b)** the PC and KE targets with their text, **(c)** any cited passage the extractor classed as an
+  RTO instruction, flagged with the item or activity that cited it, and the `.h5p` to play. Each card and blank
+  is shown with its own keyed answer, passages and targets;
 - `scores.csv`: one row per activity, with `na` filled in where a dimension does not apply (distractors on
   anything but multiChoice, mapping without a unit) and every other score left blank;
 - `findings.csv`: a header for the reviewer's failing items, one row per item and dimension.
 
-Exporting again with nothing changed gives the same `sheetId` and leaves the manifest untouched. Like
-every phase-3 write command, it refuses a phase-2 output directory.
+Exporting again with nothing changed gives the same `sheetId`, leaves the manifest untouched and keeps the
+bundle's files as you left them (only a missing file is recreated), so scores in progress are never lost. A
+changed sheet, for example after a regeneration, gets a new `sheetId` and a new bundle; the earlier one stays
+as it was. A new bundle appears whole or not at all, and nothing is ever written through a symbolic link.
+Like every phase-3 write command, it refuses a phase-2 output directory, and it refuses an import whose
+promoted activities have a missing revision or build record rather than skipping them.
 
 ### Exit codes
 

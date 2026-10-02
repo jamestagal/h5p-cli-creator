@@ -8,7 +8,7 @@ import { FakeProvider, fakeResponse } from "../src/llm/fake-provider.js";
 import { DEFAULT_PROMPT_CONFIG } from "../src/prompts/system.js";
 import type { PlanRules } from "../src/plan/planner.js";
 import type { ScoreRecord } from "../src/store/types.js";
-import { exportReviewSheet, sheetIdFor } from "../src/review/sheet.js";
+import { exportReviewSheet, sheetIdFor, SheetStateError } from "../src/review/sheet.js";
 import { conceptResponses, fullScript, markdownEvidence, planOutFor, produceResponses, syntheticDoc, syntheticUnitText, SYNTHETIC_CHUNK_TOKENS } from "./helpers/synthetic.js";
 import { IDENTITY_A } from "./helpers/identity.js";
 
@@ -96,6 +96,27 @@ describe("the sheet manifest (R1)", () => {
   });
 });
 
+describe("a promoted activity with missing or inconsistent state is refused, never skipped", () => {
+  const cases: Array<[string, (store: MemoryStore) => Promise<void>, RegExp]> = [
+    ["a missing build record", async (store) => { const rev = (await store.getRevision("act-2", 1))!; await store.putRevision({ ...rev, currentBuildId: "0000000000000000" }); }, /activity act-2 revision 1 points at build 0000000000000000, whose build record is missing/],
+    ["no current build", async (store) => { const rev = (await store.getRevision("act-2", 1))!; await store.putRevision({ ...rev, currentBuildId: null }); }, /activity act-2 revision 1 is promoted but has no current build/],
+    ["a missing revision", async (store) => { const a = (await store.listActivities("imp-broken")).find((x) => x.activityId === "act-2")!; await store.putActivity({ ...a, currentRevision: 7 }); }, /activity act-2 is promoted at revision 7, which is missing from the store/],
+    ["no current revision", async (store) => { const a = (await store.listActivities("imp-broken")).find((x) => x.activityId === "act-2")!; await store.putActivity({ ...a, currentRevision: null }); }, /activity act-2 is promoted but has no current revision/],
+    ["a revision that is not promoted", async (store) => { const rev = (await store.getRevision("act-2", 1))!; await store.putRevision({ ...rev, state: "candidate" }); }, /activity act-2 is promoted at revision 1, whose state is candidate/],
+    ["another activity's build", async (store) => { const other = (await store.getRevision("act-1", 1))!; const rev = (await store.getRevision("act-2", 1))!; await store.putRevision({ ...rev, currentBuildId: other.currentBuildId }); }, /activity act-2 revision 1 points at build \w+, which belongs to act-1 revision 1/]
+  ];
+  for (const [name, damage, message] of cases) {
+    it(`throws SheetStateError for ${name} and writes no manifest`, async () => {
+      const store = await completeImport("imp-broken");
+      await damage(store);
+      const refused = await exportReviewSheet(store, "imp-broken").catch((e: unknown) => e);
+      expect(refused).toBeInstanceOf(SheetStateError);
+      expect((refused as Error).message).toMatch(message);
+      expect(await store.listSheets("imp-broken")).toEqual([]);
+    });
+  }
+});
+
 describe("scores.csv and findings.csv", () => {
   const header = ["sheetId", "activityId", "revision", "buildId", "correctness", "support", "distractors", "mapping", "usefulness", "minutes", "decision"];
 
@@ -148,9 +169,46 @@ describe("review-sheet.md (design §4.4, §7.1)", () => {
     expect(act1).toContain(`Package: ${build.buildKey}`);
     const act2 = md.slice(md.indexOf("## act-2"), md.indexOf("## act-3"));
     expect(act2).toContain("Items (2): b1, b2");
-    expect(act2).toMatch(/b1: dead/);
+    expect(act2).toMatch(/#### Item b1\n\nKeyed answer: dead/);
     const act3 = md.slice(md.indexOf("## act-3"));
     expect(act3).toContain("Items (4): c1, c2, c3, c4");
+  });
+
+  it("shows each card and blank with its own passages and targets: items citing different evidence show different passages", async () => {
+    const store = await completeImport("imp-items");
+    const doc = await syntheticDoc(); const evidence = markdownEvidence(doc);
+    const text = (id: string) => `[${id}] ${doc.sentences.find((s) => s.sentenceId === id)!.text}`;
+    const md = (await exportReviewSheet(store, "imp-items"))!.markdown;
+    const item = (activity: string, id: string) => { const a = md.slice(md.indexOf(`## ${activity}`)); const from = a.indexOf(`#### Item ${id}`); return a.slice(from, a.indexOf("####", from + 5) === -1 ? a.indexOf("### (a)", from) : Math.min(a.indexOf("####", from + 5), a.indexOf("### (a)", from))); };
+    const b1 = item("act-2", "b1"); const b2 = item("act-2", "b2");
+    for (const id of evidence.tfdA) { expect(b1).toContain(text(id)); expect(b2).not.toContain(text(id)); }
+    for (const id of evidence.tfdB) { expect(b2).toContain(text(id)); expect(b1).not.toContain(text(id)); }
+    const c1 = item("act-3", "c1"); const c2 = item("act-3", "c2");
+    expect(c1).toContain("Front: Who may remove a lock");
+    expect(c1).toContain("Keyed back: Only the worker who applied it");
+    for (const id of evidence.lotoRemove) { expect(c1).toContain(text(id)); expect(c2).not.toContain(text(id)); }
+    for (const id of evidence.lotoTag) { expect(c2).toContain(text(id)); expect(c1).not.toContain(text(id)); }
+    expect(b1).toMatch(/\(b\) Targets:\n- PC2\.2 \(pc/); // each item's own targets
+  });
+
+  it("shows the published assessment conditions verbatim with the unit identity, even when the packet says otherwise", async () => {
+    const store = await completeImport("imp-conditions");
+    const unit = (await store.getArtifact<UnitOfCompetency>("imp-conditions", "unit"))!;
+    expect(unit.assessmentConditions).toContain("simulated environment");
+    const md = (await exportReviewSheet(store, "imp-conditions"))!.markdown;
+    const line = `Assessment conditions (published unit, verbatim): ${unit.assessmentConditions}`;
+    const header = md.slice(0, md.indexOf("## act-1"));
+    expect(header).toContain(`Unit ${unit.code} ${unit.title}, Release 1, text ${unit.textHash.slice(0, 12)}\n${line}`);
+    for (const id of ["act-1", "act-2", "act-3"]) {
+      const section = md.slice(md.indexOf(`## ${id}`)).split("\n## ")[0]!;
+      expect(section, id).toContain(line);
+    }
+    const doc = await syntheticDoc();
+    const packetSays = markdownEvidence(doc).rto.map((sid) => doc.sentences.find((s) => s.sentenceId === sid)!.text).join(" ");
+    expect(md).not.toContain(packetSays); // the packet's own arrangement is never shown as the unit's conditions
+    const without = await completeImport("imp-noconditions");
+    await without.putArtifact("imp-noconditions", "unit", { ...unit, assessmentConditions: null });
+    expect((await exportReviewSheet(without, "imp-noconditions"))!.markdown).toContain("Assessment conditions: none in the published unit text");
   });
 
   it("negative fixture: never cites the no-simulated-option statement for an activity; a cited sentence the extractor classed as an RTO instruction appears flagged in (c)", async () => {
@@ -169,6 +227,15 @@ describe("review-sheet.md (design §4.4, §7.1)", () => {
     const flagged = (await exportReviewSheet(store, "imp-rto"))!.markdown;
     const act1 = flagged.slice(flagged.indexOf("## act-1"), flagged.indexOf("## act-2"));
     expect(act1).toContain("(c) Flagged RTO-instruction passages (check that the activity does not present them as facts about the unit):");
-    expect(act1).toContain(`- [${citedEvidence.sentenceId}] ${citedEvidence.quote}`);
+    expect(act1).toContain(`- [${citedEvidence.sentenceId}] ${citedEvidence.quote} (cited by the activity)`);
+
+    // A sentence one card cites: (c) names that card, and no other activity is flagged.
+    const cardEvidenceId = (await store.getRevision("act-3", 1))!.spec.type === "flashcards" ? ((await store.getRevision("act-3", 1))!.spec as { cards: Array<{ id: string; provenance?: { evidenceIds: string[] } }> }).cards.find((c) => c.id === "c2")!.provenance!.evidenceIds[0]! : "";
+    const cardEvidence = map.concepts.flatMap((c) => c.evidence).find((e) => e.evidenceId === cardEvidenceId)!;
+    await store.putArtifact("imp-rto", "conceptMap", { ...map, concepts: map.concepts.map((c) => (c.kind === "rto-instruction" ? { ...c, evidence: [...c.evidence, cardEvidence] } : c)) });
+    const byCard = (await exportReviewSheet(store, "imp-rto"))!.markdown;
+    const act3 = byCard.slice(byCard.indexOf("## act-3"));
+    expect(act3).toContain(`- [${cardEvidence.sentenceId}] ${cardEvidence.quote} (cited by the activity, c2)`); // the activity's own provenance also cites it
+    expect(byCard.slice(byCard.indexOf("## act-1"), byCard.indexOf("## act-3")).match(/\(c\) Flagged RTO-instruction passages: none cited/g)).toHaveLength(2);
   });
 });
