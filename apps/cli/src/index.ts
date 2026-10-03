@@ -27,6 +27,7 @@ function reportFailure(msg: string | null | undefined, err: Error | undefined): 
 try {
   await yargs(hideBin(process.argv))
     .scriptName("leap")
+    .epilogue("Phase-3 review loop: extract (check the source) -> generate -> review-sheet -> fill scores.csv and findings.csv -> review-import -> gate-report; for a needs-revision or rejected activity, regenerate, then review-sheet and review-import again. An interrupted command is finished by running it again.")
     .command("flashcards <input> <output>", "Build an H5P.Flashcards package from a CSV (columns: question, answer, tip, image)", (y) => y
       .positional("input", { type: "string", demandOption: true })
       .positional("output", { type: "string", demandOption: true })

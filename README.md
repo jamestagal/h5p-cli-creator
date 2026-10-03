@@ -128,6 +128,19 @@ the listed strings exactly, before any IPv6 or embedded-IPv4 canonicalisation, s
 `127.0.0.1` does not also permit `::ffff:7f00:1`. The metadata address, and any IPv6 embedding of it,
 stays blocked unconditionally even when listed.
 
+### The phase-3 review loop
+
+1. **Check the source:** `leap extract`. It reads the source exactly as `generate` would, with no model call.
+2. **Generate:** `leap generate`, which produces, builds and promotes the activities.
+3. **Export a sheet:** `leap review-sheet`, for every promoted build that has no scored review.
+4. **Score:** fill in `scores.csv`, and add a row to `findings.csv` for every 0 or 1.
+5. **Import the scores:** `leap review-import` commits them as one batch.
+6. **Report:** `leap gate-report`.
+7. **Revise:** for a needs-revision or rejected activity, run `leap regenerate --note "..."`, then go back to step 3.
+
+Any interrupted command is finished by running it again. `apps/cli/test/pilot-rehearsal.test.ts` runs the whole loop
+offline, with no network, no ledger and no key, against the S1 recordings and the synthetic DOCX.
+
 ### Recording an alignment decision: `leap review`
 
 A human judgement about a promoted activity is a record, not an edit. `leap review` writes an alignment

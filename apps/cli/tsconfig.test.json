@@ -1,5 +1,9 @@
 {
   "extends": "./tsconfig.json",
   "include": ["src", "test"],
-  "compilerOptions": { "noEmit": true, "rootDir": "." }
+  "compilerOptions": {
+    "noEmit": true,
+    // the pilot rehearsal imports the generator's own test helpers (S1_SETTINGS, the synthetic fixtures); nothing is emitted
+    "rootDir": "../.."
+  }
 }

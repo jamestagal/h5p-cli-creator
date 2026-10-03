@@ -882,6 +882,16 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 
 The scoring loop: `review-sheet` → fill `scores.csv` and `findings.csv` programmatically (one accepted, one needs-revision, one rejected, one left unscored) → `review-import` → `gate-report` (incomplete) → score the rest → `regenerate` the needs-revision activity, with a fault injected after promotion and a rerun to finish the request → new `review-sheet` → `review-import` → `gate-report` (complete).
 
+- *(Amended 3 Oct, Task 15.)* **How each step runs offline, with no ledger:** `generate` and `regenerate` accept an injected provider only under a ledger (Task 13), and that rule stays. So:
+  - **S1 generate:** `leap generate --provider replay` on the S1 recordings, with S1's defaults, `--concurrency 1` and an output directory named `s1`. Its inputs are read back from the store and deep-equal `S1_SETTINGS`. The fingerprint covers the unit text, the chunk size and the other settings, and the source matches the PDF's current ingestion.
+  - **DOCX generate:** `extract` runs through the CLI. Generation goes through `runImport` on a `FileStore` with `FakeProvider` and the synthetic DOCX fixtures, using 330-token chunks and two `multiChoice` slots, so the loop has four activities to score.
+  - **Regenerate, both rehearsals:** the first run goes through `regenerateActivity` with `FakeProvider` and a SYNTHETIC hand-authored response. A crash is injected after promotion, before the `succeeded` event. `leap regenerate --provider replay` then finishes the request with no note and an empty fixtures directory, since finishing makes no model call.
+  - **Every other step:** `review-sheet`, `review-import` and `gate-report` run through the CLI. Their clocks are fixed.
+- *(Amended 3 Oct, Task 15.)* **Checks and test setup:**
+  - **Hand-computed figures:** the expected partition counts come from the scoring choices. Each type's direct and shared costs, and both per-accepted figures, are recomputed independently from `attempts.jsonl` and `operations.jsonl`.
+  - **Second run:** a second rehearsal in a fresh directory must give the same `gate-report.md`, once the directory path is replaced. The report itself contains no timestamps.
+  - **Test `tsconfig`:** `apps/cli/tsconfig.test.json` widens `rootDir` to the repository root (it is `noEmit`), so the rehearsal can import `S1_SETTINGS` and the synthetic helpers from the generator's tests.
+
 **Tests:**
 - [ ] Both rehearsals pass, and each final report's partitions sum to `planned`, and its yields and costs equal hand-computed expectations.
 - [ ] The replay rehearsal's generate inputs deep-equal `S1_SETTINGS`.
