@@ -102,4 +102,16 @@ describe("leap gate-report", () => {
     expect(run.err.join("")).toMatch(/the report .*gate-report\.md exists and is not a regular file/);
     expect(await readFile(join(dir, "import.json"), "utf8")).toBe(v2Import);
   });
+
+  it("the summary carries no directory path, while shared unknown costs of separate imports still pool once each (review of a146c4e)", async () => {
+    const one = await reviewed(); const two = await reviewed();
+    for (const { store, importId } of [one, two]) await store.recorderFor(importId).recordStart({ event: "start", attemptId: "s1", operationId: `${importId}:concepts`, origin: "shared", requestId: null, callKey: "extract:chunk-0", retryIndex: 0, retryReason: null, attempt: 1, deadlineMs: 0, purpose: "extract", provider: "fake", model: "m", credentialOwner: "server", reservedInputTokens: 1, reservedOutputTokens: 1, reservedUsdMicro: 5, startedAt: "t" }); // no outcome
+    const summary = join(await mkdtemp(join(tmpdir(), "leap-gate-sum-")), "summary.json");
+    expect(await gateReport({ dirs: [one.dir, two.dir], summary }, io().io)).toBe(0);
+    const json = await readFile(summary, "utf8");
+    for (const path of [one.dir, two.dir, tmpdir()]) expect(json).not.toContain(path);
+    const parsed = JSON.parse(json) as { pooled: Record<string, { cost: { sharedWithoutCost: unknown } }>; imports: Array<{ types: Record<string, { cost: { sharedWithoutCost: unknown } }> }> };
+    expect(parsed.pooled.multiChoice!.cost.sharedWithoutCost).toBe(2); // one per import, not one per type
+    expect(parsed.imports.map((i) => i.types.multiChoice!.cost.sharedWithoutCost)).toEqual([1, 1]);
+  });
 });

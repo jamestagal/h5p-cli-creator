@@ -829,6 +829,11 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
   - **Location:** the summary must be outside every import directory, of any store version. The report may sit only directly in the first import directory.
   - **Collision:** the summary cannot be the report itself.
   - **Publishing:** each file is written beside its destination and renamed into place, so an existing link is replaced, never followed. A refusal writes nothing.
+- *(Amended 3 Oct, Task 14 second review, of `a146c4e`.)* **The pending marker covers normal imports:**
+  - **When it is written:** `FileStore.commitBatch` writes `reports-pending.json` before the commit point, as replay does before its first append.
+  - **When it is removed:** `writeReports` removes it once both reports are written.
+  - **Recovery:** a failure after the ledger appends, or between the two report writes, is repaired by the next lock, with no duplicate records.
+- *(Amended 3 Oct, Task 14 second review.)* **No paths in the summary:** the per-import map of shared unknown costs is keyed by directory and stays internal. The summary carries each type's aggregate count (`sharedWithoutCost`), so no directory path appears in it.
 - *(Amended 3 Oct, Task 14 review.)* **Report repair survives a failure:** replay calls a hook once before its first append. `FileStore` uses it to write `reports-pending.json`, which it removes only after `mapping.csv` and `cost.json` are both rewritten. A failure or crash after the appends leaves the marker, so a later lock with nothing left to replay still rewrites the reports.
 - *(Amended 3 Oct, Task 14 review.)* **Metric corrections:**
   - **Items:** count every scored revision of a planned blanks or flashcards activity, including intermediate revisions that fall in neither partition. Failing items come from every review of those revisions.
@@ -852,6 +857,9 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
   - **Items:** decks of 12, 11 and 10 cards inspect 33.
   - **Historical:** a superseded or other-unit first-pass review is marked historical.
   - **Shared unknown costs:** one shared unknown attempt counts once in the all-types row.
+- [ ] *(Added 3 Oct, review of `a146c4e`.)* Regression tests:
+  - **Pending marker on normal imports:** `review-import`'s report writing fails after the ledger appends, then again between the two report writes. Each time the next lock rewrites both reports, removes the marker and duplicates no record.
+  - **No paths in the summary:** the summary contains no directory path, and two imports' shared unknown costs pool to 2.
 
 **Verification:** `pnpm verify` → `exit=0`.
 

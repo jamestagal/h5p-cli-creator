@@ -3,7 +3,7 @@ import { appendFile, link, mkdir, readFile, rename, truncate, unlink, writeFile 
 import { dirname, join } from "node:path";
 import { assertCurrentLayout, assertSameOriginal, assertWritableStoreVersion, BuildIntegrityError, canonicalRecordJson, latestAcceptances, latestRegenerations, replayCommittedBatches, sameSheet, sortBatches, sha256Hex, SheetIntegrityError, sortBuilds, sortSheets, storeVersionOf, type AcceptanceRecord, type RegenerationRequest, type ReviewBatch, type ScoreRecord, type SheetManifest, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
 import { listIfPresent } from "./list-if-present.js";
-import { writeReports } from "./report.js";
+import { markReportsPending, REPORTS_PENDING, writeReports } from "./report.js";
 import { acquireDirectoryLock, type HeldLock, type LockOptions } from "./lock.js";
 
 export class StoreCorruptError extends Error {
@@ -59,8 +59,7 @@ export async function readJsonl<T>(path: string): Promise<{ records: T[]; trunca
 }
 
 /** Directory-backed ImportStore: JSON files written atomically, JSONL ledgers repaired then appended through one queue per ledger, one directory lock. Every write assumes the caller holds the lock and verifies it before touching the filesystem. */
-/** Present while reports derived from replayed ledger records are still to be rewritten (see lock()). */
-export const REPORTS_PENDING = "reports-pending.json";
+export { REPORTS_PENDING } from "./report.js";
 
 export class FileStore implements ImportStore {
   private readonly repaired = new Set<string>();
@@ -95,15 +94,11 @@ export class FileStore implements ImportStore {
     // recovery (design §7.3): a committed batch whose ledger records a crash left unwritten is completed first, and the
     // reports derived from those ledgers are rewritten under this lock before any command proceeds (they were written
     // before the crash, without the batch)
-    // A marker written before the first append, and removed only after both reports are written, keeps that need across
-    // a failure or crash after the appends: the next lock finds no missing records but still finds the marker.
+    // The pending marker (written before a batch is committed, and before replay's first append) is removed only once
+    // both reports are written, so a failure or crash at any point after a ledger change is repaired here.
     try {
-      const marker = this.p(REPORTS_PENDING);
-      await replayCommittedBatches(this, importId, { beforeAppend: () => writeFile(marker, `${JSON.stringify({ reason: "committed review batch replayed; mapping.csv and cost.json to be rewritten" })}\n`) });
-      if (await readFile(marker).then(() => true, (e: NodeJS.ErrnoException) => { if (e.code === "ENOENT") return false; throw e; })) {
-        await writeReports(this, importId, this.dir);
-        await unlink(marker);
-      }
+      await replayCommittedBatches(this, importId, { beforeAppend: () => markReportsPending(this.dir) });
+      if (await readFile(this.p(REPORTS_PENDING)).then(() => true, (e: NodeJS.ErrnoException) => { if (e.code === "ENOENT") return false; throw e; })) await writeReports(this, importId, this.dir);
     } catch (err) { await release(); throw err; }
     return { release };
   }
@@ -275,6 +270,7 @@ export class FileStore implements ImportStore {
   async commitBatch(batch: ReviewBatch) {
     if (!/^[0-9a-f]{64}$/.test(batch.batchId)) throw new Error(`${JSON.stringify(batch.batchId)} is not a batch id; expected 64 hex characters`);
     if ((await this.listBatches(batch.importId)).some((b) => b.batchId === batch.batchId)) return false;
+    await markReportsPending(this.dir); // before the commit point: the reports derived from the ledgers are stale from here until rewritten
     const name = `${String(batch.sequence).padStart(6, "0")}-${batch.batchId}.json`;
     await this.putImmutable(this.p("reviews", "batches", name), Buffer.from(JSON.stringify(batch, null, 2) + "\n"), `review batch ${batch.batchId}`, () => false, sha256Hex);
     return true;

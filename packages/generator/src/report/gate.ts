@@ -425,7 +425,8 @@ export function gateSummary(imports: ImportGate[], legacy: LegacyGate[]): unknow
     planned: g.planned, firstPass: g.firstPass, historical: g.historical, afterRevision: g.afterRevision, regenerations: g.regenerations,
     distributions: g.distributions, items: g.items,
     minutes: { firstPass: { reviews: g.minutes.firstPass.values.length, total: g.minutes.firstPass.values.reduce((a, b) => a + b, 0), median: median(g.minutes.firstPass.values), items: g.minutes.firstPass.items }, revisions: { reviews: g.minutes.revisions.values.length, total: g.minutes.revisions.values.reduce((a, b) => a + b, 0), median: median(g.minutes.revisions.values), items: g.minutes.revisions.items } },
-    cost: { ...g.cost, firstPassPerAccepted: costPerAccepted(g, "firstPass"), afterRevisionPerAccepted: costPerAccepted(g, "afterRevision") }
+    // sharedWithoutCost is an aggregate count here: the per-import map behind it is keyed by directory and stays internal
+    cost: { firstPassDirect: g.cost.firstPassDirect, regenerationDirect: g.cost.regenerationDirect, allocatedSharedUsdMicro: g.cost.allocatedSharedUsdMicro, sharedWithoutCost: sharedUnknown(g), firstPassPerAccepted: costPerAccepted(g, "firstPass"), afterRevisionPerAccepted: costPerAccepted(g, "afterRevision") }
   });
   return {
     thresholdsFrozen: PROVISIONAL_TARGETS.frozen,

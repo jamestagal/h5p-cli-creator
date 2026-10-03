@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { targetsOf, type ConceptMap, type CostStatus, type MappingStatus, type UnitOfCompetency } from "@leaplearn/shared";
 import { countedScore, PRICING, type AttemptOutcome, type AttemptStart, type ImportStore, type PlannedType } from "@leaplearn/generator";
@@ -144,11 +144,22 @@ export async function writeMappingCsv(store: ImportStore, importId: string, path
   return rows.length;
 }
 
-/** Rewrites mapping.csv and cost.json for an import; used after generation and after every review. The caller must hold the import's directory lock for the whole snapshot and write. */
+/**
+ * Present while mapping.csv and cost.json may not reflect the score and acceptance ledgers: written before a review
+ * batch is committed and before lock-time replay appends anything, removed only once both reports are rewritten. The
+ * next lock that finds it rewrites them.
+ */
+export const REPORTS_PENDING = "reports-pending.json";
+export async function markReportsPending(outDir: string): Promise<void> {
+  await writeFile(resolve(outDir, REPORTS_PENDING), `${JSON.stringify({ reason: "review ledgers changed; mapping.csv and cost.json to be rewritten" })}\n`);
+}
+
+/** Rewrites mapping.csv and cost.json for an import; used after generation and after every review. The caller must hold the import's directory lock for the whole snapshot and write. Clears the pending marker once both are written. */
 export async function writeReports(store: ImportStore, importId: string, outDir: string): Promise<{ rows: number; report: CostReport }> {
   const rows = await writeMappingCsv(store, importId, resolve(outDir, "mapping.csv"));
   const report = await costReport(store, importId);
   await writeFile(resolve(outDir, "cost.json"), JSON.stringify(report, null, 2) + "\n");
+  await rm(resolve(outDir, REPORTS_PENDING), { force: true });
   return { rows, report };
 }
 

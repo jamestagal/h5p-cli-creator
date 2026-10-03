@@ -161,6 +161,26 @@ describe("leap review-import", () => {
     expect(JSON.parse(await readFile(join(dir, "cost.json"), "utf8"))).toMatchObject({ accepted: 1 });
     expect(await readdir(dir)).not.toContain(REPORTS_PENDING);
   });
+
+  for (const [when, blocked] of [["after the ledger appends, before either report", "mapping.csv"], ["between the two report writes", "cost.json"]] as const) {
+    it(`a normal import whose report writing fails ${when} is repaired by the next lock, with no duplicate records (review of a146c4e)`, async () => {
+      const { dir, importId, sheetId, scores } = await exported();
+      await writeFile(scores, [header, row(sheetId, "act-1", "0123456789abcdef", "2,2,2,2,2,4,")].join("\n") + "\n");
+      await rm(join(dir, blocked), { force: true });
+      await mkdir(join(dir, blocked)); // the write of this report will fail
+      await expect(reviewImport({ out: dir, scores, reviewer: "Benjamin" }, io().io)).rejects.toThrow(/EISDIR|illegal operation on a directory/);
+      const store = new FileStore(dir);
+      expect(await store.listScores(importId)).toHaveLength(1); // the batch and its ledger records were written
+      expect(await readdir(dir)).toContain(REPORTS_PENDING);
+      await rm(join(dir, blocked), { recursive: true });
+      expect(await reviewSheet({ out: dir }, io().io)).toBe(0); // nothing is missing from the ledgers; the marker drives the rewrite
+      expect(await store.listScores(importId)).toHaveLength(1);
+      expect(await store.listAcceptanceRecords(importId)).toHaveLength(1);
+      expect(await readFile(join(dir, "mapping.csv"), "utf8")).toMatch(/\nact-1,multiChoice,Locks,1,,PC2\.1,reviewed,/);
+      expect(JSON.parse(await readFile(join(dir, "cost.json"), "utf8"))).toMatchObject({ accepted: 1 });
+      expect(await readdir(dir)).not.toContain(REPORTS_PENDING);
+    });
+  }
 });
 
 describe("leap review --decision", () => {
