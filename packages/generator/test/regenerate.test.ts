@@ -25,10 +25,10 @@ const rules: PlanRules = { multiChoice: { perImport: 1 }, blanks: { perImport: 1
 const NOTE = "Make the distractors less obviously wrong.";
 
 /** A complete import: act-1 multiChoice, act-2 blanks, act-3 flashcards, all promoted at revision 1. */
+const importInput = async (importId: string): Promise<RunImportInput> => ({ importId, name: "n", source: await syntheticDoc(), unitText: await syntheticUnitText(), selectedTypes: ["multiChoice", "blanks", "flashcards"], budget: { usdMicro: 5_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null });
 async function completeImport(importId: string): Promise<MemoryStore> {
   const store = new MemoryStore();
-  const input: RunImportInput = { importId, name: "n", source: await syntheticDoc(), unitText: await syntheticUnitText(), selectedTypes: ["multiChoice", "blanks", "flashcards"], budget: { usdMicro: 5_000_000 }, promptConfig: DEFAULT_PROMPT_CONFIG, language: "en", customisation: null };
-  await runImport(input, { store, provider: new FakeProvider(await fullScript(await syntheticDoc())), registry, engineIdentity: IDENTITY_A, concurrency: 1, chunkTokens: SYNTHETIC_CHUNK_TOKENS, rules, sleep: async () => undefined });
+  await runImport(await importInput(importId), { store, provider: new FakeProvider(await fullScript(await syntheticDoc())), registry, engineIdentity: IDENTITY_A, concurrency: 1, chunkTokens: SYNTHETIC_CHUNK_TOKENS, rules, sleep: async () => undefined });
   return store;
 }
 
@@ -217,7 +217,40 @@ describe("elapsed time uses the import's shared run anchor (3 Oct)", () => {
   });
 });
 
+describe("generate and regenerate share the anchor (3 Oct)", () => {
+  it("generate on the finished import charges an interrupted regeneration's anchor before its first write, and the resumed regeneration charges nothing more", async () => {
+    const store = await completeImport("imp");
+    await score(store, "imp", "act-1", "needs-revision");
+    const before = (await store.getImport("imp"))!.budgetUsed.elapsedMs;
+    const T0 = Date.now() + 86_400_000;
+    await expect(regen(crashBefore(store, "putBuild", 1), new FakeProvider([await mcReply()]), { clock: () => new Date(T0) })).rejects.toBeInstanceOf(CrashError);
+    // generate reruns 100 s after the kill; the last durable write was at T0, so 60 s (one maximum attempt) is charged
+    const generated = await runImport(await importInput("imp"), { store, provider: new FakeProvider([]), registry, engineIdentity: IDENTITY_A, concurrency: 1, chunkTokens: SYNTHETIC_CHUNK_TOKENS, rules, sleep: async () => undefined, clock: () => new Date(T0 + 100_000), maxAttemptMs: 60_000 });
+    expect(generated).toMatchObject({ status: "ready", currentRun: null, budgetUsed: { elapsedMs: before + 60_000 } });
+    expect(await store.getImport("imp")).toMatchObject({ currentRun: null, budgetUsed: { elapsedMs: before + 60_000 } });
+    const { request } = await regen(store, new FakeProvider([]), { note: null, clock: () => new Date(T0 + 110_000), maxAttemptMs: 60_000 });
+    expect(request.status).toBe("succeeded");
+    expect((await store.getImport("imp"))!.budgetUsed.elapsedMs).toBe(before + 60_000); // not 110 s from generate's own write
+  });
+});
+
 describe("caps only go down (3 Oct)", () => {
+  const thirds: Array<[string, RegenerateInput["budget"]]> = [["omitted", undefined], ["higher", { usdMicro: 50_000_000 }]];
+  for (const [label, third] of thirds) {
+    it(`a cap lowered during an interrupted resume is kept with the request: a third invocation with the cap ${label} is refused before dispatch`, async () => {
+      const store = await completeImport("imp");
+      await score(store, "imp", "act-1", "needs-revision");
+      await expect(regen(crashBefore(store, "putOperation", 1), new FakeProvider([]))).rejects.toBeInstanceOf(CrashError);
+      expect((await store.listRegenerations("imp"))[0]!.budget.usdMicro).toBe(5_000_000); // created under the import's $5
+      await expect(regen(crashBefore(store, "putOperation", 1), new FakeProvider([]), { note: null, budget: { usdMicro: 1 } })).rejects.toBeInstanceOf(CrashError);
+      expect((await store.listRegenerations("imp"))[0]).toMatchObject({ status: "running", budget: { usdMicro: 1 } });
+      const provider = new FakeProvider([await mcReply()]);
+      const { request } = await regen(store, provider, { note: null, ...(third ? { budget: third } : {}) });
+      expect(request).toMatchObject({ status: "failed", outcome: expect.stringMatching(/^budget: /), budget: { usdMicro: 1 } });
+      expect(provider.requests).toHaveLength(0);
+    });
+  }
+
   it("a supplied cap above the import's never raises it", async () => {
     const store = await completeImport("imp");
     await score(store, "imp", "act-1", "needs-revision");

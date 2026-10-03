@@ -112,8 +112,9 @@ export async function regenerateActivity(input: RegenerateInput, deps: Regenerat
  * either command is charged (reconcileElapsed, on evidence read before any recovery write), this run's anchor is
  * durable before the first dispatch, and every exit folds its time into the import and clears the anchor.
  */
-async function finish(request: RegenerationRequest, record: ImportRecord, input: RegenerateInput, deps: RegenerateDeps, clock: () => Date): Promise<RegenerationRequest> {
+async function finish(started: RegenerationRequest, record: ImportRecord, input: RegenerateInput, deps: RegenerateDeps, clock: () => Date): Promise<RegenerationRequest> {
   const { store } = deps;
+  let request = started;
   const importId = request.importId; const activityId = request.activityId; const target = request.targetRevision;
   const close = async (status: "succeeded" | "failed", outcome: string): Promise<RegenerationRequest> => {
     const done = { ...request, status, outcome, completedAt: clock().toISOString() };
@@ -125,6 +126,12 @@ async function finish(request: RegenerationRequest, record: ImportRecord, input:
   const events = await store.listAttempts(importId);
   const operationsLeftBehind = await store.listOperations(importId);
   const limits = effectiveLimits(record.budget, request.budget, input.budget);
+  // A limit lowered now (by the command or the import) is kept with the request before any dispatch, so a later resume
+  // without it, or with a higher one, never runs above it. A request written before limits were stored has none.
+  if (!request.budget || (Object.keys(limits) as Array<keyof BudgetLimits>).some((k) => limits[k] !== request.budget[k])) {
+    request = { ...request, budget: limits };
+    await store.putRegeneration(request);
+  }
   const runStartedMs = clock().getTime();
   const elapsedBeforeMs = record.currentRun
     ? reconcileElapsed({ run: record.currentRun, savedElapsedMs: record.budgetUsed.elapsedMs, events, operations: operationsLeftBehind, updatedAt: record.updatedAt, nowMs: runStartedMs, maxAttemptMs: deps.maxAttemptMs ?? DEFAULT_MAX_ATTEMPT_MS, limitMs: limits.elapsedMs })
@@ -180,9 +187,10 @@ async function finish(request: RegenerationRequest, record: ImportRecord, input:
       await foldRun();
       return await close("failed", `${err instanceof ContentFailure ? "content" : "budget"}: ${err.message}`); // a recorded outcome, not an error of this command
     }
-    // Anything else (a storage write, a damaged build, an outage) leaves the request running: a rerun finishes it with
-    // no new allowance, and reuses whatever was already produced or built. If even the fold fails, the anchor stays
-    // and the next run charges this one's time from it.
+    // Anything else (a storage write, a damaged build, an outage) leaves the request running. It already counts towards
+    // the activity's two; a rerun finishes it without using another, reuses whatever was already produced or built,
+    // and dispatches only what is still missing, charged to the import's budgets like any attempt. If even the fold
+    // fails, the anchor stays and the next run charges this one's time from it.
     await foldRun().catch(() => undefined);
     throw err;
   }

@@ -50,7 +50,7 @@ export async function regenerate(args: RegenerateArgs, io: { out: (s: string) =>
     // Any other error leaves a started request running: say so, and how it is finished, rather than only a stack trace.
     const running = (await store.listRegenerations(importId).catch(() => [])).find((r) => r.activityId === args.activity && r.status === "running");
     if (!running) throw err;
-    io.err(`leap: request ${running.requestId} did not finish (${err instanceof Error ? err.message : String(err)}); it stays running and uses no further allowance. Rerun leap regenerate --activity ${args.activity} with no --note to finish it; revision ${running.baseRevision} stays current until then\n`);
+    io.err(`leap: request ${running.requestId} did not finish (${err instanceof Error ? err.message : String(err)}); it stays running and already counts towards the activity's two, so finishing it does not use another. Rerun leap regenerate --activity ${args.activity} with no --note to finish it; any model calls it still needs are charged to the import's budgets. Until it finishes, the activity may point at revision ${running.baseRevision} or, if publication completed before the error, at revision ${running.targetRevision}\n`);
     return 1;
   }
   const { request, resumed } = outcome;

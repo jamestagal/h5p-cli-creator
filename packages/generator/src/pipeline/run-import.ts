@@ -115,8 +115,20 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
   const emit = deps.onProgress ?? (() => undefined);
   const limits: BudgetLimits = { ...DEFAULT_BUDGET_LIMITS, ...input.budget };
 
+  // Snapshot what an interrupted run (of generate or regenerate) left behind BEFORE any write: this run's first write
+  // replaces the record's updatedAt, and reconcile() stamps its own completedAt on interrupted operations; neither is
+  // evidence of the interrupted run. Its time is charged and its anchor cleared in that first write, so even a run
+  // that returns at once for a finished import leaves no stale anchor for a later run to misread.
+  const events = await store.listAttempts(input.importId);
+  const operationsLeftBehind = await store.listOperations(input.importId);
+  const runStartedMs = clock().getTime();
+  const maxAttemptMs = deps.maxAttemptMs ?? DEFAULT_MAX_ATTEMPT_MS;
+  const elapsedBeforeMs = existing?.currentRun
+    ? reconcileElapsed({ run: existing.currentRun, savedElapsedMs: existing.budgetUsed.elapsedMs, events, operations: operationsLeftBehind, updatedAt: existing.updatedAt, nowMs: runStartedMs, maxAttemptMs, limitMs: limits.elapsedMs })
+    : existing?.budgetUsed.elapsedMs ?? 0;
+
   let record: ImportRecord = existing
-    ? { ...existing, budget: limits, updatedAt: now() }
+    ? { ...existing, budget: limits, budgetUsed: { ...existing.budgetUsed, elapsedMs: elapsedBeforeMs }, currentRun: null, updatedAt: now() }
     : { storeVersion: STORE_VERSION, importId: input.importId, orgId: input.orgId ?? "local", name: input.name, sourceType: input.source.kind, status: "queued", customisation: input.customisation, language: input.language, unitTextHash: null, selectedTypes: [...input.selectedTypes], fingerprint, budget: limits, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: input.importId, createdAt: now(), updatedAt: now() };
   await store.putImport(record);
   // What production needs besides the source and plan, so `leap regenerate` produces exactly as this run did. The
@@ -128,18 +140,8 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
 
   const setStatus = async (status: ImportStatus, error: string | null = record.error): Promise<void> => { record = { ...record, status, error, updatedAt: now() }; await store.putImport(record); emit({ kind: "status", status }); };
 
-  // Snapshot what the interrupted run left behind BEFORE any recovery write: reconcile() stamps its own completedAt on
-  // interrupted operations, and that timestamp is recovery's, not evidence of the interrupted run.
-  const events = await store.listAttempts(input.importId);
-  const operationsLeftBehind = await store.listOperations(input.importId);
-  const runStartedMs = clock().getTime();
-  const maxAttemptMs = deps.maxAttemptMs ?? DEFAULT_MAX_ATTEMPT_MS;
-  // A run that did not end cleanly left its anchor: charge its time conservatively (never below the saved snapshot) before this run gets any allowance.
-  const elapsedBeforeMs = record.currentRun
-    ? reconcileElapsed({ run: record.currentRun, savedElapsedMs: record.budgetUsed.elapsedMs, events, operations: operationsLeftBehind, updatedAt: existing?.updatedAt ?? record.updatedAt, nowMs: runStartedMs, maxAttemptMs, limitMs: limits.elapsedMs })
-    : record.budgetUsed.elapsedMs;
   await reconcile(store, input.importId, clock);
-  record = { ...record, budgetUsed: { ...record.budgetUsed, elapsedMs: elapsedBeforeMs }, currentRun: { startedAt: new Date(runStartedMs).toISOString(), elapsedBeforeMs }, updatedAt: now() };
+  record = { ...record, currentRun: { startedAt: new Date(runStartedMs).toISOString(), elapsedBeforeMs }, updatedAt: now() };
   await store.putImport(record); // the anchor is durable before any dispatch
   const budget = budgetFromLedger(limits, events, runStartedMs, elapsedBeforeMs);
   const halt: { stop: { kind: "budget" | "system"; reason: string } | null; error: unknown } = { stop: null, error: undefined };
