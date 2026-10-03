@@ -2,11 +2,13 @@ import { describe, it, expect } from "vitest";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import { MemoryStore, StoreLockedError, type AttemptStart, type ScoreRecord } from "@leaplearn/generator";
+import { MemoryStore, StoreLockedError, type AttemptStart, type RevisionRecord, type ScoreRecord } from "@leaplearn/generator";
 import { RUBRIC_VERSION } from "@leaplearn/shared";
 import { FileStore } from "../src/file-store.js";
 import { recordReview } from "../src/review.js";
 import { costReport, formatCostReport, mappingRows, writeReports, writeReportsLocked } from "../src/report.js";
+
+const scored = (sequence: number, revision: number, buildId: string, decision: ScoreRecord["decision"]): ScoreRecord => ({ rowKey: `k${sequence}`, batchId: `b${sequence}`, sequence, rowIndex: 0, sheetId: "s", importId: "imp", activityId: "act-1", revision, buildId, unitTextHash: null, rubricVersion: RUBRIC_VERSION, reviewer: "B", scores: { correctness: 2, support: 2, distractors: 2, mapping: 2, usefulness: 2 }, findings: [], minutes: 3, decision, decidedAt: "t" });
 
 describe("reports", () => {
   it("splits shared and direct cost, counts retries by retryIndex, computes cost per accepted activity, and lists mapping rows with review-aware status", async () => {
@@ -24,7 +26,7 @@ describe("reports", () => {
     await start("a5", "imp:produce:act-1:r1", "produce", "produce:act-1", 0); await outcome("a5", "imp:produce:act-1:r1", 500, true);
     await start("a6", "imp:produce:act-1:r1", "produce", "produce:act-1", 1); await outcome("a6", "imp:produce:act-1:r1", null);
     await store.putActivity({ activityId: "act-1", importId: "imp", type: "multiChoice", order: 0, status: "promoted", currentRevision: 1, conceptIds: ["c1"], criteriaIds: ["PC1.1", "PC1.2"], error: null, dropped: false, unitTextHash: null });
-    await store.putRevision({ activityId: "act-1", revision: 1, state: "promoted", spec: { id: "act-1", title: "T", type: "multiChoice", language: "en", schemaVersion: 1, question: "<p>q</p>", answers: [{ text: "a", correct: true }, { text: "b", correct: false }], randomAnswers: true, provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1"], criteriaIds: ["PC1.1", "PC1.2"] } }, schemaVersion: 1, promptVersion: "p", origin: "generate" as const, requestId: null, modelConfig: { provider: "fake", models: {}, profiles: {} }, note: null, currentBuildId: null, attemptIds: ["a5", "a6"], createdAt: "t" });
+    await store.putRevision({ activityId: "act-1", revision: 1, state: "promoted", spec: { id: "act-1", title: "T", type: "multiChoice", language: "en", schemaVersion: 1, question: "<p>q</p>", answers: [{ text: "a", correct: true }, { text: "b", correct: false }], randomAnswers: true, provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1"], criteriaIds: ["PC1.1", "PC1.2"] } }, schemaVersion: 1, promptVersion: "p", origin: "generate" as const, requestId: null, modelConfig: { provider: "fake", models: {}, profiles: {} }, note: null, currentBuildId: "build-a", attemptIds: ["a5", "a6"], createdAt: "t" });
     await store.putArtifact("imp", "conceptMap", { sourceId: "s", textHash: "0".repeat(64), concepts: [{ conceptId: "c1", name: "n", summary: "s", evidence: [{ evidenceId: "ev-s1", sentenceId: "s1", charStart: 0, charEnd: 3, quote: "Hi." }] }] });
 
     const before = await costReport(store, "imp");
@@ -36,13 +38,29 @@ describe("reports", () => {
     expect(formatCostReport(before)).toContain("| produce |");
     expect((await mappingRows(store, "imp")).map((r) => [r.activityId, r.criterionId, r.status, r.firstQuote])).toEqual([["act-1", "PC1.1", "suggested", "Hi."], ["act-1", "PC1.2", "suggested", "Hi."]]);
 
-    await store.putAcceptance({ importId: "imp", activityId: "act-1", revision: 1, decision: "accepted", reviewer: "owner", notes: null, decidedAt: "t" });
+    await store.putScore(scored(1, 1, "build-a", "accepted"));
     await store.putAlignmentReview({ importId: "imp", activityId: "act-1", revision: 1, itemId: null, unitTextHash: null, criterionId: "PC1.2", decision: "rejected", reviewer: "owner", decidedAt: "t" });
     await store.putAlignmentReview({ importId: "imp", activityId: "act-1", revision: 1, itemId: null, unitTextHash: null, criterionId: "PC2.1", decision: "added", reviewer: "owner", decidedAt: "t" });
     const after = await costReport(store, "imp");
     expect(after.accepted).toBe(1); expect(after.costPerAcceptedActivityUsdMicro).toBe(800);
-    expect((await mappingRows(store, "imp")).map((r) => [r.criterionId, r.status])).toEqual([["PC1.1", "suggested"], ["PC1.2", "rejected"], ["PC2.1", "added"]]);
-    await store.putAcceptance({ importId: "imp", activityId: "act-1", revision: 2, decision: "accepted", reviewer: "owner", notes: null, decidedAt: "t" }); // a decision on another revision does not count
+    expect((await mappingRows(store, "imp")).map((r) => [r.criterionId, r.status])).toEqual([["PC1.1", "reviewed"], ["PC1.2", "rejected"], ["PC2.1", "added"]]); // the current build's counted review accepted it
+    await store.putScore(scored(2, 2, "build-a", "accepted")); // a review of another revision does not count
+    expect((await costReport(store, "imp")).accepted).toBe(1);
+  });
+  it("counts acceptance only from the current build's counted review: an accepted build A stops counting once the revision is rebuilt as build B, until B is reviewed (Task 14 follow-up)", async () => {
+    const store = new MemoryStore();
+    await store.putActivity({ activityId: "act-1", importId: "imp", type: "multiChoice", order: 0, status: "promoted", currentRevision: 1, conceptIds: ["c1"], criteriaIds: ["PC1.1"], error: null, dropped: false, unitTextHash: null });
+    const rev: RevisionRecord = { activityId: "act-1", revision: 1, state: "promoted", spec: { id: "act-1", title: "T", type: "multiChoice", language: "en", schemaVersion: 1, question: "<p>q</p>", answers: [{ text: "a", correct: true }, { text: "b", correct: false }], randomAnswers: true, provenance: { conceptIds: ["c1"], evidenceIds: ["ev-s1"], criteriaIds: ["PC1.1"] } }, schemaVersion: 1, promptVersion: "p", origin: "generate" as const, requestId: null, modelConfig: { provider: "fake", models: {}, profiles: {} }, note: null, currentBuildId: "build-a", attemptIds: [], createdAt: "t" };
+    await store.putRevision(rev);
+    await store.putScore(scored(1, 1, "build-a", "accepted"));
+    await store.putAcceptance({ importId: "imp", activityId: "act-1", revision: 1, decision: "accepted", reviewer: "B", notes: null, decidedAt: "t", batchId: "b1", sequence: 1, rowIndex: 0, scoreRowKey: "k1", buildId: "build-a" });
+    expect((await costReport(store, "imp")).accepted).toBe(1);
+    expect((await mappingRows(store, "imp"))[0]!.status).toBe("reviewed");
+    await store.putRevision({ ...rev, currentBuildId: "build-b" }); // rebuilt under another engine
+    expect((await store.listAcceptances("imp"))[0]).toMatchObject({ decision: "accepted", buildId: "build-a" }); // still the latest decision on revision 1, as history
+    expect((await costReport(store, "imp")).accepted).toBe(0);
+    expect((await mappingRows(store, "imp"))[0]!.status).toBe("suggested");
+    await store.putScore(scored(2, 1, "build-b", "accepted"));
     expect((await costReport(store, "imp")).accepted).toBe(1);
   });
   it("takes spend over the cap from the ledger, so an attempt with no reported cost cannot hide an overspend", async () => {

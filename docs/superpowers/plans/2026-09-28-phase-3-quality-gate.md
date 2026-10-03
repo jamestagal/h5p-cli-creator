@@ -800,6 +800,30 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 - **Acceptance of an old build:** `listAcceptances` returns the latest decision per activity revision, whatever build it reviewed, so an `accepted` row for build A keeps counting after the same revision is rebuilt as build B. Current acceptance must come from the counted scored review of the **current** build (`countedScore` on `currentBuildId`), as `mapping.csv`'s `reviewed` already does; an acceptance of an earlier build counts only in the historical first-pass results (C3). The cost report's accepted count follows the same rule. Test: accept build A, rebuild the revision as build B, and the activity is no longer accepted until build B is reviewed.
 - **Reports after recovery:** `replayCommittedBatches` completes the ledgers on the next lock, but `mapping.csv` and `cost.json` stay as they were written before the crash. Whenever replay appends a record, the command that took the lock must rewrite both reports under that lock before it returns, or the reports must be derived at read time. Test: crash after a batch commit, take the lock with another command, and both reports reflect the batch.
 
+- *(Amended 3 Oct, Task 14.)* **How the categories are read from the store.** Build operations are not recorded, and a build failure in `runImport` marks the activity `failed` and leaves its candidate unpromoted. So:
+  - **Generation failed:** a persisted generate candidate on an activity marked `failed` (other than `skipped:`) counts as `generationFailed`, as do a `rejected` revision and a failed `build` operation.
+  - **Build pending:** a candidate otherwise counts as `buildPending`, including one that was built but not yet promoted.
+  - **After revision:** an activity with a `running` regeneration request is `inProgress`. A counted review is stale, and the activity `awaitingReview`, when the unit text changed after it.
+  - **Incomplete list:** names each activity with its partition and category.
+- *(Amended 3 Oct, Task 14.)* **Cost details.**
+  - **Billing-uncertain starts:** shown on their own line, and they also make every figure they would enter a lower bound, as unavailable costs do. Both are attempts without a known cost.
+  - **Unattributed attempts:** an attempt whose operation names no known activity is counted as shared, not dropped.
+  - **Allocation:** uses largest remainders, so the allocated parts sum exactly to the shared cost.
+- *(Amended 3 Oct, Task 14.)* **Item and minute details.**
+  - **Items:** counted over the first-pass and after-revision reviews. `multiChoice` shows items as `n/a`, since it has one question per activity.
+  - **First-pass minutes:** come from the first-pass review of each activity.
+  - **Revision minutes:** come from every scored review of a `regenerate` revision.
+  - **Never-targeted:** excludes targets already listed as unsupported.
+- *(Amended 3 Oct, Task 14.)* **Reading and writing.**
+  - **Locking:** each version-2 directory is read under its lock, for a consistent snapshot. Taking the lock also completes any committed batch a crash left unapplied.
+  - **Phase-2 directories:** read without a lock or a write. Because `gate-report.md` is written in the first directory and a phase-2 store is never written, a phase-2 directory given first is refused (exit 1).
+  - **Summary:** `--summary` writes JSON with counts, money, IDs and versions only. The test checks that neither it nor `gate-report.md` contains any source sentence, activity text, target or unit text, title, plan focus or finding reason.
+  - **Exit code:** the command exits 0 whenever the report is written, whatever the gate status.
+- *(Amended 3 Oct, Task 14.)* **The `rto-claim` prefix:** the sheet's instructions now document it. An activity that states one RTO's arrangements as a fact about the unit gets correctness 0, and the finding's reason starts with `rto-claim:`. Sheets exported earlier keep their text, since bundles are never rewritten.
+- *(Amended 3 Oct, Task 14.)* **Follow-ups done:**
+  - **Current-build acceptance:** `acceptedActivityIds`, which gives the cost report's accepted count, now uses `countedScore` on the current revision's current build, as `mapping.csv` does. `listAcceptances` is documented as history only.
+  - **Report refresh:** when lock-time replay appends any record, `FileStore.lock` rewrites `mapping.csv` and `cost.json` under that lock before any command proceeds. The in-memory store writes no reports.
+
 **Tests (write first, fixture-built stores):**
 - [ ] **Partition:** a fixture with one skipped, one in progress, one content failure **that never persisted a revision**, one persisted candidate whose produce succeeded and whose build is pending, one persisted candidate whose build failed, one build rejection, one promoted-unreviewed, and accepted, needs-revision and rejected first-pass activities. Every category count is right, and the categories sum to `planned` for both partitions. A property test over randomly generated store states asserts the sums.
 - [ ] The content failure without a revision contributes its attempts to `firstPassDirect` and counts in `generationFailed`.
@@ -809,6 +833,8 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 - [ ] Cost allocation by share, the zero-base fallback to planned count, a lower-bound label with an unavailable attempt, and `n/a (0 accepted)`.
 - [ ] A v1 directory is listed as not eligible and changes no figure.
 - [ ] The summary contains no content strings.
+- [ ] *(Added 3 Oct.)* Follow-up tests: accepting build A, then rebuilding the revision as build B, leaves the activity unaccepted until B is reviewed. A crash after a batch commit leaves stale reports, and the next command to take the lock (`review-sheet`) rewrites both with the batch.
+- [ ] *(Added 3 Oct.)* A phase-2 directory given first is refused, and nothing is written in it.
 
 **Verification:** `pnpm verify` → `exit=0`.
 

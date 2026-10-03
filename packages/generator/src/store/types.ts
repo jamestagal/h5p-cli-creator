@@ -211,7 +211,7 @@ export interface ImportStore {
   /** Stores a structured source's original bytes once (design §4.2). The same bytes again are a no-op; different bytes, or an original under the other extension, throw OriginalSourceError. Never overwrites. */
   putOriginalSource(importId: string, ext: OriginalSourceExt, bytes: Buffer): Promise<void>;
   getOriginalSource(importId: string): Promise<{ ext: OriginalSourceExt; bytes: Buffer } | null>;
-  /** The decision that counts per activity revision: scored records (with a sequence) by `(sequence, rowIndex)` (R8), ahead of earlier unscored ones, which go by append order. */
+  /** The latest decision per activity revision, whatever build it reviewed: scored records (with a sequence) by `(sequence, rowIndex)` (R8), ahead of earlier unscored ones, which go by append order. History only: whether an activity is accepted now comes from `countedScore` on the revision's current build. */
   listAcceptances(importId: string): Promise<AcceptanceRecord[]>;
   /** Every acceptance record in the ledger, as appended: for replay and history. */
   listAcceptanceRecords(importId: string): Promise<AcceptanceRecord[]>;

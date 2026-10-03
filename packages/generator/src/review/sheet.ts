@@ -105,6 +105,8 @@ function sheetHeader(m: SheetManifest, unit: UnitOfCompetency | null): string {
     "These activities are unreviewed. Their evidence IDs are source citations: a resolved ID shows that the quoted sentence exists in the source, not that it supports the answer. Their targets are a suggested alignment.",
     "",
     "Score each applicable dimension 0, 1 or 2 in scores.csv; `na` is already filled in where a dimension does not apply. For blanks and flashcards, check every item against its own passages. For every 0 or 1, add a row to findings.csv for each failing item, with the reason. Record your review minutes. Leave `decision` blank or give the decision the scores lead to.",
+    "",
+    "Negative check (design §4.4): if an activity states or implies one RTO's own arrangements (how it assesses, what it allows) as a fact about the unit, score correctness 0 and start that finding's reason with `rto-claim:`. The gate report counts these findings.",
     ""
   ];
   return lines.join("\n");

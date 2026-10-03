@@ -12,6 +12,7 @@ import { review } from "./review.js";
 import { reviewSheet } from "./review-sheet.js";
 import { reviewImport } from "./review-import.js";
 import { regenerate } from "./regenerate.js";
+import { gateReport } from "./gate-report.js";
 
 let reported = false;
 function reportFailure(msg: string | null | undefined, err: Error | undefined): void {
@@ -110,6 +111,12 @@ try {
       .option("run", { type: "string", describe: "the run's id in the ledger; required with --provider anthropic or record" }),
       async (argv) => {
         process.exitCode = await regenerate({ out: argv.out, activity: argv.activity, libraries: argv.libraries, provider: argv.provider, ...(argv.note !== undefined ? { note: argv.note } : {}), ...(argv.fixtures ? { fixtures: argv.fixtures } : {}), ...(argv["budget-usd"] !== undefined ? { budgetUsd: argv["budget-usd"] } : {}), ...(argv.ledger ? { ledger: argv.ledger } : {}), ...(argv.run ? { run: argv.run } : {}) }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
+      })
+    .command("gate-report <dirs..>", "Report first-pass and after-revision yields, distributions, review minutes and cost per type for one or more imports; writes gate-report.md in the first directory", (y) => y
+      .positional("dirs", { type: "string", array: true, demandOption: true, describe: "import directories; the first must be a version-2 import" })
+      .option("summary", { type: "string", describe: "also write a numbers-only JSON copy, with no source or activity text, to this file" }),
+      async (argv) => {
+        process.exitCode = await gateReport({ dirs: argv.dirs, ...(argv.summary ? { summary: argv.summary } : {}) }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
       })
     .demandCommand(1)
     .strict()

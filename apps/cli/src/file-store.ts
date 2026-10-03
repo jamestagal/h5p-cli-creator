@@ -3,6 +3,7 @@ import { appendFile, link, mkdir, readFile, rename, truncate, unlink, writeFile 
 import { dirname, join } from "node:path";
 import { assertCurrentLayout, assertSameOriginal, assertWritableStoreVersion, BuildIntegrityError, canonicalRecordJson, latestAcceptances, latestRegenerations, replayCommittedBatches, sameSheet, sortBatches, sha256Hex, SheetIntegrityError, sortBuilds, sortSheets, storeVersionOf, type AcceptanceRecord, type RegenerationRequest, type ReviewBatch, type ScoreRecord, type SheetManifest, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
 import { listIfPresent } from "./list-if-present.js";
+import { writeReports } from "./report.js";
 import { acquireDirectoryLock, type HeldLock, type LockOptions } from "./lock.js";
 
 export class StoreCorruptError extends Error {
@@ -88,8 +89,13 @@ export class FileStore implements ImportStore {
     const held = await acquireDirectoryLock(this.dir, importId, this.options.lock ?? {});
     this.held = held;
     const release = async (): Promise<void> => { this.held = null; await held.release(); };
-    // recovery (design §7.3): a committed batch whose ledger records a crash left unwritten is completed first
-    try { await replayCommittedBatches(this, importId); } catch (err) { await release(); throw err; }
+    // recovery (design §7.3): a committed batch whose ledger records a crash left unwritten is completed first, and the
+    // reports derived from those ledgers are rewritten under this lock before any command proceeds (they were written
+    // before the crash, without the batch)
+    try {
+      const appended = await replayCommittedBatches(this, importId);
+      if (appended.scores + appended.acceptances > 0) await writeReports(this, importId, this.dir);
+    } catch (err) { await release(); throw err; }
     return { release };
   }
 

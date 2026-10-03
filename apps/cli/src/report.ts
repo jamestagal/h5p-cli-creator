@@ -21,12 +21,19 @@ export interface CostReport {
   costPerAcceptedActivityUsdMicro: number | null;
 }
 
+/**
+ * Activities accepted now: the counted scored review of the current revision's **current build** accepted it (C3), as
+ * mapping.csv's `reviewed` status. An acceptance of an earlier build of the same revision, or an unscored decision,
+ * does not count here; the gate report shows it only among the historical first-pass results.
+ */
 export async function acceptedActivityIds(store: ImportStore, importId: string): Promise<Set<string>> {
-  const activities = await store.listActivities(importId);
+  const scores = await store.listScores(importId);
   const accepted = new Set<string>();
-  for (const a of await store.listAcceptances(importId)) {
-    const activity = activities.find((x) => x.activityId === a.activityId);
-    if (activity && activity.currentRevision === a.revision && a.decision === "accepted") accepted.add(a.activityId);
+  for (const a of await store.listActivities(importId)) {
+    if (a.currentRevision === null) continue;
+    const rev = await store.getRevision(a.activityId, a.currentRevision);
+    if (!rev?.currentBuildId) continue;
+    if (countedScore(scores, a.activityId, rev.revision, rev.currentBuildId)?.decision === "accepted") accepted.add(a.activityId);
   }
   return accepted;
 }

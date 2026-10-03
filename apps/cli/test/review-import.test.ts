@@ -7,6 +7,7 @@ import { FileStore } from "../src/file-store.js";
 import { review } from "../src/review.js";
 import { reviewImport } from "../src/review-import.js";
 import { reviewSheet } from "../src/review-sheet.js";
+import { writeReports } from "../src/report.js";
 import { seededDir } from "./helpers/seeded-import.js";
 
 const phase2 = resolve(import.meta.dirname, "fixtures/phase2-store");
@@ -126,6 +127,22 @@ describe("leap review-import", () => {
     expect((await reopened.listAcceptances(importId)).find((a) => a.activityId === "act-1")).toMatchObject({ sequence: 2, decision: "rejected" });
     await (await reopened.lock(importId)).release();
     expect(await reopened.listScores(importId)).toHaveLength(2); // the second lock appends nothing
+  });
+
+  it("a crash after a batch commit leaves stale reports; the next command to take the lock rewrites mapping.csv and cost.json with the batch (Task 14 follow-up)", async () => {
+    const { dir, store, importId, sheetId, scores } = await exported();
+    await writeFile(scores, [header, row(sheetId, "act-1", "0123456789abcdef", "2,2,2,2,2,4,")].join("\n") + "\n");
+    expect(await reviewImport({ out: dir, scores, reviewer: "Benjamin" }, io().io)).toBe(0);
+    // the crash: the batch file was renamed into place, but neither its ledger records nor the reports were written
+    for (const ledger of ["scores.jsonl", "acceptances.jsonl"]) await writeFile(join(dir, ledger), "");
+    await writeReports(store, importId, dir);
+    expect(await readFile(join(dir, "mapping.csv"), "utf8")).not.toMatch(/,reviewed,/);
+    expect(JSON.parse(await readFile(join(dir, "cost.json"), "utf8"))).toMatchObject({ accepted: 0 });
+    // another command takes the lock: review-sheet, which writes neither report itself
+    expect(await reviewSheet({ out: dir }, io().io)).toBe(0);
+    expect(await new FileStore(dir).listScores(importId)).toHaveLength(1);
+    expect(await readFile(join(dir, "mapping.csv"), "utf8")).toMatch(/\nact-1,multiChoice,Locks,1,,PC2\.1,reviewed,/);
+    expect(JSON.parse(await readFile(join(dir, "cost.json"), "utf8"))).toMatchObject({ accepted: 1 });
   });
 });
 

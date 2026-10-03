@@ -223,13 +223,40 @@ down: the request runs under the lowest of the import's cap, the ledger run's ca
 that cap when resumed. Elapsed time, including an interrupted run's, counts towards the import's limit as for
 `generate`.
 
+### The gate report: `leap gate-report`
+
+```bash
+node apps/cli/dist/index.js gate-report ./out/synele001 ./out/bsbaud412 --summary docs/testing/gate-summary.json
+```
+
+Reads each import directory and writes `gate-report.md` in the first one, which must be a version-2 import. For
+each type, and pooled across imports with a per-unit breakdown, it shows:
+- **First pass:** every planned activity in exactly one category (dropped, not attempted, in progress, build pending,
+  generation failed, unreviewed, accepted, needs revision, rejected), with the sum beside `planned`. The decision is
+  the first scored review of the activity's first promoted revision; one made on a build that is no longer current
+  is counted and marked historical.
+- **After revision:** the same partition for the latest promoted revision, where only the counted review of its
+  current build counts. It also shows the regenerations used and failed, their extra cost and their extra review
+  minutes.
+- **Review detail:** 0/1/2/na distributions for every dimension, inspected and failing items for blanks and
+  flashcards, and review minutes.
+- **Cost:** taken from attempt records. Shared cost is allocated by first-pass direct share, an accounting
+  convention. An attempt without a cost is never priced at zero: every figure it would enter is marked as a lower
+  bound.
+
+An import with an unreviewed, in-progress, build-pending or awaiting-review activity is **incomplete** and can never
+pass. Thresholds are not frozen yet, so the provisional targets are shown and not evaluated. Phase-2 directories are
+listed as not eligible and change no figure. `--summary` writes a numbers-only JSON copy with no source, activity or
+unit text. In findings, a reason starting `rto-claim:` marks the §4.4 negative check, and the report counts those
+findings.
+
 ### Exit codes
 
-| Code | `leap generate` | `leap review` | `leap review-sheet` | `leap review-import` | `leap regenerate` |
-|---|---|---|---|---|---|
-| `0` | every planned activity was promoted (`ready`) | the decision was recorded | the sheet was written, or nothing needs a review | the new rows were committed, or there was nothing new | the new revision was promoted |
-| `2` | some activities were promoted and some failed (`ready_with_failures`); the per-activity lines name each failure and its reason | — | — | — | — |
-| `1` | nothing was promoted, or the run was refused: the directory is locked by another `leap` process, the inputs no longer match the import's fingerprint, or an argument was rejected | the import, activity, revision or criterion named does not exist, the activity has no promoted revision, `--decision` was given, or the directory is locked | the directory holds no import or a phase-2 import, an activity's revision or build record is missing, or it is locked | any problem or stale row (nothing was written), or the directory holds no import or a phase-2 import, or it is locked | the activity is not eligible, has used its two requests, the ledger refused the run, the request failed (recorded, and it counts), or it did not finish (it stays running; rerun to finish it) |
+| Code | `leap generate` | `leap review` | `leap review-sheet` | `leap review-import` | `leap regenerate` | `leap gate-report` |
+|---|---|---|---|---|---|---|
+| `0` | every planned activity was promoted (`ready`) | the decision was recorded | the sheet was written, or nothing needs a review | the new rows were committed, or there was nothing new | the new revision was promoted | the report was written, whatever the gate status |
+| `2` | some activities were promoted and some failed (`ready_with_failures`); the per-activity lines name each failure and its reason | — | — | — | — | — |
+| `1` | nothing was promoted, or the run was refused: the directory is locked by another `leap` process, the inputs no longer match the import's fingerprint, or an argument was rejected | the import, activity, revision or criterion named does not exist, the activity has no promoted revision, `--decision` was given, or the directory is locked | the directory holds no import or a phase-2 import, an activity's revision or build record is missing, or it is locked | any problem or stale row (nothing was written), or the directory holds no import or a phase-2 import, or it is locked | the activity is not eligible, has used its two requests, the ledger refused the run, the request failed (recorded, and it counts), or it did not finish (it stays running; rerun to finish it) | a directory holds no import or a malformed one, the first directory is a phase-2 store, or a directory is locked |
 
 A `2` is a real result to read, not a crash: the failed activities carry a reason (`content:`, `budget:`, `system:` or `skipped:`), and rerunning the same command resumes the import and re-dispatches everything except the `content:` failures.
 
