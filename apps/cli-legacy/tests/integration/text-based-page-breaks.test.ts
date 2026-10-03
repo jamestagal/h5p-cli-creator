@@ -7,6 +7,8 @@
  * Phase 4: Text-Based Page Breaks for Interactive Book Stories
  */
 
+import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import * as fsExtra from "fs-extra";
 import { TranscriptFileParser } from "../../src/services/transcription/TranscriptFileParser";
@@ -16,7 +18,18 @@ import { TranscriptSegment } from "../../src/services/types/YouTubeExtractorType
 import { validateConfigMode, StoryConfig } from "../../src/models/StoryConfig";
 
 describe("Text-Based Page Breaks Integration Tests", () => {
+  // Committed input fixtures (read only)
   const fixturesDir = path.join(__dirname, "../fixtures/transcripts");
+  // Private per-file directory for generated transcripts
+  let tempDir: string;
+
+  beforeAll(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "text-based-page-breaks-"));
+  });
+
+  afterAll(async () => {
+    await fsExtra.remove(tempDir);
+  });
 
   // Sample Whisper segments for testing
   const sampleWhisperSegments: TranscriptSegment[] = [
@@ -49,8 +62,7 @@ Bonjour
 # Page 6: Goodbye
 Au revoir`;
 
-      const tempFile = path.join(fixturesDir, "test-workflow.txt");
-      await fsExtra.ensureDir(fixturesDir);
+      const tempFile = path.join(tempDir, "test-workflow.txt");
       await fsExtra.writeFile(tempFile, transcriptContent, "utf-8");
 
       // Step 2: Parse transcript
@@ -292,7 +304,7 @@ Some content
 # Page 3: More Content
 More text`;
 
-      const tempFile = path.join(fixturesDir, "test-empty-page.txt");
+      const tempFile = path.join(tempDir, "test-empty-page.txt");
       await fsExtra.writeFile(tempFile, transcriptContent, "utf-8");
 
       const parser = new TranscriptFileParser(tempFile);
@@ -305,7 +317,7 @@ More text`;
       const transcriptContent = `# Page 1: Title
 Some content without any page breaks at all`;
 
-      const tempFile = path.join(fixturesDir, "test-no-breaks.txt");
+      const tempFile = path.join(tempDir, "test-no-breaks.txt");
       await fsExtra.writeFile(tempFile, transcriptContent, "utf-8");
 
       const parser = new TranscriptFileParser(tempFile);
@@ -351,7 +363,7 @@ ${vietnameseText}
 # Page 2: End
 Done`;
 
-      const tempFile = path.join(fixturesDir, "test-vietnamese.txt");
+      const tempFile = path.join(tempDir, "test-vietnamese.txt");
       await fsExtra.writeFile(tempFile, transcriptContent, "utf-8");
 
       // Parse
@@ -380,7 +392,7 @@ ${frenchText}
 # Page 2: End
 Done`;
 
-      const tempFile = path.join(fixturesDir, "test-french.txt");
+      const tempFile = path.join(tempDir, "test-french.txt");
       await fsExtra.writeFile(tempFile, transcriptContent, "utf-8");
 
       const parser = new TranscriptFileParser(tempFile);

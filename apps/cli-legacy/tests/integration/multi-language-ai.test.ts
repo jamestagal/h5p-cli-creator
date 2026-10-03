@@ -13,14 +13,17 @@
 import { YamlInputParser } from "../../src/compiler/YamlInputParser";
 import { AIPromptBuilder } from "../../src/ai/AIPromptBuilder";
 import { LanguageUtils } from "../../src/ai/LanguageUtils";
+import * as fs from "fs";
 import * as fsExtra from "fs-extra";
+import * as os from "os";
 import * as path from "path";
 
 describe("Multi-Language AI Content Generation", () => {
-  const testOutputDir = path.join(__dirname, "..", "test-output", "multi-language");
+  let testOutputDir: string;
 
-  beforeAll(async () => {
-    await fsExtra.ensureDir(testOutputDir);
+  beforeAll(() => {
+    // Private per-file directory; never shared with another suite
+    testOutputDir = fs.mkdtempSync(path.join(os.tmpdir(), "multi-language-ai-"));
   });
 
   afterAll(async () => {

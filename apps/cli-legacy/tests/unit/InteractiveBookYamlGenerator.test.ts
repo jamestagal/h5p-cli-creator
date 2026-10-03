@@ -13,23 +13,30 @@
 import { InteractiveBookYamlGenerator } from "../../src/services/InteractiveBookYamlGenerator";
 import { StoryPageData } from "../../src/models/StoryPageData";
 import { StoryConfig } from "../../src/models/StoryConfig";
+import * as fs from "fs";
 import * as fsExtra from "fs-extra";
+import * as os from "os";
 import * as path from "path";
 import * as yaml from "js-yaml";
 
 describe("InteractiveBookYamlGenerator", () => {
   let generator: InteractiveBookYamlGenerator;
-  const testOutputDir = path.join(process.cwd(), "test-output");
+  let tempRoot: string;
+  // Output directory inside the private temp root; left uncreated so the
+  // generator still has to create it
+  let testOutputDir: string;
+
+  beforeAll(() => {
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "interactive-book-yaml-generator-"));
+    testOutputDir = path.join(tempRoot, "test-output");
+  });
+
+  afterAll(async () => {
+    await fsExtra.remove(tempRoot);
+  });
 
   beforeEach(() => {
     generator = new InteractiveBookYamlGenerator();
-  });
-
-  afterEach(async () => {
-    // Clean up test output directory
-    if (await fsExtra.pathExists(testOutputDir)) {
-      await fsExtra.remove(testOutputDir);
-    }
   });
 
   describe("generateIntroPage", () => {

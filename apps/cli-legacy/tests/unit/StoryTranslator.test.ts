@@ -12,7 +12,9 @@
 
 import { StoryTranslator } from "../../src/services/StoryTranslator";
 import { StoryPageData } from "../../src/models/StoryPageData";
+import * as fs from "fs";
 import * as fsExtra from "fs-extra";
+import * as os from "os";
 import * as path from "path";
 
 // Mock OpenAI module
@@ -35,11 +37,24 @@ jest.mock("openai", () => {
 describe("StoryTranslator", () => {
   let translator: StoryTranslator;
   const testVideoId = "TEST_VIDEO_123";
-  const testCacheDir = path.join(process.cwd(), ".youtube-cache", testVideoId);
+  // Private per-file root holding the .youtube-cache/{VIDEO_ID} layout
+  let tempRoot: string;
+  let testCacheBase: string;
+  let testCacheDir: string;
+
+  beforeAll(() => {
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "story-translator-"));
+    testCacheBase = path.join(tempRoot, ".youtube-cache");
+    testCacheDir = path.join(testCacheBase, testVideoId);
+  });
+
+  afterAll(async () => {
+    await fsExtra.remove(tempRoot);
+  });
 
   beforeEach(() => {
-    // Create translator with test API key
-    translator = new StoryTranslator("test-api-key");
+    // Create translator with test API key and the private cache base
+    translator = new StoryTranslator("test-api-key", testCacheBase);
     // Clear mock
     mockCreate.mockClear();
   });

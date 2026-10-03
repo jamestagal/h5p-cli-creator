@@ -6,17 +6,20 @@
  * Phase 3: YouTube Story Extraction for Interactive Books
  */
 
+import * as fs from "fs";
 import * as fsExtra from "fs-extra";
+import * as os from "os";
 import * as path from "path";
 import * as yaml from "js-yaml";
 import { StoryConfig } from "../../src/models/StoryConfig";
 
 describe("youtube-extract command", () => {
   const testConfigPath = path.join(__dirname, "..", "..", "examples", "youtube-stories", "test-story-config.yaml");
-  const tempDir = path.join(__dirname, "..", "..", ".temp-test");
+  let tempDir: string;
 
-  beforeAll(async () => {
-    await fsExtra.ensureDir(tempDir);
+  beforeAll(() => {
+    // Private per-file directory; never shared with another suite
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "youtube-extract-"));
   });
 
   afterAll(async () => {
