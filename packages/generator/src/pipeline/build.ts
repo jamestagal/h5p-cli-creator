@@ -29,6 +29,21 @@ export async function buildRevision(deps: BuildDeps, importId: string, revision:
   return record;
 }
 
+/**
+ * The build a promoted revision already points to, checked without rebuilding or writing anything: its record exists
+ * and belongs to this import, activity and revision under its own buildId and key, and its package bytes exist with
+ * the recorded length and hash. Otherwise BuildArtifactError (or a plain error when there is no record to name).
+ */
+export async function verifyCurrentBuild(store: ImportStore, importId: string, revision: RevisionRecord): Promise<BuildRecord> {
+  const where = `${revision.activityId} revision ${revision.revision}`;
+  if (revision.currentBuildId === null) throw new Error(`${where} has no current build`);
+  const record = await store.getBuildRecord(revision.currentBuildId);
+  if (!record) throw new Error(`${where} points at build ${revision.currentBuildId}, whose build record is missing`);
+  const owner = [record.importId === importId ? null : `import ${record.importId}`, record.activityId === revision.activityId ? null : `activity ${record.activityId}`, record.revision === revision.revision ? null : `revision ${record.revision}`, record.buildId === revision.currentBuildId ? null : `build ${record.buildId}`].filter((x) => x !== null);
+  if (owner.length > 0) throw new BuildArtifactError(record, `it belongs to ${owner.join(", ")}, not to ${where} of import ${importId}`);
+  return verifiedBuild(store, record, buildKeyFor(record.activityId, record.revision, record.engineFingerprint));
+}
+
 /** An existing build record, returned only if its key is the expected one and its bytes exist with its recorded length and hash. */
 async function verifiedBuild(store: ImportStore, record: BuildRecord, expectedKey: string): Promise<BuildRecord> {
   if (record.buildKey !== expectedKey) throw new BuildArtifactError(record, `the record names ${record.buildKey}, but this revision and engine build to ${expectedKey}`);

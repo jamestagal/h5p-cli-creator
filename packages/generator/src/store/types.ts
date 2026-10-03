@@ -103,6 +103,8 @@ export interface ReviewBatch { batchId: string; sequence: number; importId: stri
  */
 export interface RegenerationRequest {
   requestId: string; importId: string; activityId: string; index: number; baseRevision: number; targetRevision: number; note: string;
+  /** The limits fixed when the request was created (the import's, lowered by any the command gave); a resume never runs above them. */
+  budget: BudgetLimits;
   status: "running" | "succeeded" | "failed"; outcome: string | null; createdAt: string; completedAt: string | null;
 }
 

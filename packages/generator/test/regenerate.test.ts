@@ -5,13 +5,15 @@ import { RUBRIC_VERSION, type ScoreDecision } from "@leaplearn/shared";
 import { MemoryStore } from "../src/store/memory-store.js";
 import { runImport, type RunImportInput } from "../src/pipeline/run-import.js";
 import { regenerateActivity, RegenerateRefused, type RegenerateInput } from "../src/pipeline/regenerate.js";
+import type { ModelProvider } from "../src/llm/provider.js";
+import { BuildArtifactError } from "../src/store/types.js";
 import { FakeProvider, fakeResponse } from "../src/llm/fake-provider.js";
 import { DEFAULT_PROMPT_CONFIG } from "../src/prompts/system.js";
 import type { PlanRules } from "../src/plan/planner.js";
 import type { AttemptStart } from "../src/llm/types.js";
-import type { ImportStore } from "../src/store/types.js";
+import type { ArtifactName, ImportStore } from "../src/store/types.js";
 import { fullScript, produceResponses, syntheticDoc, syntheticUnitText, SYNTHETIC_CHUNK_TOKENS } from "./helpers/synthetic.js";
-import { crashBefore, CrashError } from "./helpers/crashing-store.js";
+import { crashBefore, CrashError, failOnce, StorageError, withBuildBytes } from "./helpers/crashing-store.js";
 import { IDENTITY_A } from "./helpers/identity.js";
 
 const root = resolve(import.meta.dirname, "../../..");
@@ -40,12 +42,22 @@ async function score(store: MemoryStore, importId: string, activityId: string, d
   await store.putScore({ rowKey: `k${sequence}`, batchId: `b${sequence}`, sequence, rowIndex: 0, sheetId: "s", importId, activityId, revision: rev.revision, buildId: rev.currentBuildId!, unitTextHash: null, rubricVersion: RUBRIC_VERSION, reviewer: "B", scores: { correctness: value, support: 2, distractors: 2, mapping: 2, usefulness: 2 }, findings: [], minutes: 3, decision, decidedAt: "t" });
 }
 
-const deps = (store: ImportStore, provider: FakeProvider) => ({ store, provider, registry, engineIdentity: IDENTITY_A, sleep: async () => undefined });
+const deps = (store: ImportStore, provider: ModelProvider) => ({ store, provider, registry, engineIdentity: IDENTITY_A, sleep: async () => undefined });
 /** Regenerates act-1 with NOTE; `note: null` leaves the note out, as a resume may. */
-const regen = (store: ImportStore, provider: FakeProvider, overrides: { note?: string | null; budget?: RegenerateInput["budget"] } = {}) => {
+const regen = (store: ImportStore, provider: ModelProvider, overrides: { note?: string | null; budget?: RegenerateInput["budget"]; clock?: () => Date; maxAttemptMs?: number } = {}) => {
   const note = overrides.note === null ? {} : { note: overrides.note ?? NOTE };
-  return regenerateActivity({ importId: "imp", activityId: "act-1", ...note, ...(overrides.budget ? { budget: overrides.budget } : {}) }, deps(store, provider));
+  return regenerateActivity({ importId: "imp", activityId: "act-1", ...note, ...(overrides.budget ? { budget: overrides.budget } : {}) }, { ...deps(store, provider), ...(overrides.clock ? { clock: overrides.clock } : {}), ...(overrides.maxAttemptMs ? { maxAttemptMs: overrides.maxAttemptMs } : {}) });
 };
+/** A store in which the named artifact was never written: an import from before it existed. */
+const without = (inner: ImportStore, name: ArtifactName): ImportStore => new Proxy(inner, {
+  get(target, prop, receiver) {
+    const value = Reflect.get(target, prop, receiver) as unknown;
+    if (typeof value !== "function") return value;
+    const fn = value as (...args: unknown[]) => unknown;
+    return (...args: unknown[]) => (prop === "getArtifact" && args[1] === name ? Promise.resolve(null) : fn.apply(target, args));
+  }
+});
+const act1 = async (store: ImportStore) => (await store.listActivities("imp")).find((a) => a.activityId === "act-1")!;
 const mcReply = async () => r(produceResponses(await syntheticDoc()).mc);
 
 describe("leap regenerate: eligibility and the result (design §6)", () => {
@@ -166,3 +178,146 @@ describe("the allowance counts every request (C2)", () => {
   });
 });
 
+describe("elapsed time uses the import's shared run anchor (3 Oct)", () => {
+  it("a clean regeneration adds its own time and clears the anchor", async () => {
+    const store = await completeImport("imp");
+    await score(store, "imp", "act-1", "needs-revision");
+    const before = (await store.getImport("imp"))!.budgetUsed.elapsedMs;
+    let now = Date.now() + 86_400_000;
+    const inner = new FakeProvider([await mcReply()]);
+    const slow: ModelProvider = { name: "fake", complete: async (req, o) => { now += 7000; return inner.complete(req, o); } }; // the call takes 7 s
+    expect((await regen(store, slow, { clock: () => new Date(now) })).request.status).toBe("succeeded");
+    const after = (await store.getImport("imp"))!;
+    expect(after.currentRun).toBeNull();
+    expect(after.budgetUsed.elapsedMs).toBe(before + 7000);
+  });
+
+  it("an interrupted regeneration's time is charged on resume: the anchor is durable before dispatch, and the resume folds and clears it", async () => {
+    const store = await completeImport("imp");
+    await score(store, "imp", "act-1", "needs-revision");
+    const before = (await store.getImport("imp"))!.budgetUsed.elapsedMs;
+    const T0 = Date.now() + 86_400_000;
+    const provider = new FakeProvider([await mcReply()]);
+    await expect(regen(crashBefore(store, "putBuild", 1), provider, { clock: () => new Date(T0) })).rejects.toBeInstanceOf(CrashError);
+    expect((await store.getImport("imp"))!.currentRun).toEqual({ startedAt: new Date(T0).toISOString(), elapsedBeforeMs: before });
+    // resumed 100 s after the kill; the last durable write was at T0, so 60 s (one maximum attempt) is charged
+    const { request } = await regen(store, provider, { note: null, clock: () => new Date(T0 + 100_000), maxAttemptMs: 60_000 });
+    expect(request.status).toBe("succeeded");
+    const after = (await store.getImport("imp"))!;
+    expect(after.currentRun).toBeNull();
+    expect(after.budgetUsed.elapsedMs).toBe(before + 60_000);
+  });
+
+  it("a content failure also folds and clears the anchor", async () => {
+    const store = await completeImport("imp");
+    await score(store, "imp", "act-1", "needs-revision");
+    const bad = r({ title: "Bad" });
+    expect((await regen(store, new FakeProvider([bad, bad, bad]))).request.status).toBe("failed");
+    expect((await store.getImport("imp"))!.currentRun).toBeNull();
+  });
+});
+
+describe("caps only go down (3 Oct)", () => {
+  it("a supplied cap above the import's never raises it", async () => {
+    const store = await completeImport("imp");
+    await score(store, "imp", "act-1", "needs-revision");
+    const rec = (await store.getImport("imp"))!;
+    await store.putImport({ ...rec, budget: { ...rec.budget, usdMicro: 1 } });
+    const provider = new FakeProvider([await mcReply()]);
+    const { request } = await regen(store, provider, { budget: { usdMicro: 50_000_000 } }); // as a ledger cap above the import's would be
+    expect(request).toMatchObject({ status: "failed", outcome: expect.stringMatching(/^budget: /), budget: { usdMicro: 1 } });
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  it("a request's lower cap is stored with it and kept on resume, with or without a supplied cap", async () => {
+    const store = await completeImport("imp");
+    await score(store, "imp", "act-1", "needs-revision");
+    await expect(regen(crashBefore(store, "putOperation", 1), new FakeProvider([]), { budget: { usdMicro: 1 } })).rejects.toBeInstanceOf(CrashError);
+    expect((await store.listRegenerations("imp"))[0]).toMatchObject({ status: "running", budget: { usdMicro: 1 } });
+    const provider = new FakeProvider([await mcReply()]);
+    const { request } = await regen(store, provider, { note: null, budget: { usdMicro: 50_000_000 } });
+    expect(request).toMatchObject({ status: "failed", outcome: expect.stringMatching(/^budget: /) });
+    expect(provider.requests).toHaveLength(0);
+  });
+});
+
+describe("prerequisites are checked before a request is appended (3 Oct)", () => {
+  it("an import without stored production settings is refused with no request, no allowance used and no model call", async () => {
+    const store = await completeImport("imp");
+    await score(store, "imp", "act-1", "needs-revision");
+    const provider = new FakeProvider([await mcReply()]);
+    await expect(regen(without(store, "settings"), provider)).rejects.toThrow(/import imp has no stored production settings/);
+    await expect(regen(without(store, "plan"), provider)).rejects.toThrow(/no stored plan entry for act-1/);
+    expect(await store.listRegenerations("imp")).toEqual([]);
+    expect(provider.requests).toHaveLength(0);
+  });
+});
+
+describe("publication is recoverable across each write (3 Oct)", () => {
+  const writes: Array<[string, (s: ImportStore) => ImportStore]> = [
+    ["the build bytes", (s) => failOnce(s, "putBuild")],
+    ["the build record", (s) => failOnce(s, "putBuildRecord")],
+    ["superseding revision 1", (s) => failOnce(s, "putRevision", ([rev]) => rev.state === "superseded")],
+    ["promoting revision 2", (s) => failOnce(s, "putRevision", ([rev]) => rev.state === "promoted" && rev.revision === 2)],
+    ["pointing the activity at revision 2", (s) => failOnce(s, "putActivity")],
+    ["the succeeded event", (s) => failOnce(s, "putRegeneration", ([req]) => req.status === "succeeded")]
+  ];
+  for (const [name, failing] of writes) {
+    it(`a failed write of ${name} leaves the request running; a rerun finishes it with no model call and no allowance`, async () => {
+      const store = await completeImport("imp");
+      await score(store, "imp", "act-1", "needs-revision");
+      const provider = new FakeProvider([await mcReply(), await mcReply()]);
+      await expect(regen(failing(store), provider)).rejects.toBeInstanceOf(StorageError);
+      expect((await store.listRegenerations("imp")).map((x) => [x.requestId, x.status])).toEqual([["act-1:regen:1", "running"]]);
+      expect((await store.getImport("imp"))!.currentRun).toBeNull(); // the process stayed alive, so it folded its time
+      const { request, resumed } = await regen(store, provider, { note: null });
+      expect([resumed, request.status]).toEqual([true, "succeeded"]);
+      expect(provider.requests).toHaveLength(1);
+      expect((await store.listBuilds("act-1")).filter((b) => b.revision === 2)).toHaveLength(1);
+      expect((await store.getRevision("act-1", 1))!.state).toBe("superseded");
+      expect((await store.getRevision("act-1", 2))!.state).toBe("promoted");
+      expect(await act1(store)).toMatchObject({ status: "promoted", currentRevision: 2 });
+      await score(store, "imp", "act-1", "needs-revision");
+      expect((await regen(store, new FakeProvider([await mcReply()]))).request.index).toBe(2);
+    });
+  }
+});
+
+describe("a resume verifies the promoted target's build before success (3 Oct)", () => {
+  /** Revision 2 promoted, the process killed before `succeeded`. */
+  async function promotedThenKilled() {
+    const store = await completeImport("imp");
+    await score(store, "imp", "act-1", "needs-revision");
+    await expect(regen(crashBefore(store, "putRegeneration", 1, ([req]) => req.status === "succeeded"), new FakeProvider([await mcReply()]))).rejects.toBeInstanceOf(CrashError);
+    return store;
+  }
+  const damages: Array<[string, (s: ImportStore) => Promise<ImportStore>, RegExp]> = [
+    ["a missing package", async (s) => withBuildBytes(s, (key, b) => (key.includes("act-1-r2-") ? null : b)), /its package file is missing/],
+    ["an altered package", async (s) => withBuildBytes(s, (key, b) => (key.includes("act-1-r2-") && b ? Buffer.concat([b, Buffer.from("x")]) : b)), /its package file is \d+ bytes, but the record says/],
+    ["a build of another revision", async (s) => {
+      const rev1 = (await s.getRevision("act-1", 1))!; const rev2 = (await s.getRevision("act-1", 2))!;
+      await s.putRevision({ ...rev2, currentBuildId: rev1.currentBuildId });
+      return s;
+    }, /it belongs to revision 1, not to act-1 revision 2 of import imp/]
+  ];
+  for (const [name, damage, message] of damages) {
+    it(`${name}: no success is reported, nothing is rebuilt or overwritten, and the request stays running`, async () => {
+      const store = await promotedThenKilled();
+      const buildsBefore = await store.listBuilds("act-1");
+      const provider = new FakeProvider([]);
+      const err = await regen(await damage(store), provider, { note: null }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(BuildArtifactError);
+      expect((err as Error).message).toMatch(message);
+      expect(provider.requests).toHaveLength(0);
+      expect(await store.listBuilds("act-1")).toEqual(buildsBefore);
+      expect((await store.listRegenerations("imp")).map((x) => x.status)).toEqual(["running"]);
+    });
+  }
+
+  it("an intact promoted target is verified and the request finishes", async () => {
+    const store = await promotedThenKilled();
+    const buildsBefore = await store.listBuilds("act-1");
+    expect((await regen(store, new FakeProvider([]), { note: null })).request.status).toBe("succeeded");
+    expect(await store.listBuilds("act-1")).toEqual(buildsBefore);
+  });
+});

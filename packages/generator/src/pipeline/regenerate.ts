@@ -6,13 +6,14 @@ import type { ModelProvider } from "../llm/provider.js";
 import { BudgetRefused, ContentFailure } from "../llm/runner.js";
 import type { ActivityPlan } from "../plan/planner.js";
 import { createProducers } from "../produce/index.js";
+import type { Producer } from "../produce/producer.js";
 import { PROMPT_VERSION } from "../prompts/system.js";
 import { countedScore } from "../review/scores.js";
 import { assertCurrentLayout } from "../store/layout.js";
 import { assertWritableStoreVersion, type ImportRecord, type ImportStore, type RegenerationRequest, type RevisionRecord } from "../store/types.js";
-import { buildRevision } from "./build.js";
-import { attemptsByKey, budgetFromLedger, reconcile, runOperation, type OperationContext } from "./operations.js";
-import { existingTexts, type ImportSettings } from "./run-import.js";
+import { buildRevision, verifyCurrentBuild } from "./build.js";
+import { attemptsByKey, budgetFromLedger, reconcile, reconcileElapsed, runOperation, type OperationContext } from "./operations.js";
+import { DEFAULT_MAX_ATTEMPT_MS, existingTexts, type ImportSettings } from "./run-import.js";
 
 /** At most this many logical regeneration requests per activity in the pilot (design §6, C2), whatever their outcome. */
 export const MAX_REGENERATIONS = 2;
@@ -21,15 +22,41 @@ export const MAX_REGENERATIONS = 2;
 export class RegenerateRefused extends Error { constructor(message: string) { super(message); this.name = "RegenerateRefused"; } }
 
 export interface RegenerateInput { importId: string; activityId: string; note?: string; budget?: Partial<BudgetLimits> }
-export interface RegenerateDeps { store: ImportStore; provider: ModelProvider; registry: LibraryRegistry; engineIdentity: EngineIdentity; clock?: () => Date; sleep?: (ms: number) => Promise<void> }
+export interface RegenerateDeps { store: ImportStore; provider: ModelProvider; registry: LibraryRegistry; engineIdentity: EngineIdentity; clock?: () => Date; sleep?: (ms: number) => Promise<void>; maxAttemptMs?: number }
 export interface RegenerateResult { request: RegenerationRequest; resumed: boolean }
+
+/**
+ * The limits a regeneration runs under: each limit is the lowest of the import's own and every one given (the request's
+ * stored limits, the command's). A supplied limit can lower a cap and never raise one, so a ledger cap above the
+ * import's leaves the import's in force.
+ */
+export function effectiveLimits(importLimits: BudgetLimits, ...lower: Array<Partial<BudgetLimits> | undefined>): BudgetLimits {
+  const out = { ...importLimits };
+  for (const l of lower) for (const k of ["usdMicro", "requests", "tokens", "elapsedMs"] as const) { const v = l?.[k]; if (v !== undefined) out[k] = Math.min(out[k], v); }
+  return out;
+}
+
+/** What producing the activity again needs, read from the store. Checked before a new request is appended, so an import that cannot be regenerated uses none of its allowance. */
+interface ProductionInputs { settings: ImportSettings; plan: ActivityPlan; map: ConceptMap; producer: Producer }
+async function productionInputs(store: ImportStore, importId: string, activityId: string): Promise<ProductionInputs> {
+  const settings = await store.getArtifact<ImportSettings>(importId, "settings");
+  if (!settings) throw new RegenerateRefused(`import ${importId} has no stored production settings; rerun leap generate with its original arguments once to record them, then regenerate`);
+  const plan = (await store.getArtifact<ActivityPlan[]>(importId, "plan"))?.find((p) => p.activityId === activityId);
+  if (!plan) throw new RegenerateRefused(`import ${importId} has no stored plan entry for ${activityId}`);
+  const map = await store.getArtifact<ConceptMap>(importId, "conceptMap");
+  if (!map) throw new RegenerateRefused(`import ${importId} has no stored concept map`);
+  const producer = createProducers().get(plan.type);
+  if (!producer) throw new RegenerateRefused(`no producer for ${plan.type}`);
+  return { settings, plan, map, producer };
+}
 
 /**
  * `leap regenerate` (design §6, plan Task 13). Under the import's lock: refuses a phase-2 store; finishes the
  * activity's running request if there is one (R9: no eligibility check, no allowance consumed, the note may be omitted
- * and must match if given); otherwise checks eligibility and the allowance, appends a `running` request before any
- * dispatch, and produces, builds and promotes the new revision. Returns the request as finally recorded (`succeeded` or
- * `failed`). Paid-provider ledger checks happen before this is called.
+ * and must match if given); otherwise checks eligibility, the production inputs and the allowance, appends a `running`
+ * request carrying its limits before any dispatch, and produces, builds and promotes the new revision. Returns the
+ * request as finally recorded (`succeeded` or `failed`); any other error leaves it `running`, to be finished by a rerun.
+ * Paid-provider ledger checks happen before this is called.
  */
 export async function regenerateActivity(input: RegenerateInput, deps: RegenerateDeps): Promise<RegenerateResult> {
   const { store } = deps;
@@ -48,7 +75,7 @@ export async function regenerateActivity(input: RegenerateInput, deps: Regenerat
       return { request: await finish(latest, record, input, deps, clock), resumed: true };
     }
 
-    // Only when creating a new request: eligibility, the note, the allowance.
+    // Only when creating a new request: eligibility, the note, the production inputs, the allowance.
     const activity = (await store.listActivities(input.importId)).find((a) => a.activityId === input.activityId);
     if (!activity) throw new RegenerateRefused(`activity ${input.activityId} is not in import ${input.importId}`);
     if (activity.status !== "promoted" || activity.currentRevision === null) throw new RegenerateRefused(`activity ${input.activityId} has no promoted revision (status ${activity.status}); only a reviewed, promoted activity can be regenerated`);
@@ -58,12 +85,13 @@ export async function regenerateActivity(input: RegenerateInput, deps: Regenerat
     if (counted.decision === "accepted") throw new RegenerateRefused(`activity ${input.activityId} revision ${activity.currentRevision} is accepted; only a needs-revision or rejected activity is regenerated`);
     if (requests.length >= MAX_REGENERATIONS) throw new RegenerateRefused(`activity ${input.activityId} has used its ${MAX_REGENERATIONS} regenerations in this pilot`);
     if (!input.note?.trim()) throw new RegenerateRefused(`a new regeneration needs --note: what the reviewer wants changed in ${input.activityId}`);
+    await productionInputs(store, input.importId, input.activityId);
 
     const index = requests.length + 1;
     const targetRevision = Math.max(0, ...(await store.listRevisions(input.activityId)).map((r) => r.revision)) + 1;
     const request: RegenerationRequest = {
       requestId: `${input.activityId}:regen:${index}`, importId: input.importId, activityId: input.activityId, index, baseRevision: activity.currentRevision, targetRevision,
-      note: input.note.trim(), status: "running", outcome: null, createdAt: clock().toISOString(), completedAt: null
+      note: input.note.trim(), budget: effectiveLimits(record.budget, input.budget), status: "running", outcome: null, createdAt: clock().toISOString(), completedAt: null
     };
     await store.putRegeneration(request); // from here the request counts, before any dispatch
     return { request: await finish(request, record, input, deps, clock), resumed: false };
@@ -73,10 +101,16 @@ export async function regenerateActivity(input: RegenerateInput, deps: Regenerat
 }
 
 /**
- * Produces (or reuses), builds (or reuses) and promotes the request's target revision, then appends `succeeded`. One
+ * Produces (or reuses), builds (or verifies) and publishes the request's target revision, then appends `succeeded`. One
  * path serves a new request and a resumed one (R9): the produce operation's stable key reuses a persisted candidate
- * with no model call; buildRevision reuses an existing build under this engine; a promoted target is not rebuilt.
- * A content, budget or other failure is appended as `failed` with its outcome.
+ * with no model call; buildRevision reuses an existing build under this engine; a target already promoted is not
+ * rebuilt, but its build record and package are verified before success is reported. Publication is idempotent, so
+ * a rerun completes whichever of its writes did not happen. A content or budget failure is appended as `failed` with
+ * its outcome; any other error leaves the request `running` and is rethrown.
+ *
+ * Elapsed time uses the import's shared run anchor, as `leap generate` does: an anchor left by an interrupted run of
+ * either command is charged (reconcileElapsed, on evidence read before any recovery write), this run's anchor is
+ * durable before the first dispatch, and every exit folds its time into the import and clears the anchor.
  */
 async function finish(request: RegenerationRequest, record: ImportRecord, input: RegenerateInput, deps: RegenerateDeps, clock: () => Date): Promise<RegenerationRequest> {
   const { store } = deps;
@@ -87,28 +121,34 @@ async function finish(request: RegenerationRequest, record: ImportRecord, input:
     return done;
   };
 
-  await reconcile(store, importId, clock); // an operation left running by a crash is marked failed and billing-uncertain first
+  // Evidence of an interrupted run, read BEFORE any recovery write (reconcile() stamps its own completedAt).
   const events = await store.listAttempts(importId);
-  const limits: BudgetLimits = { ...record.budget, ...input.budget };
-  const budget = budgetFromLedger(limits, events, clock().getTime(), record.budgetUsed.elapsedMs);
+  const operationsLeftBehind = await store.listOperations(importId);
+  const limits = effectiveLimits(record.budget, request.budget, input.budget);
+  const runStartedMs = clock().getTime();
+  const elapsedBeforeMs = record.currentRun
+    ? reconcileElapsed({ run: record.currentRun, savedElapsedMs: record.budgetUsed.elapsedMs, events, operations: operationsLeftBehind, updatedAt: record.updatedAt, nowMs: runStartedMs, maxAttemptMs: deps.maxAttemptMs ?? DEFAULT_MAX_ATTEMPT_MS, limitMs: limits.elapsedMs })
+    : record.budgetUsed.elapsedMs;
+  await reconcile(store, importId, clock); // an operation left running by a crash is marked failed and billing-uncertain
+  let current: ImportRecord = { ...record, budgetUsed: { ...record.budgetUsed, elapsedMs: elapsedBeforeMs }, currentRun: { startedAt: new Date(runStartedMs).toISOString(), elapsedBeforeMs }, updatedAt: clock().toISOString() };
+  await store.putImport(current); // the anchor is durable before any dispatch
+  const budget = budgetFromLedger(limits, events, runStartedMs, elapsedBeforeMs);
   const ctx: OperationContext = { store, provider: deps.provider, budget, importId, clock, attemptsByKey: attemptsByKey(events) };
   if (deps.sleep) ctx.sleep = deps.sleep;
-  const saveBudget = async (): Promise<void> => { const latest = (await store.getImport(importId)) ?? record; await store.putImport({ ...latest, budgetUsed: budgetSnapshot(budget, clock().getTime()), updatedAt: clock().toISOString() }); };
+  /** The run is over: fold its time into the import and clear the anchor. */
+  const foldRun = async (): Promise<void> => { current = { ...((await store.getImport(importId)) ?? current), budgetUsed: budgetSnapshot(budget, clock().getTime()), currentRun: null, updatedAt: clock().toISOString() }; await store.putImport(current); };
 
   try {
     let revision = await store.getRevision(activityId, target);
-    if (!(revision?.state === "promoted" && revision.currentBuildId)) {
-      const settings = await store.getArtifact<ImportSettings>(importId, "settings");
-      const plan = (await store.getArtifact<ActivityPlan[]>(importId, "plan"))?.find((p) => p.activityId === activityId);
-      const map = await store.getArtifact<ConceptMap>(importId, "conceptMap");
+    let buildId: string;
+    if (revision?.state === "promoted" && revision.currentBuildId) {
+      buildId = (await verifyCurrentBuild(store, importId, revision)).buildId; // no rebuild, no overwrite
+    } else {
       const produced = await runOperation<RevisionRecord>(ctx, {
         purpose: "produce", activityId, origin: "regenerate", requestId: request.requestId, key: `${importId}:produce:${activityId}:r${target}`,
         load: () => store.getRevision(activityId, target),
         work: async (runner) => {
-          if (!settings) throw new Error(`import ${importId} has no stored production settings; rerun leap generate with its original arguments once to record them`);
-          if (!plan || !map) throw new Error(`import ${importId} has no stored plan entry or concept map for ${activityId}`);
-          const producer = createProducers().get(plan.type);
-          if (!producer) throw new Error(`no producer for ${plan.type}`);
+          const { settings, plan, map, producer } = await productionInputs(store, importId, activityId);
           const others = [];
           for (const a of await store.listActivities(importId)) {
             if (a.activityId === activityId || a.type !== plan.type || a.currentRevision === null) continue;
@@ -126,21 +166,24 @@ async function finish(request: RegenerationRequest, record: ImportRecord, input:
         persist: (rev) => store.putRevision(rev)
       });
       revision = produced.result;
-      const build = await buildRevision({ store, registry: deps.registry, engineIdentity: deps.engineIdentity, clock }, importId, revision);
-      for (const prev of await store.listRevisions(activityId)) if (prev.state === "promoted" && prev.revision !== target) await store.putRevision({ ...prev, state: "superseded" });
-      revision = { ...revision, state: "promoted", currentBuildId: build.buildId };
-      await store.putRevision(revision);
+      buildId = (await buildRevision({ store, registry: deps.registry, engineIdentity: deps.engineIdentity, clock }, importId, revision)).buildId;
     }
+    // Publication, each write skipped when already done: earlier promoted revisions superseded, the target promoted, the activity pointed at it.
+    for (const prev of await store.listRevisions(activityId)) if (prev.state === "promoted" && prev.revision !== target) await store.putRevision({ ...prev, state: "superseded" });
+    if (revision.state !== "promoted" || revision.currentBuildId !== buildId) await store.putRevision({ ...revision, state: "promoted", currentBuildId: buildId });
     const activity = (await store.listActivities(importId)).find((a) => a.activityId === activityId)!;
-    if (activity.currentRevision !== target || activity.status !== "promoted") await store.putActivity({ ...activity, status: "promoted", currentRevision: target, error: null });
-    await saveBudget();
+    if (activity.currentRevision !== target || activity.status !== "promoted" || activity.error !== null) await store.putActivity({ ...activity, status: "promoted", currentRevision: target, error: null });
+    await foldRun();
     return await close("succeeded", "ok");
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const outcome = err instanceof ContentFailure ? `content: ${message}` : err instanceof BudgetRefused ? `budget: ${message}` : `system: ${message}`;
-    await saveBudget();
-    const failed = await close("failed", outcome);
-    if (err instanceof ContentFailure || err instanceof BudgetRefused) return failed; // a recorded outcome, not an error of this command
+    if (err instanceof ContentFailure || err instanceof BudgetRefused) {
+      await foldRun();
+      return await close("failed", `${err instanceof ContentFailure ? "content" : "budget"}: ${err.message}`); // a recorded outcome, not an error of this command
+    }
+    // Anything else (a storage write, a damaged build, an outage) leaves the request running: a rerun finishes it with
+    // no new allowance, and reuses whatever was already produced or built. If even the fold fails, the anchor stays
+    // and the next run charges this one's time from it.
+    await foldRun().catch(() => undefined);
     throw err;
   }
 }

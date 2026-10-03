@@ -10,7 +10,7 @@ export interface RegenerateArgs {
   provider: "anthropic" | "replay" | "record"; fixtures?: string;
   /** The pilot ledger and the run in it; required when the provider can make paid calls (anthropic, record). */
   ledger?: string; run?: string;
-  /** An estimated spend cap for this command, at most the run's ledger cap; the import's own budget applies otherwise. */
+  /** An estimated spend cap for this command. It can only lower the cap in force: the effective cap is the lowest of the import's, the ledger run's and this. */
   budgetUsd?: number;
 }
 
@@ -20,7 +20,8 @@ export interface RegenerateDeps { provider?: ModelProvider }
 /**
  * `leap regenerate --out <dir> --activity <id> [--note "<text>"] [--ledger --run]` (design §6, plan Task 13). Paid
  * providers pass the ledger checks before anything is appended. Exits 0 when the request succeeded, 1 when it was
- * refused or failed (the failure is recorded and counts towards the activity's two requests).
+ * refused or failed (the failure is recorded and counts towards the activity's two requests), or did not finish (it
+ * stays running and a rerun finishes it).
  */
 export async function regenerate(args: RegenerateArgs, io: { out: (s: string) => void; err: (s: string) => void }, deps: RegenerateDeps = {}): Promise<number> {
   const outDir = resolve(args.out);
@@ -46,7 +47,11 @@ export async function regenerate(args: RegenerateArgs, io: { out: (s: string) =>
     );
   } catch (err) {
     if (err instanceof RegenerateRefused || err instanceof StoreLockedError || isStoreVersionError(err)) { io.err(`leap: ${err.message}\n`); return 1; }
-    throw err;
+    // Any other error leaves a started request running: say so, and how it is finished, rather than only a stack trace.
+    const running = (await store.listRegenerations(importId).catch(() => [])).find((r) => r.activityId === args.activity && r.status === "running");
+    if (!running) throw err;
+    io.err(`leap: request ${running.requestId} did not finish (${err instanceof Error ? err.message : String(err)}); it stays running and uses no further allowance. Rerun leap regenerate --activity ${args.activity} with no --note to finish it; revision ${running.baseRevision} stays current until then\n`);
+    return 1;
   }
   const { request, resumed } = outcome;
   const verb = resumed ? "finished interrupted request" : "request";
