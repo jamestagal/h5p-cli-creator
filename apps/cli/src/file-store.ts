@@ -59,6 +59,9 @@ export async function readJsonl<T>(path: string): Promise<{ records: T[]; trunca
 }
 
 /** Directory-backed ImportStore: JSON files written atomically, JSONL ledgers repaired then appended through one queue per ledger, one directory lock. Every write assumes the caller holds the lock and verifies it before touching the filesystem. */
+/** Present while reports derived from replayed ledger records are still to be rewritten (see lock()). */
+export const REPORTS_PENDING = "reports-pending.json";
+
 export class FileStore implements ImportStore {
   private readonly repaired = new Set<string>();
   private readonly queues = new Map<string, Promise<unknown>>();
@@ -92,9 +95,15 @@ export class FileStore implements ImportStore {
     // recovery (design §7.3): a committed batch whose ledger records a crash left unwritten is completed first, and the
     // reports derived from those ledgers are rewritten under this lock before any command proceeds (they were written
     // before the crash, without the batch)
+    // A marker written before the first append, and removed only after both reports are written, keeps that need across
+    // a failure or crash after the appends: the next lock finds no missing records but still finds the marker.
     try {
-      const appended = await replayCommittedBatches(this, importId);
-      if (appended.scores + appended.acceptances > 0) await writeReports(this, importId, this.dir);
+      const marker = this.p(REPORTS_PENDING);
+      await replayCommittedBatches(this, importId, { beforeAppend: () => writeFile(marker, `${JSON.stringify({ reason: "committed review batch replayed; mapping.csv and cost.json to be rewritten" })}\n`) });
+      if (await readFile(marker).then(() => true, (e: NodeJS.ErrnoException) => { if (e.code === "ENOENT") return false; throw e; })) {
+        await writeReports(this, importId, this.dir);
+        await unlink(marker);
+      }
     } catch (err) { await release(); throw err; }
     return { release };
   }

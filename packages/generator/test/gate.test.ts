@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { RUBRIC_VERSION, type ActivitySpec, type ScoreDecision } from "@leaplearn/shared";
 import { MemoryStore } from "../src/store/memory-store.js";
-import { allocateShared, AFTER_REVISION_CATEGORIES, costPerAccepted, FIRST_PASS_CATEGORIES, formatGateReport, gateImport, GATE_TYPES, partitionSum, snapshotImport, type ImportSnapshot } from "../src/report/gate.js";
+import { allocateShared, AFTER_REVISION_CATEGORIES, poolTypeGates, sharedUnknown, costPerAccepted, FIRST_PASS_CATEGORIES, formatGateReport, gateImport, GATE_TYPES, partitionSum, snapshotImport, type ImportSnapshot } from "../src/report/gate.js";
 import type { ActivityPlan, PlannedType } from "../src/plan/planner.js";
 import type { ActivityRecord, OperationRecord, RevisionRecord, ScoreRecord } from "../src/store/types.js";
 import type { OperationOrigin } from "../src/store/types.js";
@@ -204,3 +204,46 @@ describe("gate report: the negative check", () => {
     expect((await f.gate()).negativeCheck).toEqual({ findings: 1, activities: 1, reviews: 1 });
   });
 });
+
+describe("gate report: fix round (review of 2179e31)", () => {
+  it("items count every reviewed revision, including an intermediate one: decks of 12, 11 and 10 cards inspect 33, with each revision's failures", async () => {
+    const f = await new Fixture().init();
+    await f.planned("deck", "flashcards"); await f.op("deck", "succeeded");
+    await f.revision("deck", 1, "superseded", "generate", 12);
+    await f.score("deck", 1, "needs-revision", "deck-r1", { findings: [{ dimension: "correctness", itemId: "c1", score: 1, reason: "r" }] });
+    await f.revision("deck", 2, "superseded", "regenerate", 11);
+    await f.score("deck", 2, "needs-revision", "deck-r2", { findings: [{ dimension: "correctness", itemId: "c2", score: 1, reason: "r" }, { dimension: "support", itemId: "c3", score: 1, reason: "r" }], scores: { correctness: 1, support: 1, distractors: "na", mapping: 2, usefulness: 2 } });
+    await f.revision("deck", 3, "promoted", "regenerate", 10);
+    await f.score("deck", 3, "accepted", "deck-r3");
+    const items = (await f.gate()).types.flashcards.items;
+    expect(items.inspected).toBe(33);
+    expect(items.failing).toMatchObject({ correctness: 2, support: 1 });
+  });
+
+  it("a first-pass review of a superseded revision, or of another unit text, is labelled historical, matching the stale list", async () => {
+    const f = await new Fixture().init();
+    await f.planned("x", "multiChoice"); await f.op("x", "succeeded");
+    await f.revision("x", 1, "superseded"); await f.score("x", 1, "needs-revision"); // its build is unchanged; the revision is not current
+    await f.revision("x", 2, "promoted", "regenerate"); await f.score("x", 2, "accepted");
+    await f.planned("y", "multiChoice"); await f.op("y", "succeeded");
+    await f.revision("y", 1, "promoted"); await f.score("y", 1, "accepted", "y-r1", { unitTextHash: "v".repeat(64) }); // reviewed against another unit text
+    const g = await f.gate();
+    expect(g.activities.map((a) => [a.activityId, a.firstPass, a.firstPassHistorical])).toEqual([["x", "needsRevision", true], ["y", "accepted", true]]);
+    expect(g.types.multiChoice.historical).toBe(2);
+    expect(g.staleReviews.map((r) => [r.activityId, r.revision])).toEqual([["x", 1], ["y", 1]]);
+  });
+
+  it("a shared attempt without a cost counts once in the all-types row and once per import when pooled", async () => {
+    const f = await new Fixture().init();
+    for (const [id, t] of [["m", "multiChoice"], ["b", "blanks"], ["c", "flashcards"]] as const) { await f.planned(id, t); await f.op(id, "succeeded"); await f.revision(id, 1, "promoted", "generate", 2); await f.score(id, 1, "accepted"); }
+    const shared = await f.op(null, "succeeded", "shared", 1, "extract"); await f.attempt(shared, "shared", undefined, "extract");
+    const g = await f.gate();
+    const all = poolTypeGates(GATE_TYPES.map((t) => g.types[t]));
+    expect(sharedUnknown(all)).toBe(1);
+    expect(costPerAccepted(all, "firstPass").lowerBound).toBe(1);
+    expect(formatGateReport([g], [])).toMatch(/\| all types \| [^\n]*lower bound \(1 attempts without cost\)/);
+    const other = gateImport(await snapshotImport(f.store, "imp"), "/other-dir");
+    expect(sharedUnknown(poolTypeGates([...GATE_TYPES.map((t) => g.types[t]), ...GATE_TYPES.map((t) => other.types[t])]))).toBe(2);
+  });
+});
+

@@ -824,6 +824,17 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
   - **Current-build acceptance:** `acceptedActivityIds`, which gives the cost report's accepted count, now uses `countedScore` on the current revision's current build, as `mapping.csv` does. `listAcceptances` is documented as history only.
   - **Report refresh:** when lock-time replay appends any record, `FileStore.lock` rewrites `mapping.csv` and `cost.json` under that lock before any command proceeds. The in-memory store writes no reports.
 
+- *(Amended 3 Oct, Task 14 review of `2179e31`.)* **Output paths:** both destinations are checked before any directory is read or anything is written.
+  - **Existing files:** an existing destination must be a regular file with no other hard links. A symbolic link, a directory or a hard-linked alias is refused.
+  - **Location:** the summary must be outside every import directory, of any store version. The report may sit only directly in the first import directory.
+  - **Collision:** the summary cannot be the report itself.
+  - **Publishing:** each file is written beside its destination and renamed into place, so an existing link is replaced, never followed. A refusal writes nothing.
+- *(Amended 3 Oct, Task 14 review.)* **Report repair survives a failure:** replay calls a hook once before its first append. `FileStore` uses it to write `reports-pending.json`, which it removes only after `mapping.csv` and `cost.json` are both rewritten. A failure or crash after the appends leaves the marker, so a later lock with nothing left to replay still rewrites the reports.
+- *(Amended 3 Oct, Task 14 review.)* **Metric corrections:**
+  - **Items:** count every scored revision of a planned blanks or flashcards activity, including intermediate revisions that fall in neither partition. Failing items come from every review of those revisions.
+  - **Historical:** a first-pass review is marked historical by the same test as the stale list. That is, it is historical when it no longer reviews the activity's current revision and current build, or when the unit text has changed.
+  - **Shared unknown costs:** counted once per import (keyed by directory) when type rows are pooled, not once per type.
+
 **Tests (write first, fixture-built stores):**
 - [ ] **Partition:** a fixture with one skipped, one in progress, one content failure **that never persisted a revision**, one persisted candidate whose produce succeeded and whose build is pending, one persisted candidate whose build failed, one build rejection, one promoted-unreviewed, and accepted, needs-revision and rejected first-pass activities. Every category count is right, and the categories sum to `planned` for both partitions. A property test over randomly generated store states asserts the sums.
 - [ ] The content failure without a revision contributes its attempts to `firstPassDirect` and counts in `generationFailed`.
@@ -835,6 +846,12 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 - [ ] The summary contains no content strings.
 - [ ] *(Added 3 Oct.)* Follow-up tests: accepting build A, then rebuilding the revision as build B, leaves the activity unaccepted until B is reviewed. A crash after a batch commit leaves stale reports, and the next command to take the lock (`review-sheet`) rewrites both with the batch.
 - [ ] *(Added 3 Oct.)* A phase-2 directory given first is refused, and nothing is written in it.
+- [ ] *(Added 3 Oct, review of `2179e31`.)* Regression tests:
+  - **Output paths:** `--summary` paths inside phase-2 and version-2 import directories, and symlinked or hard-linked aliases of `import.json`, are refused with nothing written. So is a `gate-report.md` that is a symlink.
+  - **Report repair:** when report writing fails after replay, the next lock still rewrites the reports.
+  - **Items:** decks of 12, 11 and 10 cards inspect 33.
+  - **Historical:** a superseded or other-unit first-pass review is marked historical.
+  - **Shared unknown costs:** one shared unknown attempt counts once in the all-types row.
 
 **Verification:** `pnpm verify` → `exit=0`.
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cp, mkdtemp, readdir, readFile } from "node:fs/promises";
+import { cp, link, mkdir, mkdtemp, readdir, readFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { RUBRIC_VERSION } from "@leaplearn/shared";
@@ -68,5 +68,38 @@ describe("leap gate-report", () => {
     expect(await gateReport({ dirs: [v1] }, run.io)).toBe(1);
     expect(run.err.join("")).toContain("is a phase-2 store, which is never written");
     expect(await readdir(v1)).not.toContain("gate-report.md");
+  });
+
+  it("never writes over store files: a summary or report path inside an import directory, a symlink, or a hard link is refused before anything is written (review of 2179e31)", async () => {
+    const { dir } = await reviewed();
+    const v1 = await legacyCopy();
+    const elsewhere = await mkdtemp(join(tmpdir(), "leap-gate-out-"));
+    const alias = join(elsewhere, "alias.json"); await symlink(join(v1, "import.json"), alias);
+    const hard = join(elsewhere, "hard.json"); await link(join(dir, "import.json"), hard);
+    const v1Before = await snapshotFiles(v1); const v2Import = await readFile(join(dir, "import.json"), "utf8");
+    const cases: Array<[string, RegExp]> = [
+      [join(v1, "import.json"), /is inside the import directory/],
+      [join(dir, "import.json"), /is inside the import directory|has other hard links/], // hard-linked below, so either refusal applies
+      [join(dir, "reviews", "summary.json"), /is inside the import directory|does not exist/],
+      [join(dir, "gate-report.md"), /is inside the import directory/],
+      [alias, /is not a regular file/],
+      [hard, /has other hard links/]
+    ];
+    await mkdir(join(dir, "reviews"), { recursive: true });
+    for (const [summary, message] of cases) {
+      const run = io();
+      expect(await gateReport({ dirs: [dir, v1], summary }, run.io)).toBe(1);
+      expect(run.err.join("")).toMatch(message);
+      expect(run.err.join("")).toContain("nothing was written");
+    }
+    expect(await readdir(dir)).not.toContain("gate-report.md"); // neither destination was published
+    expect(await snapshotFiles(v1)).toEqual(v1Before);
+    expect(await readFile(join(dir, "import.json"), "utf8")).toBe(v2Import);
+    // the report's own path is protected the same way: a gate-report.md that is a link to the import record is refused
+    await symlink(join(dir, "import.json"), join(dir, "gate-report.md"));
+    const run = io();
+    expect(await gateReport({ dirs: [dir] }, run.io)).toBe(1);
+    expect(run.err.join("")).toMatch(/the report .*gate-report\.md exists and is not a regular file/);
+    expect(await readFile(join(dir, "import.json"), "utf8")).toBe(v2Import);
   });
 });

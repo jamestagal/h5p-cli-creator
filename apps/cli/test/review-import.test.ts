@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { cp, mkdtemp, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { countedScore, type ReviewBatch } from "@leaplearn/generator";
-import { FileStore } from "../src/file-store.js";
+import { FileStore, REPORTS_PENDING } from "../src/file-store.js";
 import { review } from "../src/review.js";
 import { reviewImport } from "../src/review-import.js";
 import { reviewSheet } from "../src/review-sheet.js";
@@ -143,6 +143,23 @@ describe("leap review-import", () => {
     expect(await new FileStore(dir).listScores(importId)).toHaveLength(1);
     expect(await readFile(join(dir, "mapping.csv"), "utf8")).toMatch(/\nact-1,multiChoice,Locks,1,,PC2\.1,reviewed,/);
     expect(JSON.parse(await readFile(join(dir, "cost.json"), "utf8"))).toMatchObject({ accepted: 1 });
+  });
+
+  it("if the ledgers are recovered but writing the reports fails, the next lock still rewrites them (review of 2179e31)", async () => {
+    const { dir, importId, sheetId, scores } = await exported();
+    await writeFile(scores, [header, row(sheetId, "act-1", "0123456789abcdef", "2,2,2,2,2,4,")].join("\n") + "\n");
+    expect(await reviewImport({ out: dir, scores, reviewer: "Benjamin" }, io().io)).toBe(0);
+    for (const ledger of ["scores.jsonl", "acceptances.jsonl"]) await writeFile(join(dir, ledger), "");
+    await rm(join(dir, "mapping.csv"));
+    await mkdir(join(dir, "mapping.csv")); // the report write will fail
+    await expect(reviewSheet({ out: dir }, io().io)).rejects.toThrow(/EISDIR|illegal operation on a directory/);
+    expect(await new FileStore(dir).listScores(importId)).toHaveLength(1); // the ledgers were recovered
+    expect(await readdir(dir)).toContain(REPORTS_PENDING); // and the need to rewrite the reports was kept
+    await rm(join(dir, "mapping.csv"), { recursive: true });
+    expect(await reviewSheet({ out: dir }, io().io)).toBe(0); // nothing is missing from the ledgers now, but the marker remains
+    expect(await readFile(join(dir, "mapping.csv"), "utf8")).toMatch(/\nact-1,multiChoice,Locks,1,,PC2\.1,reviewed,/);
+    expect(JSON.parse(await readFile(join(dir, "cost.json"), "utf8"))).toMatchObject({ accepted: 1 });
+    expect(await readdir(dir)).not.toContain(REPORTS_PENDING);
   });
 });
 

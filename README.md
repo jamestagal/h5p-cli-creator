@@ -247,7 +247,7 @@ each type, and pooled across imports with a per-unit breakdown, it shows:
 An import with an unreviewed, in-progress, build-pending or awaiting-review activity is **incomplete** and can never
 pass. Thresholds are not frozen yet, so the provisional targets are shown and not evaluated. Phase-2 directories are
 listed as not eligible and change no figure. `--summary` writes a numbers-only JSON copy with no source, activity or
-unit text. In findings, a reason starting `rto-claim:` marks the §4.4 negative check, and the report counts those
+unit text. It must be written outside every import directory, and neither output may be a link. In findings, a reason starting `rto-claim:` marks the §4.4 negative check, and the report counts those
 findings.
 
 ### Exit codes

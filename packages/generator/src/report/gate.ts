@@ -92,7 +92,11 @@ export interface TypeGate {
   /** Blanks and flashcards: every item of every reviewed revision, and distinct failing items per dimension from findings. */
   items: { inspected: number; failing: Record<Dimension, number> };
   minutes: { firstPass: MinuteStats; revisions: MinuteStats };
-  cost: { firstPassDirect: CostSum; regenerationDirect: CostSum; allocatedSharedUsdMicro: number; sharedWithoutCost: number };
+  /**
+   * `sharedWithoutCost` is per import, keyed by its directory (or importId): every type of an import carries the same entry, so pooling
+   * takes each import's count once (across types and across imports) rather than once per type.
+   */
+  cost: { firstPassDirect: CostSum; regenerationDirect: CostSum; allocatedSharedUsdMicro: number; sharedWithoutCost: Record<string, number> };
 }
 export interface StaleReview { activityId: string; revision: number; buildId: string; why: string }
 export interface ImportGate {
@@ -117,7 +121,7 @@ export function emptyTypeGate(): TypeGate {
     planned: 0, firstPass: zeros(FIRST_PASS_CATEGORIES), historical: 0, afterRevision: zeros(AFTER_REVISION_CATEGORIES), regenerations: { used: 0, failed: 0 },
     distributions: { firstPass: emptyDistribution(), afterRevision: emptyDistribution() }, items: { inspected: 0, failing: zeros(DIMENSIONS) },
     minutes: { firstPass: { values: [], items: 0 }, revisions: { values: [], items: 0 } },
-    cost: { firstPassDirect: emptyCost(), regenerationDirect: emptyCost(), allocatedSharedUsdMicro: 0, sharedWithoutCost: 0 }
+    cost: { firstPassDirect: emptyCost(), regenerationDirect: emptyCost(), allocatedSharedUsdMicro: 0, sharedWithoutCost: {} }
   };
 }
 
@@ -161,7 +165,8 @@ export function gateImport(s: ImportSnapshot, directory = ""): ImportGate {
   const typeOf = new Map<string, PlannedType>([...s.activities.map((a) => [a.activityId, a.type] as const), ...s.plan.map((p) => [p.activityId, p.type] as const)]);
   const revsOf = (id: string) => s.revisions.filter((r) => r.activityId === id).sort((a, b) => a.revision - b.revision);
   const scoresOf = (id: string, revision: number) => s.scores.filter((x) => x.activityId === id && x.revision === revision).sort(byPosition);
-  const reviewed = new Map<string, { score: ScoreRecord; rev: RevisionRecord; type: PlannedType }>(); // reviews entering item counts, by rowKey
+  const currentRev = new Map<string, RevisionRecord>();
+  for (const a of s.activities) { const r = s.revisions.find((x) => x.activityId === a.activityId && x.revision === a.currentRevision); if (r) currentRev.set(a.activityId, r); }
   const activities: ActivityGate[] = [];
   const incomplete: ImportGate["incomplete"] = [];
   const tally = (dist: Distribution, sc: ScoreRecord): void => { for (const d of DIMENSIONS) dist[d][String(sc.scores[d]) as (typeof SCORE_KEYS)[number]] += 1; };
@@ -185,10 +190,10 @@ export function gateImport(s: ImportSnapshot, directory = ""): ImportGate {
       if (!first) firstPass = "unreviewed";
       else {
         firstPass = categoryOf(first.decision);
-        historical = first.buildId !== firstGen.currentBuildId; // C3: the build it reviewed is no longer current
+        // C3: historical when what it reviewed is no longer the activity's current revision and build, or the unit text changed
+        historical = isStale(first, currentRev.get(id), s.unit) !== null;
         if (historical) t.historical += 1;
         tally(t.distributions.firstPass, first);
-        reviewed.set(first.rowKey, { score: first, rev: firstGen, type: entry.type });
         t.minutes.firstPass.values.push(first.minutes); t.minutes.firstPass.items += itemCount(firstGen.spec);
       }
     }
@@ -207,7 +212,6 @@ export function gateImport(s: ImportSnapshot, directory = ""): ImportGate {
       else {
         after = categoryOf(counted.decision);
         tally(t.distributions.afterRevision, counted);
-        reviewed.set(counted.rowKey, { score: counted, rev: latest, type: entry.type });
       }
     }
     t.afterRevision[after] += 1;
@@ -221,15 +225,18 @@ export function gateImport(s: ImportSnapshot, directory = ""): ImportGate {
     if (after === "awaitingReview" || after === "inProgress" || after === "buildPending") incomplete.push({ activityId: id, reason: `after revision: ${after}` });
   }
 
-  // items: every item of every reviewed revision; failing items distinct per dimension, from findings
+  // items: every item of every reviewed revision of a planned activity, whatever partition its review falls in (an
+  // intermediate revision counts too); failing items distinct per dimension, from the findings of every review of it
   const inspected = new Set<string>(); const failing = new Map<Dimension, Set<string>>();
-  for (const { score, rev, type } of reviewed.values()) {
-    if (type === "multiChoice") continue;
+  for (const sc of s.scores) {
+    const type = s.plan.find((p) => p.activityId === sc.activityId)?.type;
+    const rev = s.revisions.find((r) => r.activityId === sc.activityId && r.revision === sc.revision);
+    if (!type || type === "multiChoice" || !rev) continue;
     const key = `${rev.activityId}/${rev.revision}`;
     if (!inspected.has(key)) { inspected.add(key); types[type].items.inspected += itemCount(rev.spec); }
-    for (const f of score.findings) {
+    for (const f of sc.findings) {
       const set = failing.get(f.dimension) ?? new Set<string>(); failing.set(f.dimension, set);
-      const itemKey = `${type}/${key}/${f.itemId}`;
+      const itemKey = `${key}/${f.itemId}`;
       if (!set.has(itemKey)) { set.add(itemKey); types[type].items.failing[f.dimension] += 1; }
     }
   }
@@ -254,7 +261,7 @@ export function gateImport(s: ImportSnapshot, directory = ""): ImportGate {
     else into.usdMicro += o.costUsdMicro;
   }
   const allocation = allocateShared(shared.usdMicro, Object.fromEntries(GATE_TYPES.map((t) => [t, types[t].cost.firstPassDirect.usdMicro])) as Record<PlannedType, number>, Object.fromEntries(GATE_TYPES.map((t) => [t, types[t].planned])) as Record<PlannedType, number>);
-  for (const t of GATE_TYPES) { types[t].cost.allocatedSharedUsdMicro = allocation[t]; types[t].cost.sharedWithoutCost = withoutCost(shared); }
+  for (const t of GATE_TYPES) { types[t].cost.allocatedSharedUsdMicro = allocation[t]; types[t].cost.sharedWithoutCost = { [directory || s.importRecord.importId]: withoutCost(shared) }; } // keyed by directory: two directories can hold imports with the same id
 
   // alignment, the negative check, stale reviews, provenance
   const targets = s.unit ? targetsOf(s.unit).map((x) => x.id) : [];
@@ -262,8 +269,6 @@ export function gateImport(s: ImportSnapshot, directory = ""): ImportGate {
   const targeted = new Set(s.plan.flatMap((p) => p.criteriaIds));
   const counted = latestPerBuild(s.scores);
   const rto = counted.flatMap((sc) => sc.findings.filter((f) => isRtoClaim(f.reason)).map(() => sc.activityId));
-  const currentRev = new Map<string, RevisionRecord>();
-  for (const a of s.activities) { const r = s.revisions.find((x) => x.activityId === a.activityId && x.revision === a.currentRevision); if (r) currentRev.set(a.activityId, r); }
   const staleReviews = counted.flatMap((sc) => { const why = isStale(sc, currentRev.get(sc.activityId), s.unit); return why ? [{ activityId: sc.activityId, revision: sc.revision, buildId: sc.buildId, why }] : []; });
   const distinct = (xs: Array<string | null | undefined>): string[] => [...new Set(xs.filter((x): x is string => typeof x === "string" && x !== ""))].sort();
 
@@ -320,7 +325,7 @@ export function poolTypeGates(gates: TypeGate[]): TypeGate {
     out.items.inspected += g.items.inspected; for (const d of DIMENSIONS) out.items.failing[d] += g.items.failing[d];
     for (const which of ["firstPass", "revisions"] as const) { out.minutes[which].values.push(...g.minutes[which].values); out.minutes[which].items += g.minutes[which].items; }
     addCost(out.cost.firstPassDirect, g.cost.firstPassDirect); addCost(out.cost.regenerationDirect, g.cost.regenerationDirect);
-    out.cost.allocatedSharedUsdMicro += g.cost.allocatedSharedUsdMicro; out.cost.sharedWithoutCost += g.cost.sharedWithoutCost;
+    out.cost.allocatedSharedUsdMicro += g.cost.allocatedSharedUsdMicro; Object.assign(out.cost.sharedWithoutCost, g.cost.sharedWithoutCost); // the same import's entry, once
   }
   return out;
 }
@@ -329,12 +334,15 @@ export const reviewedFirstPass = (g: TypeGate): number => g.firstPass.accepted +
 export const reviewedAfterRevision = (g: TypeGate): number => g.afterRevision.accepted + g.afterRevision.needsRevision + g.afterRevision.rejected;
 export const partitionSum = <K extends string>(r: Record<K, number>): number => Object.values<number>(r).reduce((a, b) => a + b, 0);
 
+/** Shared attempts without a cost behind this figure: each import's count once. */
+export const sharedUnknown = (g: TypeGate): number => Object.values(g.cost.sharedWithoutCost).reduce((a, b) => a + b, 0);
+
 export interface CostPerAccepted { usdMicro: number | null; spendUsdMicro: number; accepted: number; lowerBound: number }
 /** First pass: (allocated + firstPassDirect) / first-pass accepted. After revision: adds regenerationDirect, over after-revision accepted. */
 export function costPerAccepted(g: TypeGate, which: "firstPass" | "afterRevision"): CostPerAccepted {
   const spend = g.cost.allocatedSharedUsdMicro + g.cost.firstPassDirect.usdMicro + (which === "afterRevision" ? g.cost.regenerationDirect.usdMicro : 0);
   const accepted = which === "firstPass" ? g.firstPass.accepted : g.afterRevision.accepted;
-  const lowerBound = g.cost.sharedWithoutCost + withoutCost(g.cost.firstPassDirect) + (which === "afterRevision" ? withoutCost(g.cost.regenerationDirect) : 0);
+  const lowerBound = sharedUnknown(g) + withoutCost(g.cost.firstPassDirect) + (which === "afterRevision" ? withoutCost(g.cost.regenerationDirect) : 0);
   return { usdMicro: accepted === 0 ? null : Math.round(spend / accepted), spendUsdMicro: spend, accepted, lowerBound };
 }
 
@@ -375,7 +383,7 @@ function typeTable(rows: Array<[string, TypeGate]>): string[] {
   out.push("", "**Cost** (attempt records only; shared cost allocated by first-pass direct share, an accounting convention)", "", "| type | first-pass direct | regeneration direct | allocated shared | first-pass per accepted | after-revision per accepted | billing-uncertain starts |", "|---|---|---|---|---|---|---|");
   for (const [name, g] of rows) {
     const u = { attempts: g.cost.firstPassDirect.uncertain.attempts + g.cost.regenerationDirect.uncertain.attempts, reserved: g.cost.firstPassDirect.uncertain.reservedUsdMicro + g.cost.regenerationDirect.uncertain.reservedUsdMicro };
-    out.push(`| ${name} | ${usd(g.cost.firstPassDirect.usdMicro)} (${g.cost.firstPassDirect.attempts} attempts)${lb(withoutCost(g.cost.firstPassDirect))} | ${usd(g.cost.regenerationDirect.usdMicro)} (${g.cost.regenerationDirect.attempts} attempts)${lb(withoutCost(g.cost.regenerationDirect))} | ${usd(g.cost.allocatedSharedUsdMicro)}${lb(g.cost.sharedWithoutCost)} | ${perAcceptedText(costPerAccepted(g, "firstPass"))} | ${perAcceptedText(costPerAccepted(g, "afterRevision"))} | ${u.attempts} at ${usd(u.reserved)} reserved |`);
+    out.push(`| ${name} | ${usd(g.cost.firstPassDirect.usdMicro)} (${g.cost.firstPassDirect.attempts} attempts)${lb(withoutCost(g.cost.firstPassDirect))} | ${usd(g.cost.regenerationDirect.usdMicro)} (${g.cost.regenerationDirect.attempts} attempts)${lb(withoutCost(g.cost.regenerationDirect))} | ${usd(g.cost.allocatedSharedUsdMicro)}${lb(sharedUnknown(g))} | ${perAcceptedText(costPerAccepted(g, "firstPass"))} | ${perAcceptedText(costPerAccepted(g, "afterRevision"))} | ${u.attempts} at ${usd(u.reserved)} reserved |`);
   }
   return out;
 }
