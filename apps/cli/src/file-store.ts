@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFile, link, mkdir, readFile, rename, truncate, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { assertCurrentLayout, assertSameOriginal, assertWritableStoreVersion, BuildIntegrityError, canonicalRecordJson, latestAcceptances, latestRegenerations, replayCommittedBatches, sameSheet, sortBatches, sha256Hex, SheetIntegrityError, sortBuilds, sortSheets, storeVersionOf, type AcceptanceRecord, type RegenerationRequest, type ReviewBatch, type ScoreRecord, type SheetManifest, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
+import { assertCurrentLayout, assertSameOriginal, isStoreVersionError, assertWritableStoreVersion, BuildIntegrityError, canonicalRecordJson, latestAcceptances, latestRegenerations, replayCommittedBatches, sameSheet, sortBatches, sha256Hex, SheetIntegrityError, sortBuilds, sortSheets, storeVersionOf, type AcceptanceRecord, type RegenerationRequest, type ReviewBatch, type ScoreRecord, type SheetManifest, type BuildRecord, type ActivityRecord, type AlignmentReviewRecord, type ArtifactName, type AttemptEvent, type AttemptRecorder, type ImportRecord, type ImportStore, type OperationRecord, type OriginalSourceExt, type RevisionRecord, type StoreLock } from "@leaplearn/generator";
 import { listIfPresent } from "./list-if-present.js";
 import { markReportsPending, REPORTS_PENDING, writeReports } from "./report.js";
 import { acquireDirectoryLock, type HeldLock, type LockOptions } from "./lock.js";
@@ -96,11 +96,23 @@ export class FileStore implements ImportStore {
     // before the crash, without the batch)
     // The pending marker (written before a batch is committed, and before replay's first append) is removed only once
     // both reports are written, so a failure or crash at any point after a ledger change is repaired here.
+    // Both run only on a writable import: one at the current store version with the current layout. A legacy, newer,
+    // malformed or obsolete directory is left byte for byte as it is, marker included; the command refuses it itself.
     try {
-      await replayCommittedBatches(this, importId, { beforeAppend: () => markReportsPending(this.dir) });
-      if (await readFile(this.p(REPORTS_PENDING)).then(() => true, (e: NodeJS.ErrnoException) => { if (e.code === "ENOENT") return false; throw e; })) await writeReports(this, importId, this.dir);
+      if (await this.writableImport(importId)) {
+        await replayCommittedBatches(this, importId, { beforeAppend: () => markReportsPending(this.dir) });
+        if (await readFile(this.p(REPORTS_PENDING)).then(() => true, (e: NodeJS.ErrnoException) => { if (e.code === "ENOENT") return false; throw e; })) await writeReports(this, importId, this.dir);
+      }
     } catch (err) { await release(); throw err; }
     return { release };
+  }
+
+  /** Whether `importId` is in this directory at the current store version with the current layout; store-version and layout problems read as false, other errors propagate. */
+  private async writableImport(importId: string): Promise<boolean> {
+    const record = await readJson<ImportRecord>(this.p("import.json"));
+    if (!record || record.importId !== importId) return false;
+    try { assertWritableStoreVersion(record, this.dir); await assertCurrentLayout(this, importId, this.dir); return true; }
+    catch (err) { if (isStoreVersionError(err)) return false; throw err; }
   }
 
   /**

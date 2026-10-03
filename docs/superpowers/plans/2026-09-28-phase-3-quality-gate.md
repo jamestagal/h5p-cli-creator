@@ -829,6 +829,7 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
   - **Location:** the summary must be outside every import directory, of any store version. The report may sit only directly in the first import directory.
   - **Collision:** the summary cannot be the report itself.
   - **Publishing:** each file is written beside its destination and renamed into place, so an existing link is replaced, never followed. A refusal writes nothing.
+- *(Amended 3 Oct, Task 14 third review, of `4ea613c`.)* **Marker repair only on a writable import:** `FileStore.lock` replays batches and acts on `reports-pending.json` only when the directory's import is at the current store version with the current layout. A phase-2, newer, malformed or obsolete directory is left byte for byte, marker included, and the command refuses it as before.
 - *(Amended 3 Oct, Task 14 second review, of `a146c4e`.)* **The pending marker covers normal imports:**
   - **When it is written:** `FileStore.commitBatch` writes `reports-pending.json` before the commit point, as replay does before its first append.
   - **When it is removed:** `writeReports` removes it once both reports are written.
@@ -860,6 +861,7 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 - [ ] *(Added 3 Oct, review of `a146c4e`.)* Regression tests:
   - **Pending marker on normal imports:** `review-import`'s report writing fails after the ledger appends, then again between the two report writes. Each time the next lock rewrites both reports, removes the marker and duplicates no record.
   - **No paths in the summary:** the summary contains no directory path, and two imports' shared unknown costs pool to 2.
+- [ ] *(Added 3 Oct, review of `4ea613c`.)* Byte-for-byte tests: a phase-2, a malformed-version and an obsolete-layout store, each containing a marker, are unchanged after a lock is taken and released. A writable import with a marker still gets both reports rewritten.
 
 **Verification:** `pnpm verify` → `exit=0`.
 
