@@ -974,4 +974,21 @@ The scoring loop: `review-sheet` → fill `scores.csv` and `findings.csv` progra
 
 ## Deviations from the design, recorded
 
-Filled in by Task 16.
+*(Recorded 8 Oct 2026, Task 16.)* The first six entries below are the deviations Task 16 lists. The entries after them were recorded earlier and stand.
+- **`criteriaIds` keeps its name.** The provenance field `criteriaIds` holds both PC and KE IDs (Task 10); it was not renamed.
+- **Simplified DOCX list numbering (R13).**
+  - **What happens:** custom list numbering renders as decimal or bullet.
+  - **Accepted because:** extraction reports the `listNumberingSimplified` and `labelLikeReferences` warnings, and Checkpoint B confirmed that all 13 label-like references in the repaired BSBAUD412 packet still point at their intended items.
+  - **Condition:** had a reference lost its meaning, this deviation would have been withdrawn and the adapter made to render the real formats before P1. Invalid numbering IDs (16 lists in the packet) are reported, read as plain paragraphs and never given invented labels.
+- **Oversize sentences (R14):** a non-atomic oversize sentence stays whole, as in phase 2, only while the complete provider request fits the model's input limit. Otherwise the run is refused before any model call.
+- **Pilot-total enforcement (R7):** a static allocation of caps in the ledger, not a durable pilot-wide reservation. Spend is read from each run's attempt records, and caps are estimates.
+- **`review --decision` is refused on version-2 stores.** Acceptance comes only from scored sheets through `review-sheet` and `review-import` (C5); alignment decisions are still recorded with `review`.
+- **Where each DOCX table property is read (Task 6, mammoth 1.13.0):**
+
+  | Property | Source |
+  |---|---|
+  | Header rows, `w:tblHeader` (`thead`/`th`) | mammoth. Since Checkpoint B (`16db2cb`), off-valued flags (`false`, `0`, `off`) are first removed from the parts mammoth reads, so those rows stay data rows. |
+  | `gridSpan` (`colspan`) and `vMerge` (`rowspan`) | mammoth |
+  | Tracked deletions (dropped) and insertions (kept) | mammoth |
+  | Nested numbering (nested lists) | mammoth |
+  | Numbering formats (`numFmt`) | `word/numbering.xml` and `word/document.xml`, because mammoth's HTML does not carry them. Effective numbering is resolved there and written back before mammoth runs (`e924a0d`). |
