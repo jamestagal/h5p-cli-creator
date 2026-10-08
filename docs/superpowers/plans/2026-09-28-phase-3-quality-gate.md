@@ -477,8 +477,13 @@ regenerations.jsonl                    RegenerationRequest events, append-only, 
 **Scope (bounded):** the summary line only. Print the promoted revision's actual `BuildRecord.buildKey` (revision → `currentBuildId` → `getBuildRecord`), and print no path when the revision has no build record. No other behaviour changes.
 
 **Tests (write first):**
-- [ ] After a replay run, every printed package path exists under the output directory and equals the activity's `BuildRecord.buildKey`.
-- [ ] An activity without a build record prints no path.
+- [x] After a replay run, every printed package path exists under the output directory and equals the activity's `BuildRecord.buildKey`.
+- [x] An activity without a build record prints no path.
+
+*(Done 8 Oct, `apps/cli/test/generate-paths.test.ts`.)*
+- **First test:** replays S1 through `leap generate`.
+- **Second test:** removes one activity's build record from that import, keeping its package, and runs `leap generate` again. The finished import is reported again, without that activity's path.
+- **Both tests:** fail on `5896e9a`.
 
 **Verification:** `pnpm verify` → `exit=0`.
 

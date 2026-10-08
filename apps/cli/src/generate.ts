@@ -112,7 +112,12 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
   }
   const activities = await store.listActivities(importId);
   io.out(`import ${importId}: ${record.status}${record.error ? ` — ${record.error}` : ""}\n`);
-  for (const a of activities) io.out(`  ${a.activityId}  ${a.type.padEnd(12)}  ${a.status}${a.currentRevision ? `  builds/${a.activityId}-r${a.currentRevision}.h5p` : ""}${a.error ? `  ${a.error}` : ""}\n`);
+  for (const a of activities) {
+    // the package actually stored for the current revision: revision → currentBuildId → BuildRecord.buildKey; none without a record
+    const rev = a.currentRevision === null ? null : await store.getRevision(a.activityId, a.currentRevision);
+    const buildKey = rev?.currentBuildId ? (await store.getBuildRecord(rev.currentBuildId))?.buildKey ?? null : null;
+    io.out(`  ${a.activityId}  ${a.type.padEnd(12)}  ${a.status}${buildKey ? `  ${buildKey}` : ""}${a.error ? `  ${a.error}` : ""}\n`);
+  }
   let reports: Awaited<ReturnType<typeof writeReportsLocked>>;
   try {
     reports = await writeReportsLocked(store, importId, outDir);
