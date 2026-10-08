@@ -138,8 +138,19 @@ stays blocked unconditionally even when listed.
 6. **Report:** `leap gate-report`.
 7. **Revise:** for a needs-revision or rejected activity, run `leap regenerate --note "..."`, then go back to step 3.
 
-Any interrupted command is finished by running it again. `apps/cli/test/pilot-rehearsal.test.ts` runs the whole loop
-offline, with no network, no ledger and no key, against the S1 recordings and the synthetic DOCX.
+If a command is interrupted:
+- **`leap generate`:** rerun it with the same arguments. It resumes the import and reuses the work already recorded.
+- **`leap regenerate`:** rerun it for the same activity, with no `--note` or the same one. It finishes the running
+  request without using another of the activity's two.
+- **`leap review-import`:** if the batch was committed, the next `leap` command on the directory completes its records
+  and rewrites the reports. If not, import the sheet again.
+- **`leap review-sheet` and `leap gate-report`:** rerun them. A sheet bundle already written is kept; `gate-report`
+  replaces only its own outputs.
+- **`leap extract`:** it is not resumable. It never overwrites a report, so a rerun into the same `--out` refuses the
+  partial output. Run it again with a new `--out` directory.
+
+`apps/cli/test/pilot-rehearsal.test.ts` runs the whole loop offline, with no network, no ledger and no key, against
+the S1 recordings and the synthetic DOCX.
 
 ### Recording an alignment decision: `leap review`
 

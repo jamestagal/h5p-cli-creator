@@ -147,11 +147,31 @@ async function scoringLoop(dir: string, importId: string, roles: { needsRevision
 }
 
 /** Checks a final report: both partitions sum to planned; yields and costs equal what the scoring choices and the attempt records give by hand. */
+const TYPES = ["multiChoice", "blanks", "flashcards"] as const;
+
+/**
+ * The agreed allocation (design §8.2), computed here from the ledger, not taken from the report: shared cost split by
+ * each type's first-pass direct cost, or by planned count when that is all zero; each share rounded down, and the
+ * micro-dollars left over given one at a time to the largest remainders, ties in type order.
+ */
+function expectedAllocation(shared: number, weights: Record<string, number>): Record<string, number> {
+  const total = TYPES.reduce((n, t) => n + (weights[t] ?? 0), 0);
+  const out: Record<string, number> = Object.fromEntries(TYPES.map((t) => [t, 0]));
+  if (total === 0 || shared === 0) return out;
+  const parts = TYPES.map((t, i) => ({ t, i, whole: Math.floor((shared * (weights[t] ?? 0)) / total), rest: (shared * (weights[t] ?? 0)) % total }));
+  for (const p of parts) out[p.t] = p.whole;
+  let left = shared - parts.reduce((n, p) => n + p.whole, 0);
+  for (const p of [...parts].sort((a, b) => b.rest - a.rest || a.i - b.i)) { if (left === 0) break; out[p.t]! += 1; left -= 1; }
+  return out;
+}
+
 async function checkFinal(summary: Summary, dir: string, importId: string, expected: Record<string, { planned: number; firstPass: Record<string, number>; afterRevision: Record<string, number>; regenerations: number }>): Promise<void> {
   const g = summary.imports[0]!;
   const costs = await ledgerCosts(new FileStore(dir), importId);
   expect(g.shared.usdMicro).toBe(costs.shared);
   expect(costs.shared).toBeGreaterThan(0); // costs come from the recorded or fake usage, never zero
+  const directTotal = TYPES.reduce((n, t) => n + (costs.firstPass[t] ?? 0), 0);
+  const allocation = expectedAllocation(costs.shared, directTotal > 0 ? costs.firstPass : Object.fromEntries(Object.entries(expected).map(([t, w]) => [t, w.planned])));
   let allocated = 0;
   for (const [type, want] of Object.entries(expected)) {
     const t = g.types[type]!;
@@ -164,9 +184,10 @@ async function checkFinal(summary: Summary, dir: string, importId: string, expec
     expect(t.regenerations).toEqual({ used: want.regenerations, failed: 0 });
     expect(t.cost.firstPassDirect.usdMicro).toBe(costs.firstPass[type] ?? 0);
     expect(t.cost.regenerationDirect.usdMicro).toBe(costs.regeneration[type] ?? 0);
+    expect(t.cost.allocatedSharedUsdMicro, `${type}'s share of the shared cost`).toBe(allocation[type]);
     const fpAccepted = want.firstPass.accepted ?? 0; const arAccepted = want.afterRevision.accepted ?? 0;
-    expect(t.cost.firstPassPerAccepted.usdMicro).toBe(fpAccepted === 0 ? null : Math.round((t.cost.allocatedSharedUsdMicro + (costs.firstPass[type] ?? 0)) / fpAccepted));
-    expect(t.cost.afterRevisionPerAccepted.usdMicro).toBe(arAccepted === 0 ? null : Math.round((t.cost.allocatedSharedUsdMicro + (costs.firstPass[type] ?? 0) + (costs.regeneration[type] ?? 0)) / arAccepted));
+    expect(t.cost.firstPassPerAccepted.usdMicro).toBe(fpAccepted === 0 ? null : Math.round((allocation[type]! + (costs.firstPass[type] ?? 0)) / fpAccepted));
+    expect(t.cost.afterRevisionPerAccepted.usdMicro).toBe(arAccepted === 0 ? null : Math.round((allocation[type]! + (costs.firstPass[type] ?? 0) + (costs.regeneration[type] ?? 0)) / arAccepted));
     allocated += t.cost.allocatedSharedUsdMicro;
   }
   expect(allocated).toBe(costs.shared); // the allocation shares out exactly the shared cost
@@ -213,11 +234,18 @@ async function rehearseS1(): Promise<{ md: string; dir: string }> {
   const bl = activities.filter((a) => a.type === "blanks").map((a) => a.activityId);
   expect([mc.length, bl.length, activities.length]).toEqual([5, 3, 9]);
   const { final } = await scoringLoop(dir, "s1", { needsRevision: mc[0]!, rejected: mc[1]!, accepted: mc[2]!, unscored: bl[0]! }, (s) => syntheticMultiChoice(s, "s1", mc[0]!));
-  await checkFinal(final.summary, dir, "s1", {
+  const s1Expected = {
     multiChoice: { planned: 5, firstPass: { accepted: 3, needsRevision: 1, rejected: 1 }, afterRevision: { accepted: 4, rejected: 1 }, regenerations: 1 },
     blanks: { planned: 3, firstPass: { accepted: 3 }, afterRevision: { accepted: 3 }, regenerations: 0 },
     flashcards: { planned: 1, firstPass: { accepted: 1 }, afterRevision: { accepted: 1 }, regenerations: 0 }
-  });
+  };
+  await checkFinal(final.summary, dir, "s1", s1Expected);
+  // the check is independent of the report's allocation: all shared cost moved to multiChoice must fail it
+  const wrong = structuredClone(final.summary);
+  const types = wrong.imports[0]!.types;
+  types.multiChoice!.cost.allocatedSharedUsdMicro = wrong.imports[0]!.shared.usdMicro;
+  types.blanks!.cost.allocatedSharedUsdMicro = 0; types.flashcards!.cost.allocatedSharedUsdMicro = 0;
+  await expect(checkFinal(wrong, dir, "s1", s1Expected)).rejects.toThrow(/share of the shared cost/);
   return { md: final.md, dir };
 }
 
