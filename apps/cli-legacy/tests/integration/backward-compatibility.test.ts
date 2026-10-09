@@ -9,15 +9,18 @@
 import { YamlInputParser } from "../../src/compiler/YamlInputParser";
 import { H5pCompiler } from "../../src/compiler/H5pCompiler";
 import { AIPromptBuilder } from "../../src/ai/AIPromptBuilder";
+import * as fs from "fs";
 import * as fsExtra from "fs-extra";
+import * as os from "os";
 import * as path from "path";
 
 describe("Backward Compatibility", () => {
   const parser = new YamlInputParser();
-  const testOutputDir = path.join(__dirname, "..", "test-output");
+  let testOutputDir: string;
 
-  beforeAll(async () => {
-    await fsExtra.ensureDir(testOutputDir);
+  beforeAll(() => {
+    // Private per-file directory; never shared with another suite
+    testOutputDir = fs.mkdtempSync(path.join(os.tmpdir(), "backward-compatibility-"));
   });
 
   afterAll(async () => {

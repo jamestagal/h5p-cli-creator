@@ -11,13 +11,26 @@
  * Phase 4: Text-Based Page Breaks for Interactive Book Stories
  */
 
+import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import * as fsExtra from "fs-extra";
 import { TranscriptFileParser } from "../../src/services/transcription/TranscriptFileParser";
 import { PageDefinition } from "../../src/services/types/YouTubeExtractorTypes";
 
 describe("TranscriptFileParser", () => {
+  // Committed input fixtures (read only)
   const fixturesDir = path.join(__dirname, "../fixtures/transcripts");
+  // Private per-file directory for generated transcripts
+  let tempDir: string;
+
+  beforeAll(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "transcript-file-parser-"));
+  });
+
+  afterAll(async () => {
+    await fsExtra.remove(tempDir);
+  });
 
   describe("parse", () => {
     it("should parse valid markdown with --- delimiters", async () => {
@@ -50,7 +63,7 @@ describe("TranscriptFileParser", () => {
 
     it("should auto-number pages when headings missing", async () => {
       // Create temp file without headings
-      const tempFile = path.join(fixturesDir, "temp-no-headings.txt");
+      const tempFile = path.join(tempDir, "temp-no-headings.txt");
       await fsExtra.writeFile(
         tempFile,
         "First page content\n---\nSecond page content\n---\nThird page content",
@@ -74,7 +87,7 @@ describe("TranscriptFileParser", () => {
 
     it("should normalize whitespace (multiple spaces → single space)", async () => {
       // Create temp file with extra whitespace
-      const tempFile = path.join(fixturesDir, "temp-whitespace.txt");
+      const tempFile = path.join(tempDir, "temp-whitespace.txt");
       await fsExtra.writeFile(
         tempFile,
         "# Page 1: Test\nThis   has    multiple    spaces\n---\n# Page 2: Test\nAnd  many   newlines\n\n\n",
@@ -94,7 +107,7 @@ describe("TranscriptFileParser", () => {
 
     it("should detect and report empty pages", async () => {
       // Create temp file with empty page (only heading, no content after)
-      const tempFile = path.join(fixturesDir, "temp-empty.txt");
+      const tempFile = path.join(tempDir, "temp-empty.txt");
       await fsExtra.writeFile(
         tempFile,
         "# Page 1: Test\nContent here\n---\n# Page 2: Empty\n   \n---\n# Page 3: More\nMore content",
@@ -111,7 +124,7 @@ describe("TranscriptFileParser", () => {
 
     it("should error if no page breaks found", async () => {
       // Create temp file without delimiters
-      const tempFile = path.join(fixturesDir, "temp-no-breaks.txt");
+      const tempFile = path.join(tempDir, "temp-no-breaks.txt");
       await fsExtra.writeFile(tempFile, "Just some text without delimiters", "utf-8");
 
       const parser = new TranscriptFileParser(tempFile);

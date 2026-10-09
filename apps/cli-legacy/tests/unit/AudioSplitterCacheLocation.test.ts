@@ -9,6 +9,8 @@
  * YouTube Extraction Improvements - Task Group 1
  */
 
+import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import * as fsExtra from "fs-extra";
 import { AudioSplitter } from "../../src/services/AudioSplitter";
@@ -23,8 +25,20 @@ const { promisify } = require("util");
 
 describe("AudioSplitter - Cache Directory Organization", () => {
   const testVideoId = "TEST_VIDEO_ID";
-  const testCacheDir = path.join(process.cwd(), ".youtube-cache", testVideoId, "audio-segments");
-  const testAudioPath = path.join(process.cwd(), "test-audio.mp3");
+  // Private per-file root holding the .youtube-cache/{VIDEO_ID} layout
+  let tempRoot: string;
+  let testCacheDir: string;
+  let testAudioPath: string;
+
+  beforeAll(() => {
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "audio-splitter-cache-location-"));
+    testCacheDir = path.join(tempRoot, ".youtube-cache", testVideoId, "audio-segments");
+    testAudioPath = path.join(tempRoot, "test-audio.mp3");
+  });
+
+  afterAll(async () => {
+    await fsExtra.remove(tempRoot);
+  });
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -46,12 +60,12 @@ describe("AudioSplitter - Cache Directory Organization", () => {
     });
 
     // Clean up test directories
-    await fsExtra.remove(path.join(process.cwd(), ".youtube-cache", testVideoId));
+    await fsExtra.remove(path.join(tempRoot, ".youtube-cache", testVideoId));
   });
 
   afterEach(async () => {
     // Clean up test directories
-    await fsExtra.remove(path.join(process.cwd(), ".youtube-cache", testVideoId));
+    await fsExtra.remove(path.join(tempRoot, ".youtube-cache", testVideoId));
     await fsExtra.remove(testAudioPath);
   });
 
@@ -140,7 +154,7 @@ describe("AudioSplitter - Cache Directory Organization", () => {
       expect(await fsExtra.pathExists(path.join(testCacheDir, "page2.mp3"))).toBe(true);
 
       // Delete entire cache directory
-      const videoCacheDir = path.join(process.cwd(), ".youtube-cache", testVideoId);
+      const videoCacheDir = path.join(tempRoot, ".youtube-cache", testVideoId);
       await fsExtra.remove(videoCacheDir);
 
       // Verify segments are removed
