@@ -60,14 +60,22 @@ const exists = async (path: string) => { try { return await lstat(path); } catch
  * them) or a symbolic link, even a dangling one, is refused, so no write can follow a link or replace a file.
  */
 export async function assertReportNamesFree(outDir: string, sourcePath: string): Promise<void> {
-  const source = await exists(resolve(sourcePath));
-  for (const name of REPORT_NAMES) {
+  await assertNamesFree(outDir, REPORT_NAMES, [sourcePath], "leap extract never overwrites a report");
+}
+
+/**
+ * The same check for any command's output names (`leap extract`, `leap outline`). `inputs` are files the command reads:
+ * an output name that is one of them is refused as that file itself. `rule` completes "already exists; …".
+ */
+export async function assertNamesFree(outDir: string, names: readonly string[], inputs: string[], rule: string): Promise<void> {
+  const read = (await Promise.all(inputs.map((p) => exists(resolve(p))))).filter((x) => x !== null);
+  for (const name of names) {
     const target = join(outDir, name);
     const st = await exists(target);
     if (!st) continue;
     if (st.isSymbolicLink()) throw new ReportPublicationError(`${target} is a symbolic link; refusing to write a report through it. Nothing was written`);
-    if (source && st.dev === source.dev && st.ino === source.ino) throw new ReportPublicationError(`${target} is the source file itself; refusing to overwrite it. Nothing was written`);
-    throw new ReportPublicationError(`${target} already exists; leap extract never overwrites a report. Use a new --out directory. Nothing was written`);
+    if (read.some((source) => st.dev === source.dev && st.ino === source.ino)) throw new ReportPublicationError(`${target} is the source file itself; refusing to overwrite it. Nothing was written`);
+    throw new ReportPublicationError(`${target} already exists; ${rule}. Use a new --out directory. Nothing was written`);
   }
 }
 
@@ -77,11 +85,16 @@ export async function assertReportNamesFree(outDir: string, sourcePath: string):
  * failure the reports already linked are removed; the staging directory is always removed.
  */
 export async function publishReports(outDir: string, files: Record<ReportName, string>, ops: { link: (from: string, to: string) => Promise<void> } = { link: fsLink }): Promise<void> {
-  const stage = await mkdtemp(join(outDir, ".extract-staging-"));
+  await publishFiles(outDir, REPORT_NAMES, files, ".extract-staging-", ops);
+}
+
+/** publishReports for any command's output names, in order, staged in a directory named with `stagingPrefix`. */
+export async function publishFiles<N extends string>(outDir: string, names: readonly N[], files: Record<N, string>, stagingPrefix: string, ops: { link: (from: string, to: string) => Promise<void> } = { link: fsLink }): Promise<void> {
+  const stage = await mkdtemp(join(outDir, stagingPrefix));
   const published: string[] = [];
   try {
-    for (const name of REPORT_NAMES) await writeFile(join(stage, name), files[name], { flag: "wx" });
-    for (const name of REPORT_NAMES) {
+    for (const name of names) await writeFile(join(stage, name), files[name], { flag: "wx" });
+    for (const name of names) {
       try { await ops.link(join(stage, name), join(outDir, name)); } catch (err) {
         if ((err as { code?: string }).code === "EEXIST") throw new ReportPublicationError(`${join(outDir, name)} appeared while the reports were being written; nothing was kept`);
         throw err;
@@ -96,7 +109,7 @@ export async function publishReports(outDir: string, files: Record<ReportName, s
   }
 }
 
-const isAdmissionOrFormatError = (err: unknown): err is Error =>
+export const isAdmissionOrFormatError = (err: unknown): err is Error =>
   err instanceof EmptySourceError || err instanceof SourceTooSmallError || err instanceof SourceTooLargeError || err instanceof PdfTooManyPagesError || err instanceof OdtFormatError || err instanceof UnsupportedSourceError;
 
 const pathText = (p: string[]): string => (p.length === 0 ? "(no heading)" : p.join(" › "));

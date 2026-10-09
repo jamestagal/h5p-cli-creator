@@ -7,6 +7,7 @@ import { compileToFile, createRegistry } from "@leaplearn/engine";
 import { csvToFlashcardsSpec } from "./csv-to-flashcards.js";
 import { DEFAULT_CHUNK_TOKENS, extract } from "./extract.js";
 import { generate } from "./generate.js";
+import { outline } from "./outline.js";
 import { localImageResolver, networkImageResolver } from "./image-resolver.js";
 import { review } from "./review.js";
 import { reviewSheet } from "./review-sheet.js";
@@ -73,6 +74,12 @@ try {
       .option("chunk-tokens", { type: "number", default: DEFAULT_CHUNK_TOKENS, describe: "chunk budget used to size table rows and extraction requests" }),
       async (argv) => {
         process.exitCode = await extract({ source: argv.source, out: argv.out, chunkTokens: argv["chunk-tokens"] }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
+      })
+    .command("outline", "Ingest a source exactly as generate would and write its outline (sections with stable ids and counts), its sentences, and a generation-scope.json template for selecting sections; no model call, API key or ledger", (y) => y
+      .option("source", { type: "string", demandOption: true, describe: ".txt, .md, .pdf, .docx or .odt" })
+      .option("out", { type: "string", demandOption: true, describe: "output directory: outside the repository, or under docs/uoc/ (real material stays out of git)" }),
+      async (argv) => {
+        process.exitCode = await outline({ source: argv.source, out: argv.out }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
       })
     .command("review", "Record an alignment decision against a promoted activity and refresh mapping.csv and cost.json (acceptance comes from leap review-sheet and leap review-import)", (y) => y
       .option("out", { type: "string", demandOption: true, describe: "the import directory" })

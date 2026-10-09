@@ -6,14 +6,17 @@ import mammoth from "mammoth";
 import { resolveNumbering, type SimplifiedNumbering, type UnsupportedNumbering } from "./docx-numbering.js";
 import { explicitTableHeaders } from "./docx-table-headers.js";
 import { finaliseDocument, type IngestOptions, type SourceDocument } from "./source-document.js";
-import { normaliseBlocks, normaliseBlockText, type Block, type Cell } from "./structure/blocks.js";
+import { sourceAnalysis, type SourceAnalysis } from "./analysis.js";
+import { normaliseBlocks, normaliseBlockText, type Block, type Cell, type TextOrigin } from "./structure/blocks.js";
 import { linearize, type TableSummary } from "./structure/linearize.js";
+import type { Span } from "./structure/origin.js";
 
 export type { SimplifiedNumbering, UnsupportedNumbering } from "./docx-numbering.js";
 /** A sentence that looks like it refers to a list item by its label ("item b)", "(ii)"), which simplified numbering may have changed. */
 export interface LabelLikeReference { sentenceId: string; headingPath: string[]; text: string }
 export interface IngestWarnings { listNumberingSimplified: SimplifiedNumbering[]; numberingUnsupported: UnsupportedNumbering[]; labelLikeReferences: LabelLikeReference[] }
-export interface StructuredIngestResult { document: SourceDocument; warnings: IngestWarnings; tables: TableSummary[] }
+/** `analysis` (headings, structures, character origin) is computed beside the document and never changes it. */
+export interface StructuredIngestResult { document: SourceDocument; warnings: IngestWarnings; tables: TableSummary[]; analysis: SourceAnalysis }
 
 const NUMBER_WORD = "one|two|three|four|five|six|seven|eight|nine|ten";
 const ORDINAL_WORD = "first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth";
@@ -70,16 +73,16 @@ const isNoteList = (el: Element): boolean => el.name === "ol" && el.children.som
 const isBackLink = (el: Element): boolean => el.name === "a" && /^#(foot|end)note-ref-/.test(el.attribs["href"] ?? "");
 
 /**
- * The text of an inline run of nodes. A note reference becomes `[n]` and its number is added to `cited`; a note's "↑"
- * back-link and images are left out. Block-level elements met inside the run (a table or list inside a list item) are
- * not text: they are added to `nested`, for the caller to read as blocks after this one, so no content is dropped.
+ * The text of an inline run of nodes. A note reference becomes `[n]` (generated text: its span is recorded) and its
+ * number is added to `cited`; a note's "↑" back-link and images are left out. Block-level elements met inside the run
+ * (a table or list inside a list item) are not text: they are added to `nested`, for the caller to read as blocks after
+ * this one, so no content is dropped.
  */
-function inlineText(nodes: ChildNode[], state: WalkState, cited: number[], nested: ChildNode[]): string {
-  let out = "";
+function inlineText(nodes: ChildNode[], state: WalkState, cited: number[], nested: ChildNode[], out: InlineText = { text: "", generated: [] }): InlineText {
   for (const node of nodes) {
-    if (isText(node)) { out += node.data; continue; }
+    if (isText(node)) { out.text += node.data; continue; }
     if (!isTag(node)) continue;
-    if (node.name === "br") { out += "\n"; continue; }
+    if (node.name === "br") { out.text += "\n"; continue; }
     if (node.name === "img" || isBackLink(node)) continue;
     if (!INLINE.has(node.name)) { nested.push(node); continue; }
     const ref = /^((?:foot|end)note)-ref-(\d+)$/.exec(node.attribs["id"] ?? "");
@@ -88,13 +91,20 @@ function inlineText(nodes: ChildNode[], state: WalkState, cited: number[], neste
       let n = state.noteNumbers.get(noteId);
       if (n === undefined) { n = state.noteNumbers.size + 1; state.noteNumbers.set(noteId, n); }
       cited.push(n);
-      out += `[${n}]`;
+      const marker = `[${n}]`;
+      out.generated.push([out.text.length, out.text.length + marker.length]);
+      out.text += marker;
       continue;
     }
-    out += inlineText(node.children, state, cited, nested);
+    inlineText(node.children, state, cited, nested, out);
   }
   return out;
 }
+
+/** Raw inline text and the spans the adapter generated in it. */
+interface InlineText { text: string; generated: Span[] }
+/** A block's text and origin fields from inline text. */
+const textOf = (inline: InlineText): { text: string } & TextOrigin => ({ text: inline.text, ...(inline.generated.length > 0 ? { generated: inline.generated } : {}) });
 
 function notesFor(cited: number[], state: WalkState): Block[] {
   const byNumber = new Map([...state.noteNumbers].map(([id, n]) => [n, id]));
@@ -109,7 +119,7 @@ function listItems(list: Element, depth: number, state: WalkState, inCell: boole
     if (!isTag(li) || li.name !== "li") continue;
     const cited: number[] = [];
     const nested: ChildNode[] = [];
-    out.push({ kind: "listItem", depth, label: list.name === "ol" ? `${position}.` : "•", text: inlineText(li.children, state, cited, nested) });
+    out.push({ kind: "listItem", depth, label: list.name === "ol" ? `${position}.` : "•", ...textOf(inlineText(li.children, state, cited, nested)) });
     out.push(...notesFor(cited, state));
     for (const c of nested) out.push(...(isTag(c) && (c.name === "ol" || c.name === "ul") ? listItems(c, depth + 1, state, inCell) : walk([c], state, inCell)));
     position++;
@@ -145,13 +155,13 @@ function tableBlock(table: Element, state: WalkState, index: number): Block {
 function walk(nodes: ChildNode[], state: WalkState, inCell = false): Block[] {
   const out: Block[] = [];
   let loose: ChildNode[] = [];
-  const inline = (content: ChildNode[], make: (text: string) => Block): void => {
+  const inline = (content: ChildNode[], make: (text: { text: string } & TextOrigin) => Block): void => {
     const cited: number[] = [];
     const nested: ChildNode[] = [];
-    out.push(make(inlineText(content, state, cited, nested)), ...notesFor(cited, state), ...walk(nested, state, inCell));
+    out.push(make(textOf(inlineText(content, state, cited, nested))), ...notesFor(cited, state), ...walk(nested, state, inCell));
   };
   const flushLoose = (): void => {
-    if (loose.length > 0) inline(loose, (text) => ({ kind: "paragraph", text }));
+    if (loose.length > 0) inline(loose, (text) => ({ kind: "paragraph", ...text }));
     loose = [];
   };
   for (const node of nodes) {
@@ -159,7 +169,7 @@ function walk(nodes: ChildNode[], state: WalkState, inCell = false): Block[] {
     const heading = HEADING.exec(node.name);
     if (node.name === "p" || heading) {
       flushLoose();
-      inline(node.children, (text) => (heading && !inCell ? { kind: "heading", level: Number(heading[1]) as 1 | 2 | 3 | 4 | 5 | 6, text } : { kind: "paragraph", text }));
+      inline(node.children, (text) => (heading && !inCell ? { kind: "heading", level: Number(heading[1]) as 1 | 2 | 3 | 4 | 5 | 6, ...text } : { kind: "paragraph", ...text }));
     } else if (node.name === "ol" || node.name === "ul") {
       flushLoose();
       if (!isNoteList(node)) out.push(...listItems(node, 0, state, inCell));
@@ -213,7 +223,7 @@ export async function ingestDocx(bytes: Buffer, opts: IngestOptions): Promise<St
   for (const [name, xml] of headers.rewrittenParts) zip.file(name, xml);
   const converted = numbering.rewrittenParts.size === 0 && headers.rewrittenParts.size === 0 ? bytes : await zip.generateAsync({ type: "nodebuffer" });
   const { value: html } = await mammoth.convertToHtml({ buffer: converted });
-  const { text, segments, tables } = linearize(normaliseBlocks(htmlToBlocks(html)));
-  const document = finaliseDocument("docx", text, segments, opts, { originalSha256: createHash("sha256").update(bytes).digest("hex"), extractor: "docx" });
-  return { document, tables, warnings: { listNumberingSimplified: locateSimplifiedLists(document, numbering.simplified), numberingUnsupported: numbering.unsupported, labelLikeReferences: labelLikeReferences(document) } };
+  const linearized = linearize(normaliseBlocks(htmlToBlocks(html)));
+  const document = finaliseDocument("docx", linearized.text, linearized.segments, opts, { originalSha256: createHash("sha256").update(bytes).digest("hex"), extractor: "docx" });
+  return { document, tables: linearized.tables, analysis: sourceAnalysis(document, linearized), warnings: { listNumberingSimplified: locateSimplifiedLists(document, numbering.simplified), numberingUnsupported: numbering.unsupported, labelLikeReferences: labelLikeReferences(document) } };
 }

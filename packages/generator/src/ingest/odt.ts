@@ -3,8 +3,10 @@ import { DOMParser, type Document as XmlDocument, type Element as XmlElement, ty
 import JSZip from "jszip";
 import { labelLikeReferences, locateSimplifiedLists, type IngestWarnings, type StructuredIngestResult } from "./docx.js";
 import { finaliseDocument, type IngestOptions } from "./source-document.js";
-import { normaliseBlockText, normaliseBlocks, type Block, type Cell } from "./structure/blocks.js";
+import { sourceAnalysis } from "./analysis.js";
+import { normaliseBlockText, normaliseBlocks, type Block, type Cell, type TextOrigin } from "./structure/blocks.js";
 import { linearize } from "./structure/linearize.js";
+import type { Span } from "./structure/origin.js";
 
 const OFFICE = "urn:oasis:names:tc:opendocument:xmlns:office:1.0";
 const STYLE = "urn:oasis:names:tc:opendocument:xmlns:style:1.0";
@@ -115,10 +117,13 @@ const SKIPPED_INLINE = new Set(["annotation", "annotation-end", "change", "chang
 const SKIPPED_BLOCK = new Set(["tracked-changes", "sequence-decls", "variable-decls", "user-field-decls", "dde-connection-decls", "soft-page-break", "annotation", "annotation-end", "forms"]);
 const headingPath = (state: WalkState): string[] => state.headings.map((x) => x.text);
 
-interface Inline { text: string; after: Block[] }
+/** A paragraph's raw text, the spans the adapter generated in it (note references), and the blocks that follow it. */
+interface Inline { text: string; generated: Span[]; after: Block[] }
+/** A block's text and origin fields from inline text. */
+const textOf = (inline: Inline): { text: string } & TextOrigin => ({ text: inline.text, ...(inline.generated.length > 0 ? { generated: inline.generated } : {}) });
 
 /**
- * A paragraph's text. text:s, text:tab and text:line-break become spaces, a tab and a newline; a note becomes `[n]` and
+ * A paragraph's text. text:s, text:tab and text:line-break become spaces, a tab and a newline; a note becomes `[n]` (generated text) and
  * its content a note block after the paragraph; annotations, tracked-change marks and a rendered text:number are left
  * out (deleted text lives only in text:tracked-changes, which is never read); the content of text boxes in frames
  * follows the paragraph as blocks. Other elements (spans, links, fields) contribute their text.
@@ -126,29 +131,31 @@ interface Inline { text: string; after: Block[] }
 function inline(el: XmlElement, state: WalkState): Inline {
   const after: Block[] = [];
   const nested: Block[] = [];
-  const read = (node: XmlElement): string => {
-    let out = "";
+  let text = "";
+  const generated: Span[] = [];
+  const read = (node: XmlElement): void => {
     for (const n of Array.from(node.childNodes)) {
-      if (n.nodeType === 3 || n.nodeType === 4) { out += n.nodeValue ?? ""; continue; }
+      if (n.nodeType === 3 || n.nodeType === 4) { text += n.nodeValue ?? ""; continue; }
       if (!isElement(n)) continue;
-      if (n.namespaceURI === TEXT && n.localName === "s") out += " ".repeat(positive(attr(n, TEXT, "c")));
-      else if (is(n, TEXT, "tab")) out += "\t";
-      else if (is(n, TEXT, "line-break")) out += "\n";
+      if (n.namespaceURI === TEXT && n.localName === "s") text += " ".repeat(positive(attr(n, TEXT, "c")));
+      else if (is(n, TEXT, "tab")) text += "\t";
+      else if (is(n, TEXT, "line-break")) text += "\n";
       else if (is(n, TEXT, "note")) {
         const k = ++state.notes;
         const body = child(n, TEXT, "note-body");
         after.push({ kind: "note", n: k, text: "", blocks: body ? walk(elements(body), state, true) : [] });
-        out += `[${k}]`;
+        const marker = `[${k}]`;
+        generated.push([text.length, text.length + marker.length]);
+        text += marker;
       } else if ((n.namespaceURI === TEXT || n.namespaceURI === OFFICE) && SKIPPED_INLINE.has(n.localName ?? "")) continue;
-      else if (is(n, TEXT, "ruby")) { const base = child(n, TEXT, "ruby-base"); if (base) out += read(base); }
+      else if (is(n, TEXT, "ruby")) { const base = child(n, TEXT, "ruby-base"); if (base) read(base); }
       else if (n.namespaceURI === DRAW) { for (const box of textBoxes(n)) nested.push(...walk(elements(box), state, true)); }
       else if (is(n, TEXT, "list") || is(n, TABLE, "table") || is(n, TEXT, "p") || is(n, TEXT, "h")) nested.push(...walk([n], state, true));
-      else out += read(n);
+      else read(n);
     }
-    return out;
   };
-  const text = read(el);
-  return { text, after: [...after, ...nested] };
+  read(el);
+  return { text, generated, after: [...after, ...nested] };
 }
 
 /** draw:text-box elements inside a drawing element, not counting boxes nested in other boxes. */
@@ -166,19 +173,20 @@ function listBlocks(list: XmlElement, depth: number, chain: Chain, style: string
     const parts = elements(item);
     const first = parts.findIndex((c) => is(c, TEXT, "p") || is(c, TEXT, "h"));
     if (first >= 0) {
-      const { text, after } = inline(parts[first]!, state);
+      const read = inline(parts[first]!, state);
+      const { text, after } = read;
       const label = header ? "" : labelFor(chain, own, depth + 1, attr(item, TEXT, "start-value"), text, state);
       chain.firstItemText ??= text;
       chain.itemCount++;
-      out.push({ kind: "listItem", depth, label, text }, ...after);
+      out.push({ kind: "listItem", depth, label, ...textOf(read) }, ...after);
     }
     parts.forEach((c, i) => {
       if (i === first) return;
       if (is(c, TEXT, "list")) out.push(...listBlocks(c, depth + 1, chain, own, state, inCell));
       else if (first >= 0 && (is(c, TEXT, "p") || is(c, TEXT, "h"))) {
         // A further paragraph of this item: it belongs to the item, at its depth, and is not numbered again.
-        const { text, after } = inline(c, state);
-        out.push({ kind: "listItem", depth, label: "", text, continuation: true }, ...after);
+        const read = inline(c, state);
+        out.push({ kind: "listItem", depth, label: "", ...textOf(read), continuation: true }, ...read.after);
       } else out.push(...walk([c], state, inCell));
     });
   }
@@ -261,26 +269,28 @@ function walk(nodes: XmlElement[], state: WalkState, inCell: boolean): Block[] {
     if ((el.namespaceURI === TEXT || el.namespaceURI === OFFICE) && SKIPPED_BLOCK.has(el.localName ?? "")) continue;
     if (is(el, TEXT, "h")) {
       const level = Math.min(6, positive(attr(el, TEXT, "outline-level")));
-      const { text, after } = inline(el, state);
+      const read = inline(el, state);
+      const { text, after } = read;
       const clean = normaliseBlockText(text);
       if (!inCell && clean !== "") { while (state.headings.length > 0 && state.headings.at(-1)!.level >= level) state.headings.pop(); }
       if (state.styles.numberedOutlineLevels.has(positive(attr(el, TEXT, "outline-level"))) && attr(el, TEXT, "is-list-header") !== "true") {
         state.warnings.numberingUnsupported.push({ reason: "numbered-heading", headingPath: headingPath(state), text: clean, numId: "outline", ilvl: String(positive(attr(el, TEXT, "outline-level")) - 1) });
       }
       if (!inCell && clean !== "") state.headings.push({ level, text: clean });
-      out.push(inCell ? { kind: "paragraph", text } : { kind: "heading", level: level as 1 | 2 | 3 | 4 | 5 | 6, text }, ...after);
+      out.push(inCell ? { kind: "paragraph", ...textOf(read) } : { kind: "heading", level: level as 1 | 2 | 3 | 4 | 5 | 6, ...textOf(read) }, ...after);
     } else if (is(el, TEXT, "p")) {
-      const { text, after } = inline(el, state);
-      out.push({ kind: "paragraph", text }, ...after);
+      const read = inline(el, state);
+      out.push({ kind: "paragraph", ...textOf(read) }, ...read.after);
     } else if (is(el, TEXT, "list")) {
       const { chain, style } = chainFor(el, state);
       out.push(...listBlocks(el, 0, chain, style, state, inCell));
     } else if (is(el, TEXT, "numbered-paragraph")) {
       const paragraph = elements(el).find((c) => is(c, TEXT, "p") || is(c, TEXT, "h"));
       const number = elements(el).find((c) => is(c, TEXT, "number")) ?? (paragraph ? child(paragraph, TEXT, "number") : undefined);
-      const { text, after } = paragraph ? inline(paragraph, state) : { text: "", after: [] };
+      const read: Inline = paragraph ? inline(paragraph, state) : { text: "", generated: [], after: [] };
+      const { text, after } = read;
       if (!number) state.warnings.numberingUnsupported.push({ reason: "missing-definition", headingPath: headingPath(state), text: normaliseBlockText(text), numId: attr(el, TEXT, "list-id") ?? "", ilvl: String(positive(attr(el, TEXT, "level")) - 1) });
-      out.push({ kind: "listItem", depth: positive(attr(el, TEXT, "level")) - 1, label: number?.textContent ?? "", text }, ...after);
+      out.push({ kind: "listItem", depth: positive(attr(el, TEXT, "level")) - 1, label: number?.textContent ?? "", ...textOf(read) }, ...after);
     } else if (is(el, TABLE, "table")) {
       out.push(tableBlock(el, state, inCell ? 0 : ++state.tables));
     } else if (el.namespaceURI === DRAW) {
@@ -290,7 +300,12 @@ function walk(nodes: XmlElement[], state: WalkState, inCell: boolean): Block[] {
     } else {
       // Containers (text:section, text:index-body, indexes, …): their blocks, and any text directly inside them.
       const direct = Array.from(el.childNodes).filter((n) => (n.nodeType === 3 || n.nodeType === 4) && (n.nodeValue ?? "").trim() !== "");
-      if (direct.length > 0) out.push({ kind: "paragraph", text: direct.map((n) => n.nodeValue).join(" ") });
+      if (direct.length > 0) {
+        // the text nodes are joined by a space the adapter writes: generated, like any separator
+        let text = ""; const generated: Span[] = [];
+        direct.forEach((n, i) => { if (i > 0) { generated.push([text.length, text.length + 1]); text += " "; } text += n.nodeValue ?? ""; });
+        out.push({ kind: "paragraph", text, ...(generated.length > 0 ? { generated } : {}) });
+      }
       out.push(...walk(elements(el), state, inCell));
     }
   }
@@ -318,8 +333,9 @@ export async function ingestOdt(bytes: Buffer, opts: IngestOptions): Promise<Str
     styles: readStyles(content, await read("styles.xml")), notes: 0, tables: 0, headings: [], chains: [], lastChainByStyle: new Map(), chainById: new Map(),
     warnings: { listNumberingSimplified: [], numberingUnsupported: [], labelLikeReferences: [] }
   };
-  const { text, segments, tables } = linearize(normaliseBlocks(walk(elements(officeText), state, false)));
-  const document = finaliseDocument("odt", text, segments, opts, { originalSha256: createHash("sha256").update(bytes).digest("hex"), extractor: "odt" });
+  const linearized = linearize(normaliseBlocks(walk(elements(officeText), state, false)));
+  const { tables } = linearized;
+  const document = finaliseDocument("odt", linearized.text, linearized.segments, opts, { originalSha256: createHash("sha256").update(bytes).digest("hex"), extractor: "odt" });
   const listNumberingSimplified = locateSimplifiedLists(document, state.chains.filter((c) => c.simplified.length > 0).map((c) => ({ listIndex: c.index, headingPath: c.headingPath, originalFormats: c.simplified, itemCount: c.itemCount, firstItemText: normaliseBlockText(c.firstItemText ?? ""), firstSentenceId: null })));
-  return { document, tables, warnings: { listNumberingSimplified, numberingUnsupported: state.warnings.numberingUnsupported, labelLikeReferences: labelLikeReferences(document) } };
+  return { document, tables, analysis: sourceAnalysis(document, linearized), warnings: { listNumberingSimplified, numberingUnsupported: state.warnings.numberingUnsupported, labelLikeReferences: labelLikeReferences(document) } };
 }

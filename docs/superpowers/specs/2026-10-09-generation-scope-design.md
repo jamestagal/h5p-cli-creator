@@ -69,6 +69,8 @@ interface SourceAnalysis {
   | Nested content in a cell | the ` ` joining parts; `[Table n.k ` … `]` with `row r: `, `, ` and `; `; ` [sub-list:` and `]`; `[Note n] ` inside a cell |
   | Lists | list labels rendered from numbering definitions (`1.`, `a)`, `•`), and the space after them |
   | Notes | `[Note n] ` and `[Note n, table k, row r] ` prefixes |
+  | Copies (each authored character counts once; added in Step 1) | a header label on every data row after the first (later rows repeat it); a value at every position a row or column span covers after the first (the span repeats it); a header label part that is a column span's copy |
+  | ODT containers | the space joining text nodes directly inside a container |
 
   **Source text** includes:
   - heading, paragraph, item and cell text;
@@ -515,3 +517,13 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
      - on resume, the stored payload, `previewConfig` and every report-used derived field are compared with recomputed values, not just the declared hash; this is required before Step 3;
      - author entries are kept as a separate append-only history, so equivalent spellings still resume (§2.5, §2.9, §4).
   3. **Normalisation fallback:** it preserves text, cannot inflate the minimum, and raises an explicit `originFallback` warning, which is tested (§2.1, §4).
+
+## 8. Implementation notes
+
+**Step 1** (source analysis, origin, headings, structures, `ingestSource`, outline, `leap outline`):
+- **Authored text counts once.** Linearizing repeats some authored text: a marked header label on every data row, and a spanned cell's value at every position the span covers. Counting each copy as source would let a short label, repeated over many empty rows, reach the minimum. So only the first occurrence is source and the copies are generated (§2.1 table, "Copies"). The test cases are a 43-character label over 20 empty rows, and a row span and a column span.
+- **Text of a single origin skips the cluster mapping.** For text that is entirely source or entirely generated, the origin is uniform whatever NFC does, so no mapping is needed and the fallback cannot arise. Only mixed text is mapped cluster by cluster and can fall back.
+- **List labels are always generated.** This includes ODT `text:number`, which is the editor's rendering of the numbering rather than text the author wrote.
+- **Unchanged output.** Extracted text, sentences, offsets and metadata are byte-identical: every fixture's document hash is pinned at `e6a0ead` (`packages/generator/test/ingest-stability.test.ts`). `leap extract`'s outputs are unchanged.
+- **Shared output safety.** `leap outline` uses `leap extract`'s output safety through shared `assertNamesFree` and `publishFiles`. `extract` keeps its own messages and staging prefix.
+

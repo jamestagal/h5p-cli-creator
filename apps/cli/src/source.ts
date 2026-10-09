@@ -1,50 +1,22 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
-import { ingestDocx, ingestMarkdown, ingestOdt, ingestPdf, ingestText, type IngestWarnings, type SourceDocument, type TableSummary } from "@leaplearn/generator";
+import { ingestSource, SOURCE_EXTENSIONS, UnsupportedSourceError, type IngestedSource } from "@leaplearn/generator";
 
-/** The source formats `leap generate` and `leap extract` accept, by extension. */
-export const SOURCE_EXTENSIONS = [".txt", ".md", ".pdf", ".docx", ".odt"] as const;
+export { SOURCE_EXTENSIONS, UnsupportedSourceError } from "@leaplearn/generator";
 
-export class UnsupportedSourceError extends Error {
-  constructor(path: string) {
-    super(`${basename(path)}: unsupported source type "${extname(path) || "(no extension)"}"; use one of ${SOURCE_EXTENSIONS.join(", ")}`);
-    this.name = "UnsupportedSourceError";
-  }
-}
-
-export interface LoadedSource {
-  document: SourceDocument;
-  /** Structured sources (DOCX, ODT) report numbering and label-reference warnings and their tables; other sources have none. */
-  warnings: IngestWarnings;
-  tables: TableSummary[];
-  /** The file's bytes as read (the original a DOCX or ODT import stores), and their sha256, for every source type. */
-  bytes: Buffer;
-  originalSha256: string;
-  /** The adapter that read the file: "docx", "odt", "pdf", "markdown" or "text". */
-  extractor: string;
-}
-
-const NO_WARNINGS = (): IngestWarnings => ({ listNumberingSimplified: [], numberingUnsupported: [], labelLikeReferences: [] });
+/** An ingested source (ingestSource) and the file's bytes as read: the original a DOCX or ODT import stores. */
+export interface LoadedSource extends IngestedSource { bytes: Buffer }
 
 /** Reads and ingests a source file by its extension (case-insensitive). Admission errors propagate; an unknown extension throws UnsupportedSourceError before the file is read. */
 export async function loadSource(path: string): Promise<LoadedSource> {
   const sourcePath = resolve(path);
-  const ext = extname(sourcePath).toLowerCase();
-  if (!(SOURCE_EXTENSIONS as readonly string[]).includes(ext)) throw new UnsupportedSourceError(sourcePath);
+  if (!(SOURCE_EXTENSIONS as readonly string[]).includes(extname(sourcePath).toLowerCase())) throw new UnsupportedSourceError(sourcePath);
   const bytes = await readFile(sourcePath);
-  const opts = { sourceId: `src-${basename(sourcePath)}`, fileName: basename(sourcePath) };
-  const originalSha256 = createHash("sha256").update(bytes).digest("hex");
-  if (ext === ".docx" || ext === ".odt") {
-    const { document, warnings, tables } = ext === ".docx" ? await ingestDocx(bytes, opts) : await ingestOdt(bytes, opts);
-    return { document, warnings, tables, bytes, originalSha256, extractor: ext.slice(1) };
-  }
-  const document = ext === ".pdf" ? await ingestPdf(bytes, opts) : ext === ".md" ? await ingestMarkdown(bytes.toString("utf8"), opts) : await ingestText(bytes.toString("utf8"), opts);
-  return { document, warnings: NO_WARNINGS(), tables: [], bytes, originalSha256, extractor: document.kind };
+  return { ...(await ingestSource(bytes, basename(sourcePath))), bytes };
 }
 
 /** One line summarising a structured source's warnings, or null when there are none. */
-export function warningSummary(w: IngestWarnings): string | null {
+export function warningSummary(w: IngestedSource["warnings"]): string | null {
   const parts = [
     w.listNumberingSimplified.length > 0 ? `${w.listNumberingSimplified.length} list(s) with simplified numbering` : "",
     w.numberingUnsupported.length > 0 ? `${w.numberingUnsupported.length} paragraph(s) with numbering that is not rendered` : "",

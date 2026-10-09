@@ -32,3 +32,4 @@ export * from "./review/batches.js";
 export * from "./review/import.js";
 export * from "./review/sheet.js";
 export * from "./report/gate.js";
+export * from "./scope/index.js";
