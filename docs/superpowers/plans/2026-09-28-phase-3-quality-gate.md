@@ -991,4 +991,4 @@ The scoring loop: `review-sheet` → fill `scores.csv` and `findings.csv` progra
   | `gridSpan` (`colspan`) and `vMerge` (`rowspan`) | mammoth |
   | Tracked deletions (dropped) and insertions (kept) | mammoth |
   | Nested numbering (nested lists) | mammoth |
-  | Numbering formats (`numFmt`) | `word/numbering.xml` and `word/document.xml`, because mammoth's HTML does not carry them. Effective numbering is resolved there and written back before mammoth runs (`e924a0d`). |
+  | Numbering formats (`numFmt`) | `word/numbering.xml`, `word/styles.xml` and `word/document.xml`, because mammoth's HTML does not carry them. `styles.xml` supplies numbering inherited through paragraph styles (`basedOn`) and style-linked list levels (`pStyle`). Effective numbering is resolved from all three and written back before mammoth runs (`e924a0d`). |
