@@ -1,8 +1,14 @@
 # Generation scope: author selection of source sections (design and plan)
 
-**Status:** revision 3, for review. The direction was approved on 9 Oct 2026. Revision 2 recorded Benjamin's decisions and clarifications. Revision 3 closes the review findings on origin metadata, binding and hashing, and chunk continuation (§7). Implementation is on hold until this document is reviewed. Nothing here authorises a paid run.
+**Status:** revision 4, for review. The direction was approved on 9 Oct 2026, and §7 records each revision. Revision 4 settles four contract corrections:
+- re-ingestion is authoritative;
+- origin is carried through normalisation of the joined text;
+- the scope file carries its preview configuration;
+- every `Column n` fallback is excluded from the count.
 
-**Baseline:** `origin/phase-3/checkpoint-d` at `e6a0ead`. Revision 2 is `ec32660` on `phase-3/generation-scope-design`. Checkpoint D passed at `26d36a1`; Checkpoint E is pending.
+Implementation is on hold until this revision is reviewed. Nothing here authorises a paid run.
+
+**Baseline:** `origin/phase-3/checkpoint-d` at `e6a0ead`. Earlier revisions on `phase-3/generation-scope-design`: r2 `ec32660`, r3 `1284d52`. Checkpoint D passed at `26d36a1`; Checkpoint E is pending.
 
 **Context:** this is the first part of the bounded Interactive Book workflow: authors choose which source sections generation reads. Composing the book (its chapters, their order and its reading pages, parent design §6.1) comes later and is out of scope here.
 
@@ -59,7 +65,7 @@ interface SourceAnalysis {
   |---|---|
   | Adapters (DOCX, ODT) | note references `[n]` inserted into block text |
   | Line structure | the `\n` between lines; list indentation and hanging-indent spaces |
-  | Table rows | `[Table n, row r] `; `Column n` labels (tables with no marked header); `: ` after each label; `; ` between pairs; the `—` that stands for an empty cell |
+  | Table rows | `[Table n, row r] `; every `Column n` label `labelsFor` falls back to, whether the table has no marked header row or has marked header rows whose cells in that column are empty; the ` / ` joining values from several header rows; `: ` after each label; `; ` between pairs; the `—` that stands for an empty cell |
   | Nested content in a cell | the ` ` joining parts; `[Table n.k ` … `]` with `row r: `, `, ` and `; `; ` [sub-list:` and `]`; `[Note n] ` inside a cell |
   | Lists | list labels rendered from numbering definitions (`1.`, `a)`, `•`), and the space after them |
   | Notes | `[Note n] ` and `[Note n, table k, row r] ` prefixes |
@@ -69,11 +75,21 @@ interface SourceAnalysis {
   - header-cell labels taken from the document, even one that reads "Column 1";
   - a genuine `—`, `[1]` or `1.` typed by the author;
   - authored whitespace inside block text, including whitespace that normalisation collapsed.
-- **How origin is carried.**
-  - An adapter supplies block or cell text as runs, `{ text, generated?: true }`, only where it inserts markers.
-  - `normaliseBlocks` normalises the joined runs exactly as `normaliseBlockText` does, carrying the origin per character. A space produced by collapsing whitespace is source if any character it replaced was source.
-  - Generated runs use only non-composing starter characters (ASCII, `•`, `—`), so per-run NFC equals NFC of the whole and offsets survive.
-  - The resulting `text` string is byte-identical to today's. The block gains an internal `generated` range list, and `linearize` composes these ranges with its own generated pieces.
+- **How origin is carried: the joined text is authoritative.**
+  - An adapter supplies block or cell text as runs, `{ text, generated?: true }`, only where it inserts markers. Their concatenation is the raw text it passes today.
+  - **The text** is exactly `normaliseBlockText(joined)`, as today. Runs are never normalised independently. That would be wrong: NFC of `"e"` followed separately by NFC of a combining acute (U+0301) is `"é"`, but NFC of the joined pair is `"é"`.
+  - **The origin** is computed by a separate mapping that follows the same three steps in the same order:
+    1. **NFC.** The joined raw text is split into extended grapheme clusters (`Intl.Segmenter`, granularity `grapheme`). Each output cluster takes its origin from its input cluster:
+       - **source** if every input code point was source;
+       - **generated** if every input code point was generated;
+       - **mixed:** where NFC leaves the cluster unchanged, origin is kept per code point; where it changes the cluster, the whole cluster is **generated**. Treating it as generated can only lower the source count; it can never count generated text as source.
+
+       After this step, the clusters' NFC forms joined together must equal NFC of the whole text. If they ever differ, which Unicode does not guarantee against, the whole block's origin is marked generated and a warning is recorded. The text itself is still the joined NFC.
+    2. **Whitespace collapse.** Newlines become spaces and runs of spaces and tabs become one space. A collapsed space is source if any character it replaced was source.
+    3. **Trim.** Trimmed characters are dropped together with their origin.
+  - **Code points, not code units.** Origin is held per code point, so an astral character (a surrogate pair) is never split between origins. The resulting spans are converted to UTF-16 offsets at the end.
+  - **Unchanged text.** The resulting `text` is byte-identical to today's, and `assertNormalised` still applies.
+  - **Into `linearize`.** The block gains an internal `generated` range list. `linearize` adds these ranges to its own generated pieces, which are inserted between already-normalised texts and need no further normalisation.
 - **Plain sources.** For TXT, Markdown and PDF, `generated` is empty and `headings` and `structures` are empty. Markdown syntax is removed, not added. PDF page joins are newlines, which no sentence contains.
 
 ### 2.2 Outline and stable section identifiers
@@ -120,7 +136,7 @@ A scope has `include` and `exclude` entries. Each entry is either a section, `{ 
 - **Rule:** the selection must contain at least **500 Unicode code points of source text** (§2.1).
 - **How it is counted:** for each sentence in the resolved set (each counted once), count the code points of `text.slice(charStart, charEnd)` that lie outside every `generated` span.
 - **What never counts:** context-only ancestor headings, request scaffolding (`[sN]`, `(list level n)`, gap markers, scope lines) and anything generated.
-- **Lookalike text still counts:** an author's genuine `—`, `[1]`, `1.` or "Column 1" header counts. The empty-cell `—`, a note reference and a rendered list label do not.
+- **Lookalike text still counts:** an author's genuine `—`, `[1]`, `1.` or "Column 1" header counts. The empty-cell `—`, any `Column n` fallback label, a note reference and a rendered list label do not.
 - **Whole-document admission** (500–400,000 code points of stored text) is unchanged.
 
 ### 2.5 Binding, the scope file and the canonical `scopeHash`
@@ -137,12 +153,18 @@ A scope has `include` and `exclude` entries. Each entry is either a section, `{ 
   "kind": "leap.generationScope", "scopeFormat": 1,
   "source": { "fileName": "unit.docx", "originalSha256": "…", "textHash": "…", "extractionVersion": "2026-10-01.1" },
   "include": [ { "section": "sec-s12", "title": "Isolation procedures" }, { "sentences": { "from": "s200", "to": "s240" } } ],
-  "exclude": [ { "section": "sec-s30", "title": "Assessment arrangements" } ]
+  "exclude": [ { "section": "sec-s30", "title": "Assessment arrangements" } ],
+  "previewConfig": { "chunkTokens": 6000, "scopedLayoutVersion": 1 }
 }
 ```
 
 - **Binding check.** All three binding values in the file must match the ones computed from the bytes. Otherwise the scope is refused with "re-run leap outline". `fileName` is informational and is never compared.
-- **Unknown versions.** An unknown `scopeFormat` is refused.
+- **Unknown versions.** An unknown `scopeFormat` or `scopedLayoutVersion` is refused.
+- **`previewConfig`.** `previewConfig` holds the request configuration that the preview was made with and that scoped generation must use (§2.6):
+  - `chunkTokens` is a positive integer;
+  - `scopedLayoutVersion` versions the scoped rendering layout: gap-marker wording, scope lines and gap-aware heading context.
+
+  `leap outline` writes the template with `chunkTokens` set to `DEFAULT_CHUNK_TOKENS` and the current `SCOPED_LAYOUT_VERSION`. The author may change `chunkTokens` before previewing.
 
 **The `scopeHash` payload** is canonical, with exactly these keys in this order:
 
@@ -169,9 +191,9 @@ A scope has `include` and `exclude` entries. Each entry is either a section, `{ 
   - counts, partial-structure findings, redundant-entry notes and warnings.
 
   These are derived or presentational. The partial findings, for example, follow from the passages and the analysis, both already bound.
-- **Chunking** affects how requests are split. It is already in the run fingerprint as `chunkTokens`, and the request layout is pinned by `PROMPT_VERSION`.
+- **`previewConfig` is configuration, not meaning.** It is not in `scopeHash`: changing the chunk size changes how the same selection is split, not what is selected. It is bound in the scoped run fingerprint instead (§2.9).
 
-**The stored `generationScope` artifact** contains the payload, `scopeHash`, the author's entries, counts and partial findings. It is a record, and it is never read back as trusted input (§2.9).
+**The stored `generationScope` artifact** contains the payload, `scopeHash`, `previewConfig`, the author's entries, counts and partial findings. It is a record, and it is never read back as trusted input (§2.9).
 
 **Privacy.** Heading titles are real material. The scope file, `outline.md`, `outline.json`, `sentences.md` and `scope-preview.md` stay outside the repository or under the gitignored `docs/uoc/`.
 
@@ -194,10 +216,12 @@ A scope has `include` and `exclude` entries. Each entry is either a section, `{ 
   - "Passages are separate parts of the document; do not treat text across a gap as continuous."
   - "Headings in HEADING CONTEXT are context only and cannot be cited."
 - **Whole-document requests are unchanged.** A whole-document run takes the existing path: no scope, one passage, no markers, no scope lines. Its requests are byte-identical.
-- **Same chunk size.** `leap scope` uses the same chunk size as `leap generate`, through one shared `effectiveChunkTokens()`. Today that is `DEFAULT_CHUNK_TOKENS`, because `generate` has no flag.
-  - `scope` deliberately takes no `--chunk-tokens` of its own.
-  - If `generate` ever gains the flag, `scope` gains the same flag in the same change.
-  - The preview header prints the chunk size and chunk count.
+- **Preview and generation use one configuration: the scope file's `previewConfig`.**
+  - `leap scope` renders with `previewConfig.chunkTokens` and `previewConfig.scopedLayoutVersion`. The preview header prints both, with the chunk count.
+  - Scoped generation (`leap generate --scope`, and `runImport` with a scope) chunks with `previewConfig.chunkTokens` and renders with that layout version.
+  - An explicit programmatic chunk setting that disagrees is refused before any write or model call: `RunImportDeps.chunkTokens` set to a different value. The refusal names both values.
+  - A `scopedLayoutVersion` other than the code's current version is refused, so the preview's layout always matches what will be sent.
+- **Unscoped runs are unchanged.** They keep today's behaviour, including a custom `RunImportDeps.chunkTokens`, and their fingerprints are unchanged.
 
 ### 2.7 Partial structures: detection and reporting
 
@@ -233,19 +257,32 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
 
 ### 2.9 Generation, persistence and resume: `runImport` trusts nothing supplied
 
-- **The input.** `RunImportInput.scope?: { file: GenerationScopeFile; bytes: Buffer; ext: SourceExtension }`. `runImport` accepts no resolved ids, counts, analysis or hash: it recomputes them.
+- **The input.** `RunImportInput.scope?: { file: GenerationScopeFile; bytes: Buffer; ext: SourceExtension }`. `runImport` accepts no resolved ids, counts, analysis or hash; it recomputes them.
+- **Re-ingestion is authoritative.** In a scoped run, the document `runImport` uses is the one it re-ingests from `bytes`, never the caller's.
+  - The caller's `input.source` is accepted only when it agrees **completely** with the re-ingested document:
+    - a canonical deep comparison of `kind`, `text`, `textHash`, `sourceId`, every sentence (id, offsets, text, `headingPath`, `atomic`, `listDepth`) and every metadata field;
+    - a mismatch anywhere is refused before any write, naming the first differing field.
+  - Re-ingestion uses the caller's `sourceId` and `fileName`. Agreement is therefore exact, not approximate.
+  - From then on, scoped resolution, the request-size checks, extraction, evidence building and the stored `source` artifact all use the re-ingested document object.
 - **Validation under the lock, before any write:**
-  1. Validate `file` with Zod.
+  1. Validate `file` with Zod, including `previewConfig`.
   2. Compute sha256(`bytes`). For DOCX and ODT, require it to equal `input.original`'s hash.
-  3. Re-ingest `bytes` with the generator's `ingestSource(bytes, ext)`; this also gives the `SourceAnalysis`. Require the re-ingested `textHash` and `extractionVersion` to equal `input.source`'s.
-  4. Check the file's binding against these computed values.
-  5. Resolve, check the minimum, detect partial structures, and compute the payload and `scopeHash`.
+  3. Re-ingest `bytes` with the generator's `ingestSource(bytes, ext, { sourceId, fileName })`. This gives the authoritative document and its `SourceAnalysis`.
+  4. Require complete agreement of `input.source` with the re-ingested document.
+  5. Check the file's binding against the computed `originalSha256`, `textHash` and `extractionVersion`.
+  6. Check `previewConfig`: a known layout version, and no conflicting explicit `RunImportDeps.chunkTokens`.
+  7. Resolve, check the minimum, detect partial structures, and compute the payload and `scopeHash`.
+- **On resume (scoped):** all the steps above run again. In addition:
+  - the stored `source` artifact must deep-equal the re-ingested document, or it is refused as altered;
+  - the stored `generationScope` must carry the recomputed `scopeHash` and `previewConfig`, or it is refused as altered.
+
+  (Checking stored sources of *unscoped* imports on resume is not part of this increment, so unscoped behaviour stays unchanged.)
 - **Fingerprint and storage.**
-  - The fingerprint material gains `generationScope: scopeHash` only when a scope is given. Otherwise it is byte-identical, so existing directories and S1 still resume.
-  - The artifact is written next to `source`, before `parseUnit`, the first model call.
-  - On resume, the scope is recomputed again and checked against the fingerprint. A stored artifact whose hash differs from the recomputed one is refused as altered.
-- **Extraction.** Extraction and the request-size checks use the original `Sentence` objects of the resolved passages and `renderScopedEvidence`. Nothing is renumbered.
-- **The full document is kept.** The stored `source` and the DOCX/ODT original remain the full document. Every `ev-sN` resolves against the full text.
+  - For a scoped run, the fingerprint material gains `generationScope: { scopeHash, chunkTokens, scopedLayoutVersion }`, and the material's `chunkTokens` is `previewConfig.chunkTokens`.
+  - Without a scope the material is byte-identical, so existing directories, custom unscoped chunk sizes and S1 still resume.
+  - The `source` and `generationScope` artifacts are written before `parseUnit`, the first model call.
+- **Extraction.** Extraction uses the re-ingested document's `Sentence` objects for the resolved passages, rendered by `renderScopedEvidence` with `previewConfig`. Nothing is renumbered.
+- **The full document is kept.** The stored `source` (the re-ingested document) and the DOCX/ODT original remain the full document. Every `ev-sN` resolves against the full text.
 - **Evidence guard.** Before the concept map is persisted, every evidence sentence id must be in scope; anything else is a system error. `regenerate` reads only the concept map and so inherits the scope.
 - **The CLI.** `leap generate --scope` and `leap scope` call the same generator functions. They resolve the scope early only to refuse quickly and to print the hash, counts and partial findings; `runImport` does not rely on that.
 - **Reports.**
@@ -286,7 +323,7 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
 1. `leap outline <source> --out <dir>` writes the outline, the sentence list and the template. No model call, no key.
 2. The author edits `generation-scope.json`.
 3. `leap scope <source> --scope <file> --out <dir>` validates the scope and writes `scope-preview.md`. The preview has:
-   - a header: binding, `scopeHash`, chunk size, chunk count, first and last selected sentence;
+   - a header: binding, `scopeHash`, `previewConfig` (chunk size and layout version), chunk count, first and last selected sentence;
    - counts, partial structures and redundant entries;
    - for each chunk, exactly the `renderScopedEvidence` output its extraction request will contain.
 
@@ -307,7 +344,7 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
 |---|---|
 | Analysis | `ingest/structure/blocks.ts` (runs, origin through `normaliseBlocks`), `ingest/structure/linearize.ts` (headings, structures, generated spans), `ingest/docx.ts` and `ingest/odt.ts` (note references as generated runs; return the analysis), `ingest/text.ts` and `ingest/pdf.ts` (empty analysis), new `ingest/ingest-source.ts` (`ingestSource(bytes, ext)` with sha256, moved from the CLI's `loadSource` dispatch), new `ingest/outline.ts` |
 | Scope core | new `packages/generator/src/scope/{schema,resolve,count,partial,hash,render,preview,index}.ts`; exported from `src/index.ts` |
-| Pipeline | `concepts/index.ts` and `concepts/extract.ts` (scoped rendering through `renderScopedEvidence`), `pipeline/fingerprint.ts`, `pipeline/run-import.ts` (recompute, bind, persist, guard), a shared `effectiveChunkTokens()` |
+| Pipeline | `concepts/index.ts` and `concepts/extract.ts` (scoped rendering through `renderScopedEvidence`), `pipeline/fingerprint.ts`, `pipeline/run-import.ts` (authoritative re-ingestion, binding, `previewConfig`, persistence, guard), a `SCOPED_LAYOUT_VERSION` constant |
 | Reports | `packages/generator/src/report/gate.ts`, `apps/cli/src/report.ts` |
 | CLI | `apps/cli/src/source.ts` (uses `ingestSource`), new `apps/cli/src/scope.ts` (`outline`, `scope`), `apps/cli/src/generate.ts` (`--scope`), `apps/cli/src/index.ts` |
 | Docs | `README.md`, `docs/testing/phase-3-pilot.md` step 3, this design, a plan amendment |
@@ -323,7 +360,7 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
 - *Span invariants:* sorted, merged, in bounds.
 - *Generated spans:* each one's text is one of the §2.1 generated forms.
 - *Every generated form is covered,* each in its own fixture:
-  - `[Table n, row r] `, `Column n`, `: `, `; `, the empty-cell `—`;
+  - `[Table n, row r] `, `Column n` (with no marked header and as a fallback in marked header rows), ` / `, `: `, `; `, the empty-cell `—`;
   - nested-table brackets, `row r: `, `, ` and `; `; ` [sub-list:` and `]`; the ` ` joining nested parts;
   - list labels and indentation; continuation hanging indents;
   - `[Note n] ` and `[Note n, table k, row r] `;
@@ -331,7 +368,16 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
   - the `\n` between lines.
 - *Lookalikes count as source:* a genuine `—` in a cell (counts 1, while an empty cell counts 0), a typed `[1]`, a typed `1.`, a header cell reading "Column 1".
 - *Collapsed whitespace* counts as source.
-- *Padding cannot reach the minimum:* a document with a wide table of empty cells, without marked headers, gives a selection whose stored text exceeds 500 code points while its source text is under 500. It is refused. Adding 1 genuine character at the threshold makes it accepted.
+- *Origin through joined-text normalisation:* for each case below, the text equals `normaliseBlockText` of the joined runs, byte for byte, and the origin is as stated.
+  - `"e"` and a combining acute (U+0301) in two authored runs become a single source `é`.
+  - A generated marker followed by an authored combining mark: the marker stays generated, and the mark stays source where NFC leaves the cluster unchanged.
+  - An authored base followed by a generated marker: both keep their origin.
+  - A composing cluster that mixes origins is entirely generated, and the count can only go down.
+  - Hangul jamo (L, V, T) split across authored runs compose to one source syllable.
+  - Astral characters, including a surrogate pair next to a marker and an emoji ZWJ sequence split across authored runs, are never split between origins and count one code point each.
+  - Whitespace collapsed across a run boundary is source if any collapsed character was source.
+- *Padding cannot reach the minimum, table without a marked header:* a document with a wide table of empty cells gives a selection whose stored text exceeds 500 code points while its source text is under 500. It is refused. Adding 1 genuine character at the threshold makes it accepted.
+- *Padding cannot reach the minimum, table with a marked header:* a table with a marked header row whose cells are empty in most columns, and with empty data cells, is refused the same way. Each fallback `Column n`, its `: `, separators and `—` are all generated; only the non-empty header labels count. The threshold check is the same.
 - *Astral characters* count as one code point each.
 
 **Outline.**
@@ -352,9 +398,11 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
 - *What changes the hash:* changing passages, a sentence, or a heading path.
 - *What does not:* different spellings of the same selection, a different `fileName`, or different counts or partial findings.
 
-**`runImport` recomputes.**
+**`runImport` recomputes, and re-ingestion is authoritative.**
 - A scope file with a wrong title or id, or below the minimum, is refused by `runImport` even when the CLI's checks are bypassed.
-- A stored artifact edited on disk is refused on resume.
+- A caller's `input.source` that keeps the right `textHash` and `extractionVersion` but has one changed sentence offset, `headingPath`, `listDepth`, sentence text or metadata field is refused before any write, naming the field.
+- A matching `input.source` is replaced by the re-ingested document: the stored `source` and every evidence offset come from re-ingestion. This is checked by identity, not just equality.
+- On resume, a stored `source` or `generationScope` edited on disk is refused as altered.
 - The API takes no resolved data: a type-level test, plus a runtime test that extra fields are rejected by Zod.
 
 **Rendering, chunks and preview.**
@@ -367,7 +415,13 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
 - *Chunk-size parity:*
   - under FakeProvider, `generate --scope` dispatches exactly as many extraction requests as the preview's chunk count;
   - each dispatched request's evidence section equals the corresponding preview chunk;
-  - `scope` and `generate` use `effectiveChunkTokens()`.
+  - both use `previewConfig`, and a non-default `previewConfig.chunkTokens` changes the preview and the requests alike.
+- *Conflicting chunk setting:* `runImport` with a scope and an explicit `RunImportDeps.chunkTokens` different from `previewConfig.chunkTokens` is refused before any write or call. An equal value is accepted.
+- *Unknown layout:* a `scopedLayoutVersion` other than the current one is refused, by both `scope` and `runImport`.
+- *Fingerprint binding:*
+  - changing `previewConfig.chunkTokens` changes the scoped fingerprint but not `scopeHash`;
+  - changing `scopedLayoutVersion` likewise;
+  - unscoped runs with a custom `RunImportDeps.chunkTokens` keep their current fingerprint and behaviour.
 - *Citing markers or headings:* a model citing a marker or an ancestor heading id is rejected.
 
 **Partial structures.** Each row of the §2.7 table is detected and reported. Section-only scopes report none.
@@ -428,3 +482,18 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
      - shared by request and preview, with passage continuation across chunks and gap markers at chunk boundaries;
      - `scope` uses `generate`'s effective chunk size (§2.6).
   4. **The "no unselected text" test** allows labelled ancestor-heading context and still excludes ancestor body text and citations (§4).
+- **r4:** contract corrections from the review of r3.
+  1. **Re-ingestion is authoritative.**
+     - A scoped run uses the document it re-ingests, and requires complete agreement from the caller's document before any write.
+     - Resolution, extraction, evidence and the stored `source` all use the re-ingested document.
+     - Stored `source` and `generationScope` are checked on resume (§2.9).
+  2. **Per-run NFC claim removed.**
+     - Joined-text normalisation is authoritative.
+     - Origin is carried through NFC (by grapheme cluster, with mixed composing clusters treated as generated), whitespace collapse and trim, held per code point.
+     - Tests cover split combining sequences, marker boundaries, Hangul and astral characters (§2.1, §4).
+  3. **`previewConfig: { chunkTokens, scopedLayoutVersion }`.**
+     - It lives in the scope file, the preview header and the stored artifact, and is used by both preview and scoped generation.
+     - A conflicting explicit chunk setting is refused before writes or calls.
+     - It is kept out of `scopeHash` but bound in the scoped fingerprint. Unscoped custom chunk sizes and fingerprints are unchanged (§2.5, §2.6, §2.9).
+     - It replaces r3's `effectiveChunkTokens()`.
+  4. **Every `Column n` fallback is generated,** including fallbacks for empty columns in marked header rows, as is the ` / ` header separator. This comes with a marked-header padding test (§2.1, §4).
