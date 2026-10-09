@@ -81,7 +81,7 @@ const usd = (micro: number): string => `$${(micro / 1_000_000).toFixed(4)}`;
 export function formatCostReport(r: CostReport): string {
   const lines = [
     `Cost (pricing ${r.pricingVersion}): ${usd(r.totals.costUsdMicro)} over ${r.totals.attempts} attempts (known ${r.totals.costStatusCounts.known}, estimated ${r.totals.costStatusCounts.estimated}, unavailable ${r.totals.costStatusCounts.unavailable} — excluded from the sums; the ledger's budget spend counts them at their reservation); shared ${usd(r.shared)}, direct ${usd(r.direct)}; retry share ${(r.retryShare * 100).toFixed(0)}%; reservations under-estimated on ${r.totals.reservationExceeded} attempt(s) by ${usd(r.totals.underestimateUsdMicro)} in total; spend over the import's cap, from the ledger's spent figure (which counts unknown-cost attempts at their reservation): ${usd(r.totals.spendOverCapUsdMicro)}`,
-    `Accepted activities: ${r.accepted}; cost per accepted activity: ${r.costPerAcceptedActivityUsdMicro === null ? "n/a (none accepted yet; record decisions with leap review)" : usd(r.costPerAcceptedActivityUsdMicro)}`,
+    `Accepted activities: ${r.accepted}; cost per accepted activity: ${r.costPerAcceptedActivityUsdMicro === null ? "n/a (none accepted yet; score the current builds with leap review-sheet and leap review-import)" : usd(r.costPerAcceptedActivityUsdMicro)}`,
     "", "| purpose | attempts | cost |", "|---|---|---|"
   ];
   for (const [p, v] of Object.entries(r.byPurpose)) lines.push(`| ${p} | ${v.attempts} | ${usd(v.costUsdMicro)} |`);
