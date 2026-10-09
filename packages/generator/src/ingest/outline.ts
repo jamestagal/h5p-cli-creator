@@ -1,11 +1,12 @@
 import type { SourceAnalysis } from "./analysis.js";
 import type { SourceDocument } from "./source-document.js";
-import { sourceCodePointCounter } from "./structure/origin.js";
+import { selectionSourceCounter } from "./structure/origin.js";
 
 /**
  * A section's text, counted (generation scope design §2.2). `sourceCodePoints` counts Unicode code points of source text
- * only (never generated labels, prefixes, separators or copies). `listItemSentences` counts the sentences inside list
- * items, so a two-sentence item is 1 item and 2 sentences. First and last are sentence ids in document order.
+ * only (never generated labels, prefixes or separators), with text the linearizer repeats (a header label, a spanned
+ * cell) counted once within the counted sentences. `listItemSentences` counts the sentences inside list items, so a
+ * two-sentence item is 1 item and 2 sentences. First and last are sentence ids in document order.
  */
 export interface SectionCounts {
   sentences: number; sourceCodePoints: number;
@@ -84,7 +85,8 @@ export function buildOutline(document: SourceDocument, analysis: SourceAnalysis)
     return found.section;
   };
 
-  const count = sourceCodePointCounter(document.text, analysis.generated);
+  const count = selectionSourceCounter(document.text, analysis.generated, analysis.repeats);
+  const ownRanges = new Map<OutlineSection, Array<[number, number]>>();
   const inItem = new Uint8Array(document.text.length);
   for (const s of analysis.structures) {
     const own = sectionAt((s.kind === "table" ? s.rows[0] : s.kind === "list" ? s.items[0]?.lines[0] : s.lines[0])?.charStart ?? 0).own;
@@ -100,13 +102,14 @@ export function buildOutline(document: SourceDocument, analysis: SourceAnalysis)
     const section = sectionAt(s.charStart);
     const own = section.own;
     own.sentences++;
-    own.sourceCodePoints += count(s.charStart, s.charEnd);
+    ownRanges.set(section, [...(ownRanges.get(section) ?? []), [s.charStart, s.charEnd]]);
     if (inItem[s.charStart] === 1) own.listItemSentences++;
     own.firstSentenceId ??= s.sentenceId;
     own.lastSentenceId = s.sentenceId;
     sectionOf[s.sentenceId] = section.id;
   }
   const position = new Map(sentences.map((s, i) => [s.sentenceId, i]));
+  // Source code points are counted over each section's own sentences, and over its whole subtree, never summed: a unit counts once in each.
   const add = (a: SectionCounts, b: SectionCounts): SectionCounts => {
     const ids = [a.firstSentenceId, b.firstSentenceId, a.lastSentenceId, b.lastSentenceId].filter((x): x is string => x !== null).sort((x, y) => position.get(x)! - position.get(y)!);
     return {
@@ -115,10 +118,15 @@ export function buildOutline(document: SourceDocument, analysis: SourceAnalysis)
       firstSentenceId: ids[0] ?? null, lastSentenceId: ids.at(-1) ?? null
     };
   };
-  const roll = (section: OutlineSection): SectionCounts => {
-    section.subtree = section.children.reduce((sum, c) => add(sum, roll(c)), { ...section.own });
-    return section.subtree;
+  const roll = (section: OutlineSection): Array<[number, number]> => {
+    const own = ownRanges.get(section) ?? [];
+    section.own.sourceCodePoints = count(own);
+    const ranges = [...own, ...section.children.flatMap(roll)];
+    section.subtree = section.children.reduce((sum, c) => add(sum, c.subtree), { ...section.own });
+    section.subtree.sourceCodePoints = count(ranges);
+    return ranges;
   };
-  const totals = roots.reduce((sum, r) => add(sum, roll(r)), zero());
+  const all = roots.flatMap(roll);
+  const totals = { ...roots.reduce((sum, r) => add(sum, r.subtree), zero()), sourceCodePoints: count(all) };
   return { usableHeadings, sections: roots, totals, sectionOf };
 }

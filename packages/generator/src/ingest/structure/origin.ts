@@ -146,3 +146,35 @@ export function sourceCodePointCounter(text: string, generated: Span[]): (start:
     return n;
   };
 }
+
+/**
+ * One rendered occurrence of text the author wrote once but the linearizer writes more than once: a marked header label
+ * part (written on every data row) or a spanned cell's value (written at every position the span covers). Every
+ * occurrence of the same authored cell has the same `unit`, so a count can take it once however many occurrences a
+ * selection holds; separately authored cells have different units even when their text is equal. `sourceCodePoints`
+ * is the unit's own source count (its text outside generated spans, with any units inside it counted once).
+ */
+export interface UnitOccurrence { charStart: number; charEnd: number; unit: string; sourceCodePoints: number }
+
+/**
+ * Counts source text within a set of ranges (sentence ranges, a selection): Unicode code points outside generated
+ * spans and outside unit occurrences, plus each unit that has an occurrence overlapping any range, once. The unit of
+ * the generation-scope minimum (design §2.4).
+ */
+export function selectionSourceCounter(text: string, generated: Span[], occurrences: UnitOccurrence[]): (ranges: Array<[number, number]>) => number {
+  const mask = maskOf(text.length, [...generated, ...occurrences.map((o): Span => [o.charStart, o.charEnd])]);
+  return (ranges) => {
+    let n = 0;
+    const units = new Map<string, number>();
+    for (const [start, end] of ranges) {
+      for (let i = start; i < end;) {
+        const cp = text.codePointAt(i)!;
+        if (mask[i] !== 1) n++;
+        i += cp > 0xffff ? 2 : 1;
+      }
+      for (const o of occurrences) if (o.charStart < end && o.charEnd > start) units.set(o.unit, o.sourceCodePoints);
+    }
+    for (const w of units.values()) n += w;
+    return n;
+  };
+}

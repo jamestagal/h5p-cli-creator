@@ -44,7 +44,9 @@ describe("leap outline", () => {
     expect(json.totals.sentences).toBe(ingested.document.sentences.length);
     const recording = json.sections[0]!.children[1]!;
     expect(recording.headingPath).toEqual(["Audit fundamentals", "Recording results"]);
-    expect(recording.own).toMatchObject({ tables: 3, tableRows: 6, notes: 1 }); // Tables 1 and 2, and the table inside Note 3; Note 2 is inline in a cell, so not a note of its own
+    expect(recording.own).toMatchObject({ tables: 3, tableRows: 6, notes: 1, lists: 1, listItems: 2, listItemSentences: 2 }); // the list in Note 3
+    // body lists 1 (4 items) and 2 (2 items), and the list in Note 1 (3 items, one nested)
+    expect(json.sections[0]!.children[0]!.own).toMatchObject({ lists: 3, listItems: 9, listItemSentences: 9, notes: 1, noteLines: 5 }); // Tables 1 and 2, and the table inside Note 3; Note 2 is inline in a cell, so not a note of its own
 
     const md = await readFile(join(out, "outline.md"), "utf8");
     expect(md).toContain(`${recording.id}`);

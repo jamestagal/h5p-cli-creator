@@ -69,7 +69,6 @@ interface SourceAnalysis {
   | Nested content in a cell | the ` ` joining parts; `[Table n.k ` … `]` with `row r: `, `, ` and `; `; ` [sub-list:` and `]`; `[Note n] ` inside a cell |
   | Lists | list labels rendered from numbering definitions (`1.`, `a)`, `•`), and the space after them |
   | Notes | `[Note n] ` and `[Note n, table k, row r] ` prefixes |
-  | Copies (each authored character counts once; added in Step 1) | a header label on every data row after the first (later rows repeat it); a value at every position a row or column span covers after the first (the span repeats it); a header label part that is a column span's copy |
   | ODT containers | the space joining text nodes directly inside a container |
 
   **Source text** includes:
@@ -137,7 +136,16 @@ A scope has `include` and `exclude` entries. Each entry is either a section, `{ 
 ### 2.4 Minimum: source code points, counted once
 
 - **Rule:** the selection must contain at least **500 Unicode code points of source text** (§2.1).
-- **How it is counted:** for each sentence in the resolved set (each counted once), count the code points of `text.slice(charStart, charEnd)` that lie outside every `generated` span.
+- **How it is counted:** for each sentence in the resolved set (each counted once), count the code points of `text.slice(charStart, charEnd)` that lie outside every `generated` span and every repeated-unit occurrence. Then add, once for each repeated unit with at least one occurrence in the selected sentences, that unit's own source count.
+- **Repeated units** (amended after the Step 1 review). The linearizer writes some authored text more than once:
+  - a marked header label part, on every data row;
+  - the value of a cell that spans several positions, at every position it covers.
+
+  Every rendered occurrence keeps the identity of the cell it came from: its table plus the row and column where the cell was written. That identity is the unit, and the analysis lists each occurrence as `repeats`.
+  - **Once per selection:** a selection counts each unit once, whichever occurrences it holds. Later table rows selected alone still count their header labels once, even when the first row is excluded; a span copy selected without its original counts too.
+  - **Copies add nothing:** several occurrences of one unit together still count once.
+  - **Independent text stays distinct:** separately authored cells are different units even when their text is equal. Two "High" cells, two "Risk" header cells, and equal headers in two tables each count.
+  - **Nested repeats:** a unit's own count applies the same rule to any units inside it.
 - **What never counts:** context-only ancestor headings, request scaffolding (`[sN]`, `(list level n)`, gap markers, scope lines) and anything generated.
 - **Lookalike text still counts:** an author's genuine `—`, `[1]`, `1.` or "Column 1" header counts. The empty-cell `—`, any `Column n` fallback label, a note reference and a rendered list label do not.
 - **Whole-document admission** (500–400,000 code points of stored text) is unchanged.
@@ -521,7 +529,16 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
 ## 8. Implementation notes
 
 **Step 1** (source analysis, origin, headings, structures, `ingestSource`, outline, `leap outline`):
-- **Authored text counts once.** Linearizing repeats some authored text: a marked header label on every data row, and a spanned cell's value at every position the span covers. Counting each copy as source would let a short label, repeated over many empty rows, reach the minimum. So only the first occurrence is source and the copies are generated (§2.1 table, "Copies"). The test cases are a 43-character label over 20 empty rows, and a row span and a column span.
+- **Authored text counts once per selection.** Linearizing repeats some authored text: a marked header label on every data row, and a spanned cell's value at every position the span covers. Counting each copy would let a short label repeated over many empty rows reach the minimum.
+  - *Before the review (`1643d7e`):* copies were marked generated after the first occurrence. That lost their identity, so a selection of later rows alone did not count its header labels.
+  - *Now:* every occurrence keeps its unit, and a count takes each unit once within the counted sentences (§2.4).
+  - *Tests:*
+    - a later row alone with a 16-code-point header and 484 authored code points counts 500;
+    - a span-copy-only selection; several copies together;
+    - separately authored equal cells, equal header cells and equal headers in two tables, each counted;
+    - a long label over 20 empty rows counted once.
+  - *The outline* counts own and subtree text the same way, over their sentences.
+- **Lists inside body notes are list structures** (also after the Step 1 review). Each note's list items, nested items and continuation paragraphs are recorded as lists, numbered with the body's lists in document order, without changing the note's lines. The structure fixtures' five note-list sentences, and every other list sentence, now belong to exactly one list item.
 - **Text of a single origin skips the cluster mapping.** For text that is entirely source or entirely generated, the origin is uniform whatever NFC does, so no mapping is needed and the fallback cannot arise. Only mixed text is mapped cluster by cluster and can fall back.
 - **List labels are always generated.** This includes ODT `text:number`, which is the editor's rendering of the numbering rather than text the author wrote.
 - **Unchanged output.** Extracted text, sentences, offsets and metadata are byte-identical: every fixture's document hash is pinned at `e6a0ead` (`packages/generator/test/ingest-stability.test.ts`). `leap extract`'s outputs are unchanged.
