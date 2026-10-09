@@ -1,6 +1,6 @@
 # Generation scope: author selection of source sections (design and plan)
 
-**Status:** revision 4, for review. The direction was approved on 9 Oct 2026, and §7 records each revision. Revision 4 settles four contract corrections:
+**Status:** revision 4 with the r4 review clarifications (§7), approved for Step 1 on 9 Oct 2026; Steps 2–4 await review of Step 1. The direction was approved on 9 Oct 2026, and §7 records each revision. Revision 4 settles four contract corrections:
 - re-ingestion is authoritative;
 - origin is carried through normalisation of the joined text;
 - the scope file carries its preview configuration;
@@ -84,10 +84,11 @@ interface SourceAnalysis {
        - **generated** if every input code point was generated;
        - **mixed:** where NFC leaves the cluster unchanged, origin is kept per code point; where it changes the cluster, the whole cluster is **generated**. Treating it as generated can only lower the source count; it can never count generated text as source.
 
-       After this step, the clusters' NFC forms joined together must equal NFC of the whole text. If they ever differ, which Unicode does not guarantee against, the whole block's origin is marked generated and a warning is recorded. The text itself is still the joined NFC.
+       After this step, the clusters' NFC forms joined together must equal NFC of the whole text. If they ever differ, which Unicode does not guarantee against, the whole block's origin is marked generated and an `originFallback` warning is recorded, naming the block's position and its source and generated code-point counts. The text itself is still the joined NFC. The fallback preserves the text exactly and cannot raise the source count.
     2. **Whitespace collapse.** Newlines become spaces and runs of spaces and tabs become one space. A collapsed space is source if any character it replaced was source.
     3. **Trim.** Trimmed characters are dropped together with their origin.
   - **Code points, not code units.** Origin is held per code point, so an astral character (a surrogate pair) is never split between origins. The resulting spans are converted to UTF-16 offsets at the end.
+  - **Counting unit.** Counting is always by Unicode code point (§2.4). Grapheme clusters are used only to map origin through NFC. They are never a counting unit, and UTF-16 code units are never one either. For example, `👩‍🔧` (woman, zero-width joiner, wrench) is 3 code points, 1 grapheme and 5 UTF-16 code units, and as source text it counts 3.
   - **Unchanged text.** The resulting `text` is byte-identical to today's, and `assertNormalised` still applies.
   - **Into `linearize`.** The block gains an internal `generated` range list. `linearize` adds these ranges to its own generated pieces, which are inserted between already-normalised texts and need no further normalisation.
 - **Plain sources.** For TXT, Markdown and PDF, `generated` is empty and `headings` and `structures` are empty. Markdown syntax is removed, not added. PDF page joins are newlines, which no sentence contains.
@@ -193,7 +194,10 @@ A scope has `include` and `exclude` entries. Each entry is either a section, `{ 
   These are derived or presentational. The partial findings, for example, follow from the passages and the analysis, both already bound.
 - **`previewConfig` is configuration, not meaning.** It is not in `scopeHash`: changing the chunk size changes how the same selection is split, not what is selected. It is bound in the scoped run fingerprint instead (§2.9).
 
-**The stored `generationScope` artifact** contains the payload, `scopeHash`, `previewConfig`, the author's entries, counts and partial findings. It is a record, and it is never read back as trusted input (§2.9).
+**Stored scope records.**
+- **`generationScope` artifact:** the payload, `scopeHash`, `previewConfig`, and every derived field that reports use (counts, partial findings, redundant-entry notes, warnings). It is a record and is never read back as trusted input (§2.9).
+- **Author entries:** kept separately, as the `generationScopeEntries` artifact. This is an append-only history of the include and exclude entries each run was given, with the time each spelling was first used.
+- **Why they are separate:** a resume with a different spelling that resolves to the same payload is accepted, and its entries are appended. Entries are never compared, because equivalent spellings must stay able to resume.
 
 **Privacy.** Heading titles are real material. The scope file, `outline.md`, `outline.json`, `sentences.md` and `scope-preview.md` stay outside the repository or under the gitignored `docs/uoc/`.
 
@@ -274,7 +278,8 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
   7. Resolve, check the minimum, detect partial structures, and compute the payload and `scopeHash`.
 - **On resume (scoped):** all the steps above run again. In addition:
   - the stored `source` artifact must deep-equal the re-ingested document, or it is refused as altered;
-  - the stored `generationScope` must carry the recomputed `scopeHash` and `previewConfig`, or it is refused as altered.
+  - the stored `generationScope` must deep-equal the record recomputed from the bytes and the scope file. The comparison covers the payload, `previewConfig` and every derived field that reports use. A mismatch is refused as altered. Checking only the declared `scopeHash` is not enough, because an edit to a derived field or `previewConfig` leaves that hash unchanged. This check is required before Step 3 is complete;
+  - the stored `generationScopeEntries` history is not compared. The run's entries are appended to it.
 
   (Checking stored sources of *unscoped* imports on resume is not part of this increment, so unscoped behaviour stays unchanged.)
 - **Fingerprint and storage.**
@@ -374,11 +379,13 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
   - An authored base followed by a generated marker: both keep their origin.
   - A composing cluster that mixes origins is entirely generated, and the count can only go down.
   - Hangul jamo (L, V, T) split across authored runs compose to one source syllable.
-  - Astral characters, including a surrogate pair next to a marker and an emoji ZWJ sequence split across authored runs, are never split between origins and count one code point each.
+  - Astral characters, including a surrogate pair next to a marker and an emoji ZWJ sequence split across authored runs, are never split between origins.
+  - *Exact Unicode counts:* `👩‍🔧` is 3 code points, 1 grapheme cluster and 5 UTF-16 units, and as source text it counts 3. `é` precomposed counts 1, and `e` plus U+0301 normalises to `é` and counts 1. `𝒜` counts 1 and is 2 UTF-16 units.
+  - *Fallback warning:* when the cluster-wise NFC check fails (forced in a test through an injected normaliser), the block's text is still exactly `normaliseBlockText(joined)`, its origin is entirely generated, its source count is 0, and exactly one `originFallback` warning names the block.
   - Whitespace collapsed across a run boundary is source if any collapsed character was source.
 - *Padding cannot reach the minimum, table without a marked header:* a document with a wide table of empty cells gives a selection whose stored text exceeds 500 code points while its source text is under 500. It is refused. Adding 1 genuine character at the threshold makes it accepted.
 - *Padding cannot reach the minimum, table with a marked header:* a table with a marked header row whose cells are empty in most columns, and with empty data cells, is refused the same way. Each fallback `Column n`, its `: `, separators and `—` are all generated; only the non-empty header labels count. The threshold check is the same.
-- *Astral characters* count as one code point each.
+- *Counting unit:* counts are code points; a grapheme-based or UTF-16-based count would fail the exact-count test above.
 
 **Outline.**
 - ids, levels, paths;
@@ -402,7 +409,9 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
 - A scope file with a wrong title or id, or below the minimum, is refused by `runImport` even when the CLI's checks are bypassed.
 - A caller's `input.source` that keeps the right `textHash` and `extractionVersion` but has one changed sentence offset, `headingPath`, `listDepth`, sentence text or metadata field is refused before any write, naming the field.
 - A matching `input.source` is replaced by the re-ingested document: the stored `source` and every evidence offset come from re-ingestion. This is checked by identity, not just equality.
-- On resume, a stored `source` or `generationScope` edited on disk is refused as altered.
+- On resume, a stored `source` edited on disk is refused as altered.
+- On resume, a stored `generationScope` is refused when any of these is edited while its `scopeHash` is left unchanged: a count, a partial finding, `previewConfig`, or one passage.
+- A resume with an equivalent but differently spelt scope file is accepted, and its entries are appended to `generationScopeEntries`.
 - The API takes no resolved data: a type-level test, plus a runtime test that extra fields are rejected by Zod.
 
 **Rendering, chunks and preview.**
@@ -497,3 +506,12 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
      - It is kept out of `scopeHash` but bound in the scoped fingerprint. Unscoped custom chunk sizes and fingerprints are unchanged (§2.5, §2.6, §2.9).
      - It replaces r3's `effectiveChunkTokens()`.
   4. **Every `Column n` fallback is generated,** including fallbacks for empty columns in marked header rows, as is the ` / ` header separator. This comes with a marked-header padding test (§2.1, §4).
+- **r4 review clarifications (approval for Step 1):**
+  1. **Unicode counts:**
+     - counting is by code point;
+     - grapheme clusters serve only origin mapping and are never the counting unit;
+     - exact-count tests include `👩‍🔧`: 3 code points, 1 grapheme, 5 UTF-16 units (§2.1, §4).
+  2. **Stored-scope integrity:**
+     - on resume, the stored payload, `previewConfig` and every report-used derived field are compared with recomputed values, not just the declared hash; this is required before Step 3;
+     - author entries are kept as a separate append-only history, so equivalent spellings still resume (§2.5, §2.9, §4).
+  3. **Normalisation fallback:** it preserves text, cannot inflate the minimum, and raises an explicit `originFallback` warning, which is tested (§2.1, §4).
