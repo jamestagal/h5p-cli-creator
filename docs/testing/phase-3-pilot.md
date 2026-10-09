@@ -53,9 +53,22 @@ The temporary expected-replay-miss script is removed. The historical recordings,
 
 This is evidence that the pipeline, attribution, recording and metering work. It is not a human judgement of activity quality. The BSBAUD412 pilot and every further paid run still require separate authorisation. The completed run's output and attempt ledger remain outside Git in the local `leap-pilot/s1` directory.
 
-## Runbook (Task 16; draft for Checkpoint D review)
+## Checkpoint D: tooling complete (passed 9 Oct 2026)
 
-**Status:** this is a draft for review. **Checkpoint D** (tooling complete) and **Checkpoint E** (Benjamin authorises P1) are both **pending**. Nothing below authorises a paid run.
+**Passed:** 9 October 2026, by Benjamin (owner), reviewing the integration candidate `phase-3/checkpoint-d` at `26d36a1`. That candidate holds Tasks 11–16, follow-up F2 and the legacy test-isolation fix `beca6a8`.
+
+- **Verification:** stock `pnpm verify` passed locally under Node 20 with API keys unset, including all 10 browser smoke tests.
+- **Findings:** none remaining, on standards or spec.
+- **Branches:** the phase branch and `main` were not updated; Checkpoint D authorises neither a branch update nor a paid run.
+
+**Still pending before P1:**
+- **Interactive Book scope:** how it is implemented, and whether a standalone baseline may run first (runbook step 3).
+- **Unit text:** the prepared text is checked against the published unit and its hash recorded (runbook step 2).
+- **Checkpoint E:** Benjamin writes the P1 ledger entry.
+
+## Runbook (Task 16; reviewed at Checkpoint D)
+
+**Status:** Checkpoint D (tooling complete) **passed** on 9 Oct 2026; see above. **Checkpoint E** (Benjamin authorises P1) is **pending**, as are the Interactive Book scope (step 3) and the unit-text check (step 2). Nothing below authorises a paid run.
 
 **Conventions:**
 - Every command runs from the repository root as `node apps/cli/dist/index.js …`, after `pnpm build`. There is no installed `leap` binary; "`leap generate`" in prose means that command.
