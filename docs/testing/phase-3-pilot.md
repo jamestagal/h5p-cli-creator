@@ -111,9 +111,13 @@ node apps/cli/dist/index.js extract --source docs/uoc/BSBAUD412/<packet>.docx --
 3. **Record the file's hash** here: `shasum -a 256 docs/uoc/BSBAUD412/<unit>.txt`. The import's fingerprint covers the unit text, so any later edit makes P1's directory refuse a resume.
 4. **After P1 parses the unit,** check the parsed unit before any scoring. The unit is parsed by a model call during `generate`, and the result is stored as `<pilot>/p1/artifacts/unit.json`. Its release, PC IDs, KE tree and assessment conditions must match the checked text. A mismatch is a failure under step 8.
 
-### 3. Pilot scope: pending Benjamin's decision
+### 3. Pilot scope: Interactive Book intended, approach pending
 
-As specified, P1 asks `generate` for its default types: `multiChoice`, `blanks` and `flashcards`. Benjamin has not yet decided whether the pilot's scope also covers Interactive Book. Whatever he decides is recorded here before Checkpoint E. Two features that question touches are **not implemented**:
+Benjamin has said he intends the pilot to include Interactive Book. Two things are still undecided, and both are recorded here before Checkpoint E:
+- **How it is implemented:** which composition approach is built, and how.
+- **Ordering:** whether a standalone baseline may run first. That baseline is P1 as specified below, `generate`'s default `multiChoice`, `blanks` and `flashcards` packages.
+
+Two features this touches are **not implemented**:
 - **Selecting input source sections.** Generating from chosen sections of the packet, rather than the whole source, is not implemented. `generate` always reads the whole source; `--customisation` only steers the prompts.
 - **Grouping output activities into chapters.** An Interactive Book composition (the parent design's §6.1 activity collection) is not implemented: no phase-3 command, schema or test exists for it, and the parent design places it in phase 4. This covers the author choices about how activities are grouped into chapters and ordered, and whether the source's reading is included as reading pages.
 
@@ -162,13 +166,13 @@ Failures are named with their reason: `content:`, `budget:`, `system:` or `skipp
 Repeat until `gate-report` says `complete`:
 
 1. **Export:** `node apps/cli/dist/index.js review-sheet --out <pilot>/p1`. It writes a sheet bundle under `reviews/sheets/<sheetId>/` for every promoted build that has no scored review.
-2. **Score** every activity and, for blanks and flashcards, every item, against its own cited passages. Use the unit's PC and KE text, never the packet's assessment arrangements.
+2. **Score** every activity and, for blanks and flashcards, every item, against its own cited passages. Use the rubric in design §5 (`docs/superpowers/specs/2026-09-28-phase-3-quality-gate-design.md`), with its dimensions, its scale and the derived decision; each sheet's `review-sheet.md` repeats the instructions. Use the unit's PC and KE text, never the packet's assessment arrangements.
    - In `scores.csv`, score each applicable dimension 0, 1 or 2 (`na` is filled in already), and record the minutes.
    - In `findings.csv`, add one row per failing item for every 0 or 1, with the reason.
    - **Negative check (design §4.4):** if an activity states or implies the packet's own RTO arrangements as a fact about BSBAUD412 (for example, that it cannot be assessed in a simulated environment), score correctness 0. Start the finding's reason with `rto-claim:`; the gate report counts these.
 3. **Import:** `node apps/cli/dist/index.js review-import --out <pilot>/p1 --scores <bundle>/scores.csv --reviewer Benjamin`.
    - **Refused:** it lists every problem, and nothing is written. Fix the sheet and import again.
-   - **Partly scored:** a partly scored sheet can be imported, and the rest imported later from the same sheet.
+   - **Partly scored sheet:** it can be imported, and the rest imported later from the same sheet. Each row must be either **completely scored** (every applicable dimension and the minutes) or **wholly unscored** (left blank). A partly scored row is refused, and so is the whole import.
 4. **Report:** `node apps/cli/dist/index.js gate-report <pilot>/p1`. While it says `incomplete`, it lists what is open.
 5. **Regenerate** a `needs-revision` or `rejected` activity, at most **twice** per activity; failed requests count. Then return to step 1 for the new revision.
 
