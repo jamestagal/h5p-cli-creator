@@ -14,6 +14,9 @@ import { assertWritableStoreVersion, type ImportRecord, type ImportStore, type R
 import { buildRevision, verifyCurrentBuild } from "./build.js";
 import { attemptsByKey, budgetFromLedger, reconcile, reconcileElapsed, runOperation, type OperationContext } from "./operations.js";
 import { DEFAULT_MAX_ATTEMPT_MS, existingTexts, type ImportSettings } from "./run-import.js";
+import { assertEvidenceWithin, type GenerationScopeRecord } from "../scope/authoritative.js";
+import { scopeHashOf } from "../scope/hash.js";
+import type { SourceDocument } from "../ingest/source-document.js";
 
 /** At most this many logical regeneration requests per activity in the pilot (design §6, C2), whatever their outcome. */
 export const MAX_REGENERATIONS = 2;
@@ -45,9 +48,30 @@ async function productionInputs(store: ImportStore, importId: string, activityId
   if (!plan) throw new RegenerateRefused(`import ${importId} has no stored plan entry for ${activityId}`);
   const map = await store.getArtifact<ConceptMap>(importId, "conceptMap");
   if (!map) throw new RegenerateRefused(`import ${importId} has no stored concept map`);
+  await assertMapInStoredScope(store, importId, map);
   const producer = createProducers().get(plan.type);
   if (!producer) throw new RegenerateRefused(`no producer for ${plan.type}`);
   return { settings, plan, map, producer };
+}
+
+/**
+ * A scoped import's concept map is checked against its stored scope before anything is produced from it: the stored
+ * record must be self-consistent (its hash is its payload's, bound to the stored source's text) and every citation must
+ * name a sentence in the scope with exactly that sentence's text (generation scope design §2.9). Regeneration has no
+ * scope file or bytes to recompute from, so it checks the stored records against each other. An unscoped import is
+ * unchanged.
+ */
+async function assertMapInStoredScope(store: ImportStore, importId: string, map: ConceptMap): Promise<void> {
+  const scope = await store.getArtifact<GenerationScopeRecord>(importId, "generationScope");
+  if (!scope) return;
+  const source = await store.getArtifact<SourceDocument>(importId, "source");
+  if (!source) throw new RegenerateRefused(`import ${importId} is scoped but its stored source is missing; regenerating would not be checked against the scope`);
+  if (scopeHashOf(scope.payload) !== scope.scopeHash || scope.payload.binding.textHash !== source.textHash) throw new RegenerateRefused(`import ${importId}'s stored generation scope is not consistent with itself and its stored source; it has been altered`);
+  try {
+    assertEvidenceWithin(map.concepts, new Set(scope.payload.passages.flatMap((p) => p.sentenceIds)), source);
+  } catch (err) {
+    throw new RegenerateRefused(`import ${importId}'s concept map: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 /**

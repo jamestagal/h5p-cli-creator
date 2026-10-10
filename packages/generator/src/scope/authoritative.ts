@@ -7,13 +7,17 @@ import { ScopeRefusedError } from "./schema.js";
 /** A scoped run's scope: the author's file (parsed JSON, validated here) and the source's own bytes. Nothing resolved is accepted. */
 export interface ScopeInput { file: unknown; bytes: Buffer; ext: SourceExtension }
 
-/** The stored generationScope record: the payload, its hash, the configuration and every derived field reports use (design §2.5). */
+/**
+ * The stored generationScope record (design §2.5): the payload, its hash, the configuration and every derived field
+ * reports use that follows from the selection itself (counts, partial structures). Spelling-dependent notes (redundant
+ * entries) are not part of it: equivalent spellings must resume, so they live with the entries history.
+ */
 export interface GenerationScopeRecord {
   payload: ResolvedScope["payload"]; scopeHash: string; previewConfig: ResolvedScope["previewConfig"];
-  counts: ResolvedScope["counts"]; partial: ResolvedScope["partial"]; redundant: string[];
+  counts: ResolvedScope["counts"]; partial: ResolvedScope["partial"];
 }
-/** The append-only history of the author's entries: each spelling once, with when it was first used. Never compared. */
-export interface GenerationScopeEntries { history: Array<{ include: unknown[]; exclude: unknown[]; firstUsedAt: string }> }
+/** The append-only history of the author's spellings: each once, with its redundant-entry notes and when it was first used. Never compared for integrity. */
+export interface GenerationScopeEntries { history: Array<{ include: unknown[]; exclude: unknown[]; redundant: string[]; firstUsedAt: string }> }
 
 /** A stored scope record or stored source no longer matches what the bytes and scope file give: it was altered. */
 export class ScopeIntegrityError extends Error {
@@ -39,7 +43,7 @@ export function firstDifference(a: unknown, b: unknown, path = ""): string | nul
 }
 
 export function scopeRecord(scope: ResolvedScope): GenerationScopeRecord {
-  return { payload: scope.payload, scopeHash: scope.scopeHash, previewConfig: scope.previewConfig, counts: scope.counts, partial: scope.partial, redundant: scope.redundant };
+  return { payload: scope.payload, scopeHash: scope.scopeHash, previewConfig: scope.previewConfig, counts: scope.counts, partial: scope.partial };
 }
 
 /**
@@ -65,8 +69,26 @@ export async function authoritativeScope(source: SourceDocument, original: { byt
   return { document: reread.document, scope };
 }
 
-/** Every evidence sentence of a concept map must be in the scope; a citation outside it is a system error (design §2.9). */
-export function assertEvidenceInScope(concepts: Array<{ evidence: Array<{ sentenceId: string }> }>, scope: Pick<ResolvedScope, "sentences">): void {
-  const allowed = new Set(scope.sentences.map((s) => s.sentenceId));
-  for (const c of concepts) for (const e of c.evidence) if (!allowed.has(e.sentenceId)) throw new Error(`evidence ${e.sentenceId} is outside the generation scope; the concept map is not stored`);
+type Cited = Array<{ evidence: Array<{ sentenceId: string; charStart: number; charEnd: number; quote: string }> }>;
+
+/**
+ * Every citation must name a sentence in `allowed`, and carry exactly that sentence's offsets and text from `document`:
+ * a citation outside the scope, or one whose quote is not its sentence, is an error. Checked on every chunk's concepts
+ * (extracted or cached) before merge and alignment, on the concept map before planning and production, and before a
+ * regeneration produces (design §2.9).
+ */
+export function assertEvidenceWithin(concepts: Cited, allowed: ReadonlySet<string>, document: Pick<SourceDocument, "sentences">): void {
+  const byId = new Map(document.sentences.map((s) => [s.sentenceId, s]));
+  for (const c of concepts) {
+    for (const e of c.evidence) {
+      if (!allowed.has(e.sentenceId)) throw new Error(`evidence ${e.sentenceId} is outside the generation scope; nothing citing it is sent or stored`);
+      const s = byId.get(e.sentenceId);
+      if (!s || s.text !== e.quote || s.charStart !== e.charStart || s.charEnd !== e.charEnd) throw new Error(`evidence ${e.sentenceId} does not match the source sentence it names; nothing citing it is sent or stored`);
+    }
+  }
+}
+
+/** assertEvidenceWithin for a resolved scope. */
+export function assertEvidenceInScope(concepts: Cited, scope: Pick<ResolvedScope, "sentences">, document: Pick<SourceDocument, "sentences">): void {
+  assertEvidenceWithin(concepts, new Set(scope.sentences.map((s) => s.sentenceId)), document);
 }

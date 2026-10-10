@@ -16,6 +16,9 @@ import type { ChunkConcept } from "../src/concepts/index.js";
 import { conceptResponses, passageEvidence, planOutFor, produceResponses, syntheticUnitText, unitOut, SYNTHETIC_CHUNK_TOKENS } from "./helpers/synthetic.js";
 import { electricalDocx } from "./helpers/structured-sources.js";
 import { IDENTITY_A } from "./helpers/identity.js";
+import { crashBefore, CrashError } from "./helpers/crashing-store.js";
+import { regenerateActivity } from "../src/pipeline/regenerate.js";
+import { RUBRIC_VERSION } from "@leaplearn/shared";
 
 const root = resolve(import.meta.dirname, "../../..");
 let registry: LibraryRegistry;
@@ -87,8 +90,8 @@ describe("a scoped run: only the selection reaches any model, the full source is
     const map = (await store.getArtifact<ConceptMap>("imp", "conceptMap"))!;
     for (const c of map.concepts) for (const e of c.evidence) expect(selectedIds().has(e.sentenceId), e.sentenceId).toBe(true);
     expect(await store.getArtifact("imp", "source")).toEqual(ingested.document);
-    expect(await store.getArtifact("imp", "generationScope")).toEqual({ payload: scope.payload, scopeHash: scope.scopeHash, previewConfig: scope.previewConfig, counts: scope.counts, partial: scope.partial, redundant: scope.redundant });
-    expect(await store.getArtifact("imp", "generationScopeEntries")).toMatchObject({ history: [{ include: scope.entries.include, exclude: scope.entries.exclude }] });
+    expect(await store.getArtifact("imp", "generationScope")).toEqual({ payload: scope.payload, scopeHash: scope.scopeHash, previewConfig: scope.previewConfig, counts: scope.counts, partial: scope.partial }); // redundant-entry notes are spelling, kept with the entries
+    expect(await store.getArtifact("imp", "generationScopeEntries")).toMatchObject({ history: [{ include: scope.entries.include, exclude: scope.entries.exclude, redundant: scope.redundant }] });
   });
 
   it("an ancestor heading outside the scope appears only as labelled heading context, never as evidence", async () => {
@@ -254,5 +257,94 @@ describe("the evidence guard", { timeout: 30_000 }, () => {
     await store.putArtifact("guard", "chunk-0", chunk);
     await expect(runImport(input("guard"), deps(store, new FakeProvider(scopedScript().slice(2))))).rejects.toThrow(`evidence ${outside.sentenceId} is outside the generation scope`);
     expect(await store.getArtifact("guard", "conceptMap")).toBeNull();
+  });
+});
+
+describe("review of 686e41a: spelling, missing records, the evidence guard, regeneration", { timeout: 30_000 }, () => {
+  const complete = async (importId: string): Promise<MemoryStore> => {
+    const store = new MemoryStore();
+    expect((await runImport(input(importId), deps(store, new FakeProvider(scopedScript())))).status).toBe("ready");
+    return store;
+  };
+  const drop = (store: MemoryStore, importId: string, name: string) => (store as unknown as { artifacts: Map<string, unknown> }).artifacts.delete(`${importId}/${name}`);
+  type History = { history: Array<{ include: unknown[]; redundant?: string[] }> };
+
+  it("adding an already-selected child keeps the hash and resumes: redundancy is spelling, kept with the entries, not in the integrity record", async () => {
+    const store = new MemoryStore();
+    await expect(runImport(input("redundant"), deps(store, new FakeProvider([r(unitOut), firstExtract(), new ProviderError("down", "permanent", 401)])))).rejects.toThrow();
+    const withChild = scopeFile((f) => ({ ...f, include: [...(f["include"] as unknown[]), entry("2.")] }));
+    expect(resolveScope(withChild, ingested).scopeHash).toBe(resolved().scopeHash);
+    expect(resolveScope(withChild, ingested).redundant).toHaveLength(1);
+    expect((await runImport(input("redundant", { scope: { file: withChild, bytes, ext: ".docx" } }), deps(store, new FakeProvider(scopedScript().slice(2))))).status).toBe("ready");
+    expect(await store.getArtifact<Record<string, unknown>>("redundant", "generationScope")).not.toHaveProperty("redundant");
+    const history = (await store.getArtifact<History>("redundant", "generationScopeEntries"))!.history;
+    expect(history.map((h) => h.redundant)).toEqual([[], [`include ${entry("2.").section} (${entry("2.").title}) is already selected by other entries`]]);
+  });
+
+  it("a finished import records a new equivalent spelling, with no model call", async () => {
+    const store = await complete("finished");
+    const ranges = resolved().payload.passages.map((p) => ({ sentences: { from: p.sentenceIds[0]!, to: p.sentenceIds.at(-1)! } }));
+    const provider = new FakeProvider([]);
+    expect((await runImport(input("finished", { scope: { file: scopeFile((f) => ({ ...f, include: ranges, exclude: [] })), bytes, ext: ".docx" } }), deps(store, provider))).status).toBe("ready");
+    expect(provider.requests).toHaveLength(0);
+    expect((await store.getArtifact<History>("finished", "generationScopeEntries"))!.history.map((h) => h.include)).toEqual([scopeFile()["include"], ranges]);
+  });
+
+  it("a completed scoped import missing its stored source or scope record is refused, with no call and no change", async () => {
+    for (const name of ["source", "generationScope"]) {
+      const store = await complete(`missing-${name}`);
+      drop(store, `missing-${name}`, name);
+      const before = snapshot(store);
+      const provider = new FakeProvider([]);
+      await expect(runImport(input(`missing-${name}`), deps(store, provider)), name).rejects.toThrow(new RegExp(`stored ${name === "source" ? "source" : "generation scope"} is missing`));
+      expect(provider.requests).toHaveLength(0);
+      expect(snapshot(store)).toBe(before);
+    }
+  });
+
+  it("an interruption before the source and scope were first stored still resumes", async () => {
+    const store = new MemoryStore();
+    const crashing = crashBefore(store, "putArtifact", 1, (args) => args[1] === "source");
+    await expect(runImport(input("early"), deps(crashing, new FakeProvider([])))).rejects.toBeInstanceOf(CrashError);
+    expect(await store.getImport("early")).not.toBeNull();
+    expect(await store.getArtifact("early", "source")).toBeNull();
+    expect((await runImport(input("early"), deps(store, new FakeProvider(scopedScript())))).status).toBe("ready");
+  });
+
+  async function cachedChunkTampered(importId: string, tamper: (chunk: ChunkConcept[], outside: SourceDocument["sentences"][number]) => void) {
+    const store = new MemoryStore();
+    await expect(runImport(input(importId), deps(store, new FakeProvider([r(unitOut), firstExtract(), new ProviderError("down", "permanent", 401)])))).rejects.toThrow();
+    const outside = ingested.document.sentences.find((s) => !selectedIds().has(s.sentenceId) && s.text.length > 40)!;
+    const chunk = (await store.getArtifact<ChunkConcept[]>(importId, "chunk-0"))!;
+    tamper(chunk, outside);
+    await store.putArtifact(importId, "chunk-0", chunk);
+    const provider = new FakeProvider(scopedScript().slice(2));
+    await expect(runImport(input(importId), deps(store, provider))).rejects.toThrow(/outside the generation scope|does not match the source/);
+    for (const q of provider.requests) expect(`${q.system}\n${q.user}`, q.purpose).not.toContain(outside.text);
+    expect(provider.requests.filter((q) => q.purpose === "merge" || q.purpose === "align" || q.purpose === "plan")).toEqual([]);
+    expect(await store.getArtifact(importId, "conceptMap")).toBeNull();
+  }
+
+  it("a cached chunk citing an excluded sentence is refused before merge, alignment or any later request", async () => {
+    await cachedChunkTampered("guard-id", (chunk, outside) => { chunk[0]!.evidence.push({ evidenceId: `ev-${outside.sentenceId}`, sentenceId: outside.sentenceId, charStart: outside.charStart, charEnd: outside.charEnd, quote: outside.text }); });
+  });
+
+  it("a cached chunk whose in-scope citation carries excluded text is refused the same way", async () => {
+    await cachedChunkTampered("guard-quote", (chunk, outside) => { chunk[0]!.evidence[0] = { ...chunk[0]!.evidence[0]!, quote: outside.text }; });
+  });
+
+  it("regeneration checks the stored concept map against the stored scope before producing", async () => {
+    const store = await complete("regen");
+    const target = (await store.listActivities("regen")).find((a) => a.type === "multiChoice")!;
+    const rev = (await store.getRevision(target.activityId, target.currentRevision!))!;
+    await store.putScore({ rowKey: "k1", batchId: "b1", sequence: 1, rowIndex: 0, sheetId: "s", importId: "regen", activityId: target.activityId, revision: rev.revision, buildId: rev.currentBuildId!, unitTextHash: null, rubricVersion: RUBRIC_VERSION, reviewer: "B", scores: { correctness: 1, support: 2, distractors: 2, mapping: 2, usefulness: 2 }, findings: [], minutes: 3, decision: "needs-revision", decidedAt: "t" });
+    const outside = ingested.document.sentences.find((s) => !selectedIds().has(s.sentenceId) && s.text.length > 40)!;
+    const map = (await store.getArtifact<ConceptMap>("regen", "conceptMap"))!;
+    map.concepts[0]!.evidence.push({ evidenceId: `ev-${outside.sentenceId}`, sentenceId: outside.sentenceId, charStart: outside.charStart, charEnd: outside.charEnd, quote: outside.text });
+    await store.putArtifact("regen", "conceptMap", map);
+    const provider = new FakeProvider([]);
+    await expect(regenerateActivity({ importId: "regen", activityId: target.activityId, note: "Again." }, { store, provider, registry, engineIdentity: IDENTITY_A, sleep: async () => undefined })).rejects.toThrow(/outside the generation scope/);
+    expect(provider.requests).toHaveLength(0);
+    expect(await store.listRegenerations("regen")).toEqual([]);
   });
 });

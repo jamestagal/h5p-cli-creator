@@ -205,8 +205,8 @@ A scope has `include` and `exclude` entries. Each entry is either a section, `{ 
 - **`previewConfig` is configuration, not meaning.** It is not in `scopeHash`: changing the chunk size changes how the same selection is split, not what is selected. It is bound in the scoped run fingerprint instead (§2.9).
 
 **Stored scope records.**
-- **`generationScope` artifact:** the payload, `scopeHash`, `previewConfig`, and every derived field that reports use (counts, partial findings, redundant-entry notes, warnings). It is a record and is never read back as trusted input (§2.9).
-- **Author entries:** kept separately, as the `generationScopeEntries` artifact. This is an append-only history of the include and exclude entries each run was given, with the time each spelling was first used.
+- **`generationScope` artifact:** the payload, `scopeHash`, `previewConfig`, and every derived field that reports use and that follows from the selection itself (counts, partial findings). It is a record and is never read back as trusted input (§2.9).
+- **Author entries:** kept separately, as the `generationScopeEntries` artifact. This is an append-only history of the include and exclude entries each run was given, with each spelling's redundant-entry notes (they depend on spelling, not on the selection) and the time it was first used. A new spelling is recorded on every run, a finished import's included.
 - **Why they are separate:** a resume with a different spelling that resolves to the same payload is accepted, and its entries are appended. Entries are never compared, because equivalent spellings must stay able to resume.
 
 **Privacy.** Heading titles are real material. The scope file, `outline.md`, `outline.json`, `sentences.md` and `scope-preview.md` stay outside the repository or under the gitignored `docs/uoc/`.
@@ -599,3 +599,21 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
   - it passes the file and bytes to `runImport`, which validates them again itself;
   - it reports `ScopeRefusedError` and `ScopeIntegrityError` with exit 1.
 - **Not built yet.** Reports (cost report, `report.md`, the gate report) are Step 4.
+
+**Step 3 review fixes** (review of `686e41a`):
+1. **Spelling is separated from integrity.**
+   - Redundant-entry notes depend on how the scope is spelt, not on what it selects. They move from the `generationScope` record to the entries history.
+   - Adding an already-selected child (parent only, then parent plus child) keeps the hash and now resumes instead of being refused as altered.
+   - Entries are recorded before a finished import returns, so its new spellings are kept too.
+2. **Missing records are refused once generation has begun.** A scoped resume refuses a missing stored `source` or `generationScope` once generation has begun. "Begun" means an operation, an attempt or an activity is recorded, or the import's status is past ingestion. An interruption before they were first written still resumes.
+3. **The evidence guard runs before anything is sent.**
+   - `extractConceptMap` takes `checkChunk`, and a scoped run checks every chunk's citations, cached or freshly extracted, before merge or alignment can send them. The concept map is checked again before it is stored, and a loaded one before planning and production.
+   - The check covers the quote and offsets as well as the sentence id, so an in-scope id carrying excluded text is refused.
+   - Regeneration checks the stored concept map against the stored scope before producing. The stored record must be self-consistent, meaning its hash is its payload's hash and it is bound to the stored source's text, and every citation must lie within its passages with its sentence's exact text. Regeneration has no scope file or bytes to recompute from.
+   - The tests assert that excluded text never reaches any request.
+4. **A refused scoped resume writes nothing, including lock recovery.**
+   - Taking the lock can write: recovery replays a committed batch and rewrites the reports. So a scoped run checks resumability first, from a read before the lock: store version, layout, fingerprint, and integrity including missing records.
+   - The same checks run again under the lock.
+   - On disk, with a committed unapplied batch and the pending marker, an incompatible scope (through the API and through `leap generate`) and an altered stored scope leave every file unchanged. A valid resume still applies the batch, rewrites the reports and removes the marker.
+   - Unscoped runs keep their existing order: lock first, then the checks.
+

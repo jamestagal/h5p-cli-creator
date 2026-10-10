@@ -87,13 +87,21 @@ export async function runImport(rawInput: RunImportInput, deps: RunImportDeps): 
   const chunkTokens = scope ? scope.previewConfig.chunkTokens : deps.chunkTokens ?? DEFAULT_CHUNK_TOKENS;
   const rules = deps.rules ?? DEFAULT_PLAN_RULES;
   const fingerprint = runFingerprint({ sourceTextHash: input.source.textHash, extractionVersion: input.source.metadata.extractionVersion, unitText: input.unitText, selectedTypes: input.selectedTypes, language: input.language, promptConfig: input.promptConfig, customisation: input.customisation, chunkTokens, rules, ...(scope ? { generationScope: { scopeHash: scope.scopeHash, chunkTokens: scope.previewConfig.chunkTokens, scopedLayoutVersion: scope.previewConfig.scopedLayoutVersion } } : {}) });
-  const lock = await deps.store.lock(input.importId);
-  try {
-    const existing = await deps.store.getImport(input.importId); // read under the lock: a pre-lock read could be stale
+  /** Every check a resume must pass before anything is written: store version, layout, fingerprint, and a scoped import's stored records. */
+  const assertResumable = async (existing: ImportRecord | null): Promise<void> => {
     if (existing) assertWritableStoreVersion(existing, `import ${input.importId}`); // before any write, and before the fingerprint: a phase-2 import is refused as such
     if (existing) await assertCurrentLayout(deps.store, input.importId, `import ${input.importId}`); // a version-2 import from before build records is refused too, before any write
     if (existing && existing.fingerprint !== fingerprint) throw new IncompatibleResumeError(input.importId, existing.fingerprint, fingerprint);
-    if (existing && scope) await assertScopeIntegrity(deps.store, input.importId, input.source, scope); // stored records are recomputed and compared, before any write
+    if (existing && scope) await assertScopeIntegrity(deps.store, existing, input.source, scope); // stored records are recomputed and compared, before any write
+  };
+  // Taking the lock may write (recovery completes a committed review batch and rewrites the reports). A scoped resume that
+  // would be refused is therefore refused from a read before the lock, so it leaves the directory exactly as it was;
+  // the same checks run again under the lock, where the read cannot be stale.
+  if (scope) await assertResumable(await deps.store.getImport(input.importId));
+  const lock = await deps.store.lock(input.importId);
+  try {
+    const existing = await deps.store.getImport(input.importId); // read under the lock: a pre-lock read could be stale
+    await assertResumable(existing);
     await secureOriginal(deps.store, input); // before the import record and any dispatch; a conflicting original is refused with no write
 
     return await runLocked(input, deps, existing, fingerprint, chunkTokens, rules, scope);
@@ -129,21 +137,29 @@ async function secureOriginal(store: ImportStore, input: RunImportInput): Promis
  * stored generationScope record must equal the one recomputed now, in its payload, configuration and every derived field
  * (its declared hash alone would miss an edit that leaves the hash unchanged). Entries are history and are not compared.
  */
-async function assertScopeIntegrity(store: ImportStore, importId: string, source: SourceDocument, scope: ResolvedScope): Promise<void> {
+async function assertScopeIntegrity(store: ImportStore, existing: ImportRecord, source: SourceDocument, scope: ResolvedScope): Promise<void> {
+  const importId = existing.importId;
   const storedSource = await store.getArtifact<SourceDocument>(importId, "source");
+  const storedScope = await store.getArtifact<unknown>(importId, "generationScope");
+  // Both are written before the first model call. They may be missing only when a run was interrupted before writing
+  // them; once generation has begun (an operation, an attempt or an activity is recorded, or the import got past
+  // ingestion) a missing one was removed, and the import cannot be trusted.
+  if (storedSource === null || storedScope === null) {
+    const begun = !["queued", "ingesting", "failed"].includes(existing.status) || (await store.listOperations(importId)).length > 0 || (await store.listAttempts(importId)).length > 0 || (await store.listActivities(importId)).length > 0;
+    if (begun) throw new ScopeIntegrityError(`import ${importId}'s stored ${storedSource === null ? "source" : "generation scope"} is missing, although generation has begun; it has been removed. Use a new output directory`);
+  }
   const sourceDifference = storedSource === null ? null : firstDifference(storedSource, JSON.parse(JSON.stringify(source)));
   if (sourceDifference) throw new ScopeIntegrityError(`import ${importId}'s stored source differs from the source re-read from its bytes at ${sourceDifference}; the stored source has been altered. Use a new output directory`);
-  const storedScope = await store.getArtifact<unknown>(importId, "generationScope");
   const scopeDifference = storedScope === null ? null : firstDifference(storedScope, JSON.parse(JSON.stringify(scopeRecord(scope))));
   if (scopeDifference) throw new ScopeIntegrityError(`import ${importId}'s stored generation scope differs from the one recomputed from the scope file and the source at ${scopeDifference}; the stored record has been altered. Use a new output directory`);
 }
 
-/** Appends this run's spelling of the scope to the entries history unless the same spelling is already there. */
-async function recordScopeEntries(store: ImportStore, importId: string, entries: ResolvedScope["entries"], at: string): Promise<void> {
+/** Appends this run's spelling of the scope, with its redundant-entry notes, to the entries history unless the same spelling is already there. */
+async function recordScopeEntries(store: ImportStore, importId: string, scope: ResolvedScope, at: string): Promise<void> {
   const prior = await store.getArtifact<GenerationScopeEntries>(importId, "generationScopeEntries");
-  const spelt = JSON.parse(JSON.stringify({ include: entries.include, exclude: entries.exclude })) as { include: unknown[]; exclude: unknown[] };
+  const spelt = JSON.parse(JSON.stringify({ include: scope.entries.include, exclude: scope.entries.exclude })) as { include: unknown[]; exclude: unknown[] };
   if (prior?.history.some((h) => firstDifference({ include: h.include, exclude: h.exclude }, spelt) === null)) return;
-  await store.putArtifact(importId, "generationScopeEntries", { history: [...(prior?.history ?? []), { ...spelt, firstUsedAt: at }] } satisfies GenerationScopeEntries);
+  await store.putArtifact(importId, "generationScopeEntries", { history: [...(prior?.history ?? []), { ...spelt, redundant: [...scope.redundant], firstUsedAt: at }] } satisfies GenerationScopeEntries);
 }
 
 async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: ImportRecord | null, fingerprint: string, chunkTokens: number, rules: PlanRules, scope: ResolvedScope | null): Promise<ImportRecord> {
@@ -172,6 +188,7 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
   // What production needs besides the source and plan, so `leap regenerate` produces exactly as this run did. The
   // fingerprint pins these values, so writing them on any run of the import, including one that finished earlier, is safe.
   if (!(await store.getArtifact<ImportSettings>(input.importId, "settings"))) await store.putArtifact(input.importId, "settings", { promptConfig: input.promptConfig, rules, language: input.language } satisfies ImportSettings);
+  if (scope) await recordScopeEntries(store, input.importId, scope, now()); // every spelling is recorded, a finished import's included
   if (record.status === "ready") return record;
 
   if (record.status === "ready_with_failures" && !(await store.listActivities(input.importId)).some(isPending)) return record;
@@ -198,7 +215,6 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
     if (scope) {
       // the scope is stored with the source, before parseUnit, the first model call
       if (!(await store.getArtifact(input.importId, "generationScope"))) await store.putArtifact(input.importId, "generationScope", scopeRecord(scope));
-      await recordScopeEntries(store, input.importId, scope.entries, now());
     }
 
     let unit: UnitOfCompetency | null = null;
@@ -220,14 +236,15 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
       purpose: "extract", activityId: null, origin: "shared", requestId: null, key: `${input.importId}:concepts`,
       load: () => store.getArtifact<ConceptMap>(input.importId, "conceptMap"),
       work: async (runner) => {
-        const m = await extractConceptMap(input.source, unit, runner, { chunkTokens, promptConfig: input.promptConfig, chunkCache, ...(scope ? { chunks } : {}) });
-        if (scope) assertEvidenceInScope(m.concepts, scope); // before the map is persisted
+        // a scoped run checks every chunk's citations, cached or extracted, before merge and alignment can send them
+        const m = await extractConceptMap(input.source, unit, runner, { chunkTokens, promptConfig: input.promptConfig, chunkCache, ...(scope ? { chunks, checkChunk: (cs) => assertEvidenceInScope(cs, scope, input.source) } : {}) });
+        if (scope) assertEvidenceInScope(m.concepts, scope, input.source); // before the map is persisted
         return m;
       },
       persist: (m) => store.putArtifact(input.importId, "conceptMap", m)
     });
     const map = concepts.result;
-    if (scope) assertEvidenceInScope(map.concepts, scope); // a stored map is checked too
+    if (scope) assertEvidenceInScope(map.concepts, scope, input.source); // a stored map is checked too, before planning and production
 
     await setStatus("planning");
     const planned = await runOperation<ActivityPlan[]>(ctx, {
