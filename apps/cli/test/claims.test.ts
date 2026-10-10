@@ -46,18 +46,22 @@ async function sourcesUnder(dir: string): Promise<string[]> {
   return out;
 }
 
-/** The text a user or a model reads: CLI help for every command, the README, every module that builds a prompt, and the report and sheet writers. */
+/**
+ * The text a user or a model reads: CLI help for every command, the README, every module that builds a prompt, the
+ * report and sheet writers, and the source-selection surfaces (`leap outline` and `leap scope`, the outline and the
+ * generation scope's rendering, preview and refusals).
+ */
 async function claimSurfaces(): Promise<Array<{ file: string; text: string }>> {
   const surfaces: Array<{ file: string; text: string }> = [];
-  for (const command of ["", "generate", "extract", "review", "review-sheet", "review-import", "regenerate", "gate-report", "flashcards"]) {
+  for (const command of ["", "generate", "extract", "outline", "scope", "review", "review-sheet", "review-import", "regenerate", "gate-report", "flashcards"]) {
     const run = spawnSync(process.execPath, [cliDist, ...(command ? [command] : []), "--help"], { encoding: "utf8" });
     expect(run.status, `leap ${command} --help: ${run.stderr}`).toBe(0);
     surfaces.push({ file: `leap ${command} --help`.replace("  ", " "), text: run.stdout });
   }
   surfaces.push({ file: "README.md", text: await readFile(resolve(root, "README.md"), "utf8") });
   const generator = resolve(root, "packages/generator/src");
-  const promptDirs = ["prompts", "competency", "concepts", "plan", "produce", "review"].map((d) => resolve(generator, d));
-  const files = [...(await Promise.all(promptDirs.map(sourcesUnder))).flat(), resolve(root, "apps/cli/src/report.ts"), resolve(root, "apps/cli/src/review-sheet.ts"), resolve(root, "apps/cli/src/review-import.ts"), resolve(root, "apps/cli/src/regenerate.ts"), resolve(root, "apps/cli/src/gate-report.ts"), resolve(root, "packages/generator/src/report/gate.ts")];
+  const promptDirs = ["prompts", "competency", "concepts", "plan", "produce", "review", "scope", "report"].map((d) => resolve(generator, d));
+  const files = [...(await Promise.all(promptDirs.map(sourcesUnder))).flat(), resolve(generator, "ingest/outline.ts"), resolve(root, "apps/cli/src/outline.ts"), resolve(root, "apps/cli/src/scope.ts"), resolve(root, "apps/cli/src/report.ts"), resolve(root, "apps/cli/src/review-sheet.ts"), resolve(root, "apps/cli/src/review-import.ts"), resolve(root, "apps/cli/src/regenerate.ts"), resolve(root, "apps/cli/src/gate-report.ts")];
   for (const f of files) surfaces.push({ file: relative(root, f), text: await readFile(f, "utf8") });
   return surfaces;
 }
@@ -67,6 +71,8 @@ describe("claims wording (design §4.5)", () => {
     expect(existsSync(cliDist), `${cliDist} must be built before this test`).toBe(true);
     const surfaces = await claimSurfaces();
     expect(surfaces.length).toBeGreaterThan(15);
+    // the source-selection surfaces are checked like every other
+    for (const file of ["leap outline --help", "leap scope --help", "apps/cli/src/outline.ts", "apps/cli/src/scope.ts", "packages/generator/src/ingest/outline.ts", "packages/generator/src/scope/preview.ts", "packages/generator/src/scope/render.ts", "packages/generator/src/report/gate.ts", "packages/generator/src/report/scope.ts"]) expect(surfaces.map((s) => s.file), file).toContain(file);
     const hits = surfaces.flatMap((s) => claimsViolations(s.file, s.text));
     expect(hits, hits.map((h) => `${h.file}:${h.line}: "${h.word}" in ${h.text}`).join("\n")).toEqual([]);
     // every allowed phrase is still in use; a stale entry would silently widen the list

@@ -638,3 +638,33 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
 
      The valid resume still recovers.
    - For a whole-document run of an unscoped import, the only new step is the read-only check before the lock. Its checks still run under the lock, in their existing order.
+
+**Step 4** (reports, gate report and documentation):
+- **One source of figures.** `report/scope.ts` builds `ScopeFigures` from the three independent marks: the import record's hash, the stored `generationScope` record and the entries history.
+  - The figures are the hash plus five counts: sentences, document sentences, passages, source code points and partial structures. The number of partial structures is reported, never their messages, which name headings.
+  - A scoped import whose stored record is missing, or differs from the hash on its import record, keeps its identity with `counts: null`. With only the entries history left, the hash is `null` as well.
+  - `scopeLine` gives the one line every report uses: `Generation scope: whole document`, or `Generation scope <hash12>: M of T sentences in P passage(s), N code points of source text, k partial structure(s)`.
+- **The import's reports.** There is no `report.md` in this codebase. The import's report is the cost report, printed by `leap generate` and `leap review` and written as `cost.json`, so the line goes there.
+  - The printed cost report always opens with the scope line, including `whole document`.
+  - `cost.json` gains `generationScope` (figures plus `unsupportedTargets`) only for a scoped import. A whole-document import's `cost.json` is unchanged.
+  - For a scoped import, unit targets that no concept supports are listed with `SCOPE_UNSUPPORTED_NOTE`: they may fall outside the selected source scope rather than be absent from the source.
+- **The gate report.**
+  - `snapshotImport` reads the stored record and whether the entries history exists. Both fields are optional, so snapshots built by hand still type-check.
+  - `ImportGate.generationScope` carries the figures. `gate-report.md` shows the scope line, and appends the note to a scoped import's unsupported-targets line. A whole-document import's unsupported line is unchanged.
+  - The `--summary` JSON carries `generationScope` (the full hash and the counts, or `null`).
+  - Tests check, on a real resolved scope that has a partial table and on a scoped import generated on disk, that no heading, sentence or partial-structure message appears in either output.
+- **Claims wording.** The claims check now covers:
+  - `leap outline --help` and `leap scope --help`;
+  - `apps/cli/src/outline.ts` and `apps/cli/src/scope.ts`;
+  - `packages/generator/src/ingest/outline.ts`, and every file under `packages/generator/src/scope/` and `packages/generator/src/report/`.
+
+  One comment ("validated here", about the scope file) was reworded to "checked here".
+- **Documentation.**
+  - The README gains the source-selection workflow (outline, scope file, preview, `generate --scope`), the report lines, and what a scope does and does not guarantee. Its list of source formats now includes `.docx` and `.odt`.
+  - The pilot runbook (`docs/testing/phase-3-pilot.md`):
+    - its step 3 no longer says source selection is unimplemented;
+    - step 2 gains a zero-cost outline and scope preparation, with the scope file under `docs/uoc/BSBAUD412/` and only its hash and counts recorded;
+    - P1's command gains the optional `--scope`, and the scope is listed in what the fingerprint covers;
+    - diagnosis and recording mention the scope.
+
+  Whether P1 uses a scope remains Benjamin's decision.

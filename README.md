@@ -27,8 +27,8 @@ test and the engine's Playwright smoke suite in one shot, and assumes you've alr
 
 ## Generate activities
 
-Generates `multiChoice`, `blanks` and `flashcards` activities from a source document (`.pdf`, `.md`
-or `.txt`) and an optional unit of competency, compiles each one to `.h5p`, and writes a mapping
+Generates `multiChoice`, `blanks` and `flashcards` activities from a source document (`.pdf`, `.md`,
+`.txt`, `.docx` or `.odt`) and an optional unit of competency, compiles each one to `.h5p`, and writes a mapping
 table and a cost report:
 
 ```bash
@@ -78,6 +78,78 @@ The store's layout is `import.json`, `artifacts/`, `activities/`, `revisions/`, 
 append-only ledgers `operations.jsonl`, `attempts.jsonl`, `acceptances.jsonl`,
 `alignment-reviews.jsonl` and `scores.jsonl`, the review sheet manifests and bundles under `reviews/sheets/`,
 the committed score batches under `reviews/batches/`, plus the generated `mapping.csv` and `cost.json`.
+
+### Generating from selected sections: `leap outline`, `leap scope`, `--scope`
+
+By default `leap generate` uses the whole document. To generate from some sections only, for example the learner
+content of a document that also holds trainer instructions, select them in a `generation-scope.json`. Neither
+`leap outline` nor `leap scope` makes a model call or needs an API key or a ledger, and both write only into their
+own `--out` directory. That directory must be outside the repository, or under the gitignored `docs/uoc/` for real
+material.
+
+1. **Outline the source.**
+
+   ```bash
+   node apps/cli/dist/index.js outline --source ./unit-notes.docx --out ./scope-work
+   ```
+
+   This writes four files:
+   - `outline.md` and `outline.json`: the sections, each with a stable id (`sec-s12`), its structures (tables, lists,
+     notes) and their counts;
+   - `sentences.md`: every sentence `[sN]` with its heading path;
+   - `generation-scope.json`: a template bound to this exact file.
+
+   Headings come from DOCX and ODT heading styles. A text, Markdown or PDF source, or a document whose headings are
+   only bold paragraphs, has one section: select it by sentence ranges (`{ "sentences": { "from": "s20", "to": "s45" } }`).
+2. **Edit `generation-scope.json`.**
+   - Each `include` entry is a section (`{ "section": "sec-s12", "title": "…" }`, its title checked against the outline)
+     or a sentence range.
+   - `exclude` removes sections or ranges from what was included. A section brings its subsections.
+   - A parent heading outside the selection is sent only as labelled heading context; it is never evidence.
+   - The selection must contain at least 500 Unicode code points of source text, counted once.
+3. **Preview the scope.**
+
+   ```bash
+   node apps/cli/dist/index.js scope --source ./unit-notes.docx --scope ./scope-work/generation-scope.json --out ./scope-work
+   ```
+
+   This prints the scope's hash and counts, and any partial structures (for example, two rows of a three-row table)
+   or redundant entries. It writes `scope-preview.md`, which holds each extraction request's evidence text exactly
+   as the model will receive it.
+
+   An invalid scope is refused with every problem listed (exit `1`), and nothing is written. A scope is also refused
+   if:
+   - it was made for another file, or another version of this one;
+   - its titles no longer match the outline;
+   - it selects too little text.
+4. **Generate with it.**
+
+   ```bash
+   node apps/cli/dist/index.js generate --source ./unit-notes.docx --unit ./BSBAUD412.txt \
+     --scope ./scope-work/generation-scope.json --out ./out/bsbaud412-scoped
+   ```
+
+   `runImport` re-reads the source from its bytes and resolves the scope again, trusting nothing precomputed. It stores
+   the full source and the scope before the first model call, and refuses any citation outside the scope.
+
+   The scope is part of the import's identity. Resuming with another scope, or without one, is refused, and so is a
+   scoped import whose stored scope or original was altered or removed; none of these refusals writes anything.
+   `leap regenerate` keeps the restriction too.
+
+**Reports.**
+- The printed cost report opens with `Generation scope: whole document` or
+  `Generation scope <hash>: M of T sentences in P passage(s), N code points of source text, k partial structure(s)`.
+- A scoped import's `cost.json` carries the same hash and counts under `generationScope`. A whole-document import's
+  `cost.json` is unchanged.
+- `leap gate-report` shows the same line, and its `--summary` carries the hash and counts. Neither ever contains
+  heading or source text.
+- Unit targets that no concept supports are listed with a note: in a scoped import they may fall outside the selected
+  sections rather than be absent from the source. Check them against the full source before treating them as gaps.
+
+**What a scope does, and does not, do.** It limits the source text sent to models, and the sentences they may cite,
+to the selection plus labelled heading context. It cannot stop a generated question or feedback from containing an
+unsupported claim, so the grounding checks and the rubric review still apply. It decides what models read, not what
+learners read.
 
 ### The output directory's lock, and `lock.stale-*` tombstones
 
@@ -270,8 +342,10 @@ each type, and pooled across imports with a per-unit breakdown, it shows:
 
 An import with an unreviewed, in-progress, build-pending or awaiting-review activity is **incomplete** and can never
 pass. Thresholds are not frozen yet, so the provisional targets are shown and not evaluated. Phase-2 directories are
-listed as not eligible and change no figure. `--summary` writes a numbers-only JSON copy with no source, activity or
-unit text. It must be written outside every import directory, and neither output may be a link. In findings, a reason starting `rto-claim:` marks the §4.4 negative check, and the report counts those
+listed as not eligible and change no figure. Each import's generation scope is stated by hash and counts (or as the
+whole document), and a scoped import's unsupported targets carry the note that they may lie outside the selected
+sections. `--summary` writes a numbers-only JSON copy with no source, heading, activity or unit text; it carries the
+scope hash and counts. It must be written outside every import directory, and neither output may be a link. In findings, a reason starting `rto-claim:` marks the §4.4 negative check, and the report counts those
 findings.
 
 ### Exit codes

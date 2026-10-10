@@ -5,7 +5,7 @@ import type { ImportRecord, ImportStore } from "../store/types.js";
 import { resolveScope, type ResolvedScope } from "./resolve.js";
 import { ScopeRefusedError } from "./schema.js";
 
-/** A scoped run's scope: the author's file (parsed JSON, validated here) and the source's own bytes. Nothing resolved is accepted. */
+/** A scoped run's scope: the author's file (parsed JSON, checked here) and the source's own bytes. Nothing resolved is accepted. */
 export interface ScopeInput { file: unknown; bytes: Buffer; ext: SourceExtension }
 
 /**

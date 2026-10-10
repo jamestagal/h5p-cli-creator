@@ -82,7 +82,7 @@ All must hold before step 4:
 - **Verification:** `pnpm verify` green on the branch head being run, with Node 20.
 - **F2 done (`f031a6d`):** `generate` prints each activity's real package path, its `BuildRecord.buildKey`. Package paths in this runbook mean those printed paths.
 - **F3 deferred:** `plan` and `produce` run on `claude-sonnet-5`, as in S1. Any change is a recorded decision before the P1 entry.
-- **Scope decided (step 3):** Benjamin's decision on the pilot scope is recorded in this file.
+- **Scope decided (step 3):** Benjamin's decision on the pilot scope is recorded in this file. It includes whether P1 generates from the whole packet or from selected sections; if from selected sections, it records the scope hash `leap scope` printed (step 2).
 - **Unit prepared (step 2):** the unit text is prepared and checked, and its hash recorded here.
 - **Checkpoint E:** Benjamin has written the P1 entry in `docs/uoc/pilot-ledger.json`:
   - `runId` `P1`;
@@ -124,14 +124,38 @@ node apps/cli/dist/index.js extract --source docs/uoc/BSBAUD412/<packet>.docx --
 3. **Record the file's hash** here: `shasum -a 256 docs/uoc/BSBAUD412/<unit>.txt`. The import's fingerprint covers the unit text, so any later edit makes P1's directory refuse a resume.
 4. **After P1 parses the unit,** check the parsed unit before any scoring. The unit is parsed by a model call during `generate`, and the result is stored as `<pilot>/p1/artifacts/unit.json`. Its release, PC IDs, KE tree and assessment conditions must match the checked text. A mismatch is a failure under step 8.
 
+**Source sections (zero cost, only if step 3 decides P1 uses selected sections):** neither command makes a model call, and neither needs a key or a ledger. The scope file names the packet's headings, so it stays under `docs/uoc/BSBAUD412/`, which Git ignores; the outline and preview stay under `<pilot>`.
+1. **Outline the repaired packet.** The outline shows whether the packet's headings are usable (heading styles) or whether sections must be chosen as sentence ranges:
+
+   ```bash
+   node apps/cli/dist/index.js outline --source docs/uoc/BSBAUD412/<packet>.docx --out <pilot>/outline-p1
+   ```
+
+2. **Make the scope file.** Copy `<pilot>/outline-p1/generation-scope.json` to `docs/uoc/BSBAUD412/generation-scope-p1.json`, and fill in `include` and `exclude` there.
+3. **Preview the scope:**
+
+   ```bash
+   node apps/cli/dist/index.js scope --source docs/uoc/BSBAUD412/<packet>.docx \
+     --scope docs/uoc/BSBAUD412/generation-scope-p1.json --out <pilot>/scope-p1
+   ```
+
+   - Read `scope-preview.md`: it shows each extraction request's evidence exactly as it will be sent.
+   - Resolve any partial structure the command reports, or accept it explicitly.
+   - Record here the printed scope hash and counts (sentences, passages, code points). Never record heading or packet text.
+4. **Do not edit the scope file after this.** It binds to the packet's bytes, and the scope is part of P1's fingerprint, so any change makes P1's directory refuse a resume.
+
 ### 3. Pilot scope: Interactive Book intended, approach pending
 
 Benjamin has said he intends the pilot to include Interactive Book. Two things are still undecided, and both are recorded here before Checkpoint E:
 - **How it is implemented:** which composition approach is built, and how.
 - **Ordering:** whether a standalone baseline may run first. That baseline is P1 as specified below, `generate`'s default `multiChoice`, `blanks` and `flashcards` packages.
 
-Two features this touches are **not implemented**:
-- **Selecting input source sections.** Generating from chosen sections of the packet, rather than the whole source, is not implemented. `generate` always reads the whole source; `--customisation` only steers the prompts.
+**Selecting input source sections** is implemented (`leap outline`, `leap scope`, `generate --scope`; see the README and `docs/superpowers/specs/2026-10-09-generation-scope-design.md`).
+- Whether P1 uses it is part of the step 3 decision. If it does, prepare the scope as in step 2 before Checkpoint E.
+- Without `--scope`, `generate` reads the whole source, as before. `--customisation` only steers the prompts; it selects nothing.
+- A scope decides what models read, not what learners read. It does not replace review: an activity can still state something its passages do not support.
+
+One feature this touches is **not implemented**:
 - **Grouping output activities into chapters.** An Interactive Book composition (the parent design's §6.1 activity collection) is not implemented: no phase-3 command, schema or test exists for it, and the parent design places it in phase 4. This covers the author choices about how activities are grouped into chapters and ordered, and whether the source's reading is included as reading pages.
 
 The legacy narrated-audio-book workflow (`interactivebook-ai`, `youtube-extract`) is unchanged and separate. The `interactiveBook` rows in `docs/testing/platform-checklist.md` remain `Pending`.
@@ -146,6 +170,10 @@ node apps/cli/dist/index.js generate \
   --out <pilot>/p1 --provider record --fixtures docs/uoc/BSBAUD412/replay-p1 \
   --ledger docs/uoc/pilot-ledger.json --run P1
 ```
+
+**If step 3 decided on selected sections,** add `--scope docs/uoc/BSBAUD412/generation-scope-p1.json` to that command and to every resume of it.
+- **Before the first model call,** `generate` prints `scope <hash>: …`. It must be the hash recorded in step 2. If it is not, the scope file or the packet changed after the preview: treat the run as failed, keep the directory unchanged and follow step 8.
+- **The printed cost report** opens with the same scope line, or with `Generation scope: whole document`.
 
 **Retries inside the command:** they happen automatically, and every one is metered.
 - **Content failures:** an activity gets up to 3 content attempts, each fed back with the reasons.
@@ -169,7 +197,8 @@ Failures are named with their reason: `content:`, `budget:`, `system:` or `skipp
   - the unit text;
   - the selected types;
   - the language, reading level, tone and customisation;
-  - the chunk size and plan rules.
+  - the chunk size and plan rules;
+  - the generation scope, or its absence. A resume with another scope, or without the one P1 started with, is refused before anything is written.
 
   Budget options, `--provider`, `--fixtures`, `--ledger`, `--run`, `--concurrency` and `--libraries` are not part of it. Keep them unchanged anyway; a resume is still P1.
 - **Terminal outcome:** the command finished with failures, or was refused. Refused includes refusal by a cap: the spend cap, `--max-requests`, `--max-tokens` or the cumulative `--max-seconds`. That attempt of P1 is over: **stop**, and follow step 8. Do not raise a cap and rerun in the same directory.
@@ -220,6 +249,7 @@ Investigate code only where the scores show a failure:
 | Missing or wrong concepts; activities on trivial or off-topic text | Extraction and chunk boundaries |
 | An `rto-claim` finding | Concept kinds (`rto-instruction` classification) and planning |
 | Garbled text, broken tables or lists in cited passages | DOCX ingestion (would reopen Checkpoint B) |
+| Unsupported targets in a scoped import | The scope first: the gate report notes that they may lie outside the selected sections. Check them against the full packet before treating them as extraction or alignment gaps. |
 
 ### 7. Experiments (design §9 step 6)
 
@@ -245,6 +275,9 @@ Freezing them in the design does **not** change the CLI. The gate report's "not 
 
 ### 10. Recording
 
-- **Sanitised summary:** write it with `node apps/cli/dist/index.js gate-report <pilot>/p1 --summary docs/testing/artifacts/phase-3-p1-gate-summary.json`. The summary must be outside every import directory. It holds numbers, IDs and versions only. Check it for any packet or activity text before committing it.
+- **Sanitised summary:** write it with `node apps/cli/dist/index.js gate-report <pilot>/p1 --summary docs/testing/artifacts/phase-3-p1-gate-summary.json`. The summary must be outside every import directory.
+  - It holds numbers, IDs, hashes and versions only.
+  - For a scoped P1, its `generationScope` entry holds the scope hash and counts; for a whole-document P1, it is `null`. It never holds a heading.
+  - Check it for any packet or activity text before committing it.
 - **Completion line:** record "**BSBAUD412 pilot complete**" here with its date once steps 1–7 of design §9 are done, whatever the numbers were. **It is not a gate pass.**
 - **Full gate:** "Full quality gate passed" needs at least five source-and-unit pairs, including trade units, scored against frozen thresholds. Results are pooled per type and broken down per unit and per item: at least 25 `multiChoice`, 15 `blanks` and 5 `flashcards` packages. The planned minimum is a sample size, not a confidence level.

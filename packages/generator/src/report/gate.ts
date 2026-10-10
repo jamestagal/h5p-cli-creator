@@ -6,6 +6,8 @@ import { SKIPPED_PREFIX } from "../pipeline/run-import.js";
 import { countedScore } from "../review/scores.js";
 import { latestRegenerations } from "../store/builds.js";
 import type { ActivityRecord, BuildRecord, ImportRecord, ImportStore, OperationRecord, RegenerationRequest, RevisionRecord, ScoreRecord } from "../store/types.js";
+import type { GenerationScopeRecord } from "../scope/authoritative.js";
+import { scopeFigures, scopeLine, SCOPE_UNSUPPORTED_NOTE, type ScopeFigures } from "./scope.js";
 
 /** The planned types, in report order. */
 export const GATE_TYPES: readonly PlannedType[] = ["multiChoice", "blanks", "flashcards"];
@@ -44,6 +46,9 @@ export interface ImportSnapshot {
   builds: BuildRecord[];
   scores: ScoreRecord[];
   regenerations: RegenerationRequest[];
+  /** The stored generationScope record and whether the entries history exists; absent (as in snapshots built by hand) reads as none. */
+  generationScope?: GenerationScopeRecord | null;
+  generationScopeEntries?: boolean;
 }
 
 export async function snapshotImport(store: ImportStore, importId: string): Promise<ImportSnapshot> {
@@ -62,7 +67,9 @@ export async function snapshotImport(store: ImportStore, importId: string): Prom
     operations: await store.listOperations(importId),
     attempts: await store.listAttempts(importId),
     scores: await store.listScores(importId),
-    regenerations: latestRegenerations(await store.listRegenerations(importId))
+    regenerations: latestRegenerations(await store.listRegenerations(importId)),
+    generationScope: await store.getArtifact<GenerationScopeRecord>(importId, "generationScope"),
+    generationScopeEntries: (await store.getArtifact(importId, "generationScopeEntries")) !== null
   };
 }
 
@@ -102,6 +109,8 @@ export interface StaleReview { activityId: string; revision: number; buildId: st
 export interface ImportGate {
   importId: string; storeVersion: number; directory: string;
   unit: { code: string; release: string | null; hash: string } | null;
+  /** The generation scope by hash and counts only (null: the whole document); never heading or source text. */
+  generationScope: ScopeFigures | null;
   status: "complete" | "incomplete";
   /** Why the import is incomplete: one line per activity, naming the partition and category that holds it open. */
   incomplete: Array<{ activityId: string; reason: string }>;
@@ -275,6 +284,7 @@ export function gateImport(s: ImportSnapshot, directory = ""): ImportGate {
   return {
     importId: s.importRecord.importId, storeVersion: s.importRecord.storeVersion ?? 1, directory,
     unit: s.unit ? { code: s.unit.code, release: s.unit.release, hash: s.unit.textHash.slice(0, 12) } : null,
+    generationScope: scopeFigures(s.importRecord, s.generationScope ?? null, s.generationScopeEntries ?? false),
     status: incomplete.length === 0 ? "complete" : "incomplete", incomplete, activities, types, shared,
     alignment: { unsupported: distinct(unsupported), neverTargeted: targets.filter((id) => !targeted.has(id) && !unsupported.includes(id)) },
     negativeCheck: { findings: rto.length, activities: new Set(rto).size, reviews: counted.length },
@@ -356,8 +366,8 @@ export function median(values: number[]): number | null {
 export interface LegacyGate { directory: string; importId: string; acceptances: { accepted: number; needsRevision: number; rejected: number } }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Rendering. Neither the report nor the summary contains content strings: no source sentence, activity text, target
-// text, title or finding reason; only IDs, counts, money and versions.
+// Rendering. Neither the report nor the summary contains content strings: no source sentence, heading, activity text,
+// target text, title or finding reason; only IDs, counts, hashes, money and versions.
 
 const usd = (micro: number): string => `$${(micro / 1_000_000).toFixed(4)}`;
 const pct = (n: number, d: number): string => `${n}/${d} (${d === 0 ? "n/a" : `${Math.round((n / d) * 100)}%`})`;
@@ -393,12 +403,12 @@ const withTotal = (types: Record<PlannedType, TypeGate>): Array<[string, TypeGat
 export function formatGateReport(imports: ImportGate[], legacy: LegacyGate[]): string {
   const out: string[] = ["# Gate report", "", `Thresholds: ${PROVISIONAL_TARGETS.frozen ? "frozen" : "not frozen"}. Provisional targets (design §8.3), not evaluated as pass or fail: ${PROVISIONAL_TARGETS.targets.join("; ")}.`, ""];
   for (const g of imports) {
-    out.push(`## Import ${g.importId}`, "", `- Directory: ${g.directory}`, `- Unit: ${g.unit ? `${g.unit.code}${g.unit.release ? ` ${g.unit.release}` : ""}, text ${g.unit.hash}` : "none (mapping not scored)"}; store version ${g.storeVersion}`);
+    out.push(`## Import ${g.importId}`, "", `- Directory: ${g.directory}`, `- Unit: ${g.unit ? `${g.unit.code}${g.unit.release ? ` ${g.unit.release}` : ""}, text ${g.unit.hash}` : "none (mapping not scored)"}; store version ${g.storeVersion}`, `- ${scopeLine(g.generationScope)}`);
     out.push(`- Gate status: **${g.status}**${g.status === "incomplete" ? ": an incomplete import can never pass" : PROVISIONAL_TARGETS.frozen ? "" : "; not evaluated, thresholds not frozen"}`);
     for (const i of g.incomplete) out.push(`  - ${i.activityId}: ${i.reason}`);
     out.push("", ...typeTable(withTotal(g.types)), "");
     out.push(`- Shared cost: ${usd(g.shared.usdMicro)} over ${g.shared.attempts} attempts${lb(withoutCost(g.shared))}; billing-uncertain starts ${g.shared.uncertain.attempts} at ${usd(g.shared.uncertain.reservedUsdMicro)} reserved`);
-    out.push(`- Unsupported targets: ${g.alignment.unsupported.join(", ") || "none"}`, `- Never-targeted PCs and KE nodes (not counting unsupported ones): ${g.alignment.neverTargeted.join(", ") || "none"}`);
+    out.push(`- Unsupported targets: ${g.alignment.unsupported.join(", ") || "none"}${g.generationScope && g.alignment.unsupported.length > 0 ? ` (${SCOPE_UNSUPPORTED_NOTE})` : ""}`, `- Never-targeted PCs and KE nodes (not counting unsupported ones): ${g.alignment.neverTargeted.join(", ") || "none"}`);
     out.push(`- Negative check (findings tagged \`${RTO_CLAIM_PREFIX}\`): ${g.negativeCheck.findings} finding(s) on ${g.negativeCheck.activities} activit${g.negativeCheck.activities === 1 ? "y" : "ies"}, across ${g.negativeCheck.reviews} counted review(s)`);
     out.push(`- Stale reviews: ${g.staleReviews.length === 0 ? "none" : g.staleReviews.map((r) => `${r.activityId} r${r.revision} build ${r.buildId} (${r.why})`).join("; ")}`);
     out.push(`- Engines: ${g.provenance.engines.join("; ") || "none"}; extraction ${g.provenance.extractionVersion ?? "unknown"}; prompts ${g.provenance.promptVersions.join(", ") || "none"}; rubric ${g.provenance.rubricVersions.join(", ")}`, `- Model roles: ${g.provenance.modelRoles.join(" | ") || "none"}`, "");
@@ -419,7 +429,7 @@ export function pooledTypes(imports: ImportGate[]): Record<PlannedType, TypeGate
   return Object.fromEntries(GATE_TYPES.map((t) => [t, poolTypeGates(imports.map((g) => g.types[t]))])) as Record<PlannedType, TypeGate>;
 }
 
-/** The numbers-only copy: counts, money, IDs and versions; never a content string. */
+/** The numbers-only copy: counts, money, IDs, hashes and versions; never a content string (the scope by hash and counts only). */
 export function gateSummary(imports: ImportGate[], legacy: LegacyGate[]): unknown {
   const typeFigures = (g: TypeGate) => ({
     planned: g.planned, firstPass: g.firstPass, historical: g.historical, afterRevision: g.afterRevision, regenerations: g.regenerations,
@@ -430,7 +440,7 @@ export function gateSummary(imports: ImportGate[], legacy: LegacyGate[]): unknow
   });
   return {
     thresholdsFrozen: PROVISIONAL_TARGETS.frozen,
-    imports: imports.map((g) => ({ importId: g.importId, unit: g.unit, storeVersion: g.storeVersion, status: g.status, incomplete: g.incomplete, types: Object.fromEntries(GATE_TYPES.map((t) => [t, typeFigures(g.types[t])])), shared: g.shared, alignment: g.alignment, negativeCheck: g.negativeCheck, staleReviews: g.staleReviews.length, provenance: g.provenance })),
+    imports: imports.map((g) => ({ importId: g.importId, unit: g.unit, generationScope: g.generationScope, storeVersion: g.storeVersion, status: g.status, incomplete: g.incomplete, types: Object.fromEntries(GATE_TYPES.map((t) => [t, typeFigures(g.types[t])])), shared: g.shared, alignment: g.alignment, negativeCheck: g.negativeCheck, staleReviews: g.staleReviews.length, provenance: g.provenance })),
     pooled: Object.fromEntries(Object.entries(pooledTypes(imports)).map(([t, g]) => [t, typeFigures(g)])),
     plannedMinimum: PLANNED_MINIMUM,
     notEligible: legacy.map((l) => ({ importId: l.importId, acceptances: l.acceptances }))

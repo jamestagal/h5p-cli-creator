@@ -1,7 +1,7 @@
 import { rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { targetsOf, type ConceptMap, type CostStatus, type MappingStatus, type UnitOfCompetency } from "@leaplearn/shared";
-import { countedScore, PRICING, type AttemptOutcome, type AttemptStart, type ImportStore, type PlannedType } from "@leaplearn/generator";
+import { countedScore, PRICING, SCOPE_UNSUPPORTED_NOTE, scopeLine, storedScopeFigures, type AttemptOutcome, type AttemptStart, type ImportStore, type PlannedType, type ScopeFigures } from "@leaplearn/generator";
 
 export interface CostReport {
   pricingVersion: string;
@@ -19,6 +19,12 @@ export interface CostReport {
   retryShare: number;
   accepted: number;
   costPerAcceptedActivityUsdMicro: number | null;
+  /**
+   * A scoped import's generation scope (generation scope design §2.9): hash and counts, and the unit targets its
+   * alignment left without a supporting concept, which may lie outside the selected sections. Absent for a
+   * whole-document import, whose cost.json is unchanged.
+   */
+  generationScope?: ScopeFigures & { unsupportedTargets: string[] };
 }
 
 /**
@@ -69,17 +75,23 @@ export async function costReport(store: ImportStore, importId: string): Promise<
   });
   const accepted = (await acceptedActivityIds(store, importId)).size;
   const spendOverCapUsdMicro = importRecord ? Math.max(0, importRecord.budgetUsed.spentUsdMicro - importRecord.budget.usdMicro) : 0;
+  const scope = await storedScopeFigures(store, importId);
+  const unsupportedTargets = scope ? [...((await store.getArtifact<ConceptMap>(importId, "conceptMap"))?.alignment?.unsupportedCriteriaIds ?? [])] : [];
   return {
     pricingVersion: PRICING.version, totals: { attempts: starts.length, costUsdMicro: total, costStatusCounts, reservationExceeded, underestimateUsdMicro: underestimate, spendOverCapUsdMicro }, shared, direct, byPurpose, byType, perActivity,
     retryShare: starts.length === 0 ? 0 : retries / starts.length,
-    accepted, costPerAcceptedActivityUsdMicro: accepted === 0 ? null : Math.round(total / accepted)
+    accepted, costPerAcceptedActivityUsdMicro: accepted === 0 ? null : Math.round(total / accepted),
+    ...(scope ? { generationScope: { ...scope, unsupportedTargets } } : {})
   };
 }
 
 const usd = (micro: number): string => `$${(micro / 1_000_000).toFixed(4)}`;
 
 export function formatCostReport(r: CostReport): string {
+  const scope = r.generationScope;
   const lines = [
+    scopeLine(scope ? { scopeHash: scope.scopeHash, counts: scope.counts } : null),
+    ...(scope && scope.unsupportedTargets.length > 0 ? [`Unit targets with no supporting concept: ${scope.unsupportedTargets.join(", ")} (${SCOPE_UNSUPPORTED_NOTE})`] : []),
     `Cost (pricing ${r.pricingVersion}): ${usd(r.totals.costUsdMicro)} over ${r.totals.attempts} attempts (known ${r.totals.costStatusCounts.known}, estimated ${r.totals.costStatusCounts.estimated}, unavailable ${r.totals.costStatusCounts.unavailable} — excluded from the sums; the ledger's budget spend counts them at their reservation); shared ${usd(r.shared)}, direct ${usd(r.direct)}; retry share ${(r.retryShare * 100).toFixed(0)}%; reservations under-estimated on ${r.totals.reservationExceeded} attempt(s) by ${usd(r.totals.underestimateUsdMicro)} in total; spend over the import's cap, from the ledger's spent figure (which counts unknown-cost attempts at their reservation): ${usd(r.totals.spendOverCapUsdMicro)}`,
     `Accepted activities: ${r.accepted}; cost per accepted activity: ${r.costPerAcceptedActivityUsdMicro === null ? "n/a (none accepted yet; score the current builds with leap review-sheet and leap review-import)" : usd(r.costPerAcceptedActivityUsdMicro)}`,
     "", "| purpose | attempts | cost |", "|---|---|---|"
