@@ -5,3 +5,4 @@ export * from "./partial.js";
 export * from "./resolve.js";
 export * from "./render.js";
 export * from "./preview.js";
+export * from "./authoritative.js";

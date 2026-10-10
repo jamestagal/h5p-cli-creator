@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { createRegistry, engineIdentity } from "@leaplearn/engine";
+import { resolveScope, ScopeIntegrityError, ScopeRefusedError, type ResolvedScope } from "@leaplearn/generator";
 import { ANTHROPIC_TIMEOUT_MS, authoriseRun, toUsdMicro, createAnthropicProvider, IncompatibleResumeError, isStoreVersionError, LedgerError, OriginalSourceError, readLedger, ReplayProvider, RecordingProvider, runImport, spendFromAttempts, READING_LEVEL_IDS, StoreLockedError, TONE_IDS, type ImportRecord, type ModelProvider, type PlannedType, type ReadingLevel, type Tone } from "@leaplearn/generator";
 import { FileStore } from "./file-store.js";
 import { formatCostReport, writeReportsLocked } from "./report.js";
@@ -14,6 +15,8 @@ export interface GenerateArgs {
   provider: "anthropic" | "replay" | "record"; fixtures?: string; concurrency: number;
   /** The pilot ledger and the run in it; required when the provider can make paid calls (anthropic, record). */
   ledger?: string; run?: string;
+  /** A generation-scope.json: generate from the selected sections only (generation scope design §2.9). */
+  scope?: string;
 }
 
 /** The per-import estimated spend cap of a run with no ledger (replay), in USD. */
@@ -92,6 +95,23 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
   const source = loaded.document;
   const warnings = warningSummary(loaded.warnings);
   if (warnings) io.err(`${warnings}\n`);
+  // A scope is checked here, before anything is written, so a refusal leaves no directory behind; runImport checks it
+  // again from the bytes and the file, trusting nothing this command resolved.
+  let scopeFile: unknown = null;
+  if (args.scope) {
+    let scope: ResolvedScope;
+    try {
+      scopeFile = JSON.parse(await readFile(resolve(args.scope), "utf8"));
+      scope = resolveScope(scopeFile, loaded);
+    } catch (err) {
+      if (err instanceof SyntaxError) { io.err(`leap: ${basename(args.scope)} is not valid JSON: ${err.message}; nothing was written\n`); return 1; }
+      if (err instanceof ScopeRefusedError) { for (const p of err.problems) io.err(`leap: ${p}\n`); io.err("leap: the generation scope is refused; nothing was written\n"); return 1; }
+      throw err;
+    }
+    const c = scope.counts;
+    io.out(`scope ${scope.scopeHash.slice(0, 12)}: ${c.sentences} sentences in ${c.passages} passage(s), ${c.sourceCodePoints} code points of source text; chunk size ${scope.previewConfig.chunkTokens}\n`);
+    for (const p of scope.partial) io.out(`partial: ${p.message}\n`);
+  }
   const unitText = args.unit ? await readFile(resolve(args.unit), "utf8") : null;
   const registry = await createRegistry({ lockPath: resolve(args.libraries, "libraries.lock.json"), cacheDir: resolve(args.libraries, "cache") });
   const store = new FileStore(outDir);
@@ -102,11 +122,12 @@ export async function generate(args: GenerateArgs, io: { out: (s: string) => voi
   let record: ImportRecord;
   try {
     record = await runImport(
-      { importId, name: args.name ?? basename(sourcePath), source, unitText, selectedTypes: types, budget, promptConfig, language: args.language, customisation: args.customisation ?? null, ...(source.kind === "docx" || source.kind === "odt" ? { original: { ext: `.${source.kind}` as const, bytes: loaded.bytes } } : {}) },
+      { importId, name: args.name ?? basename(sourcePath), source, unitText, selectedTypes: types, budget, promptConfig, language: args.language, customisation: args.customisation ?? null, ...(source.kind === "docx" || source.kind === "odt" ? { original: { ext: `.${source.kind}` as const, bytes: loaded.bytes } } : {}), ...(args.scope ? { scope: { file: scopeFile, bytes: loaded.bytes, ext: loaded.ext } } : {}) },
       { store, provider: deps.provider ?? providerFor(args), registry, engineIdentity: identity, concurrency: args.concurrency, maxAttemptMs: ANTHROPIC_TIMEOUT_MS, onProgress: (e) => io.err(`${e.kind === "status" ? `status: ${e.status}` : e.kind === "activity" ? `${e.activityId}: ${e.status}${e.error ? ` (${e.error})` : ""}` : `${e.purpose}: ${e.status}${e.costUsdMicro === null ? "" : ` ($${(e.costUsdMicro / 1_000_000).toFixed(4)})`}`}\n`) }
     );
   } catch (err) {
-    if (err instanceof IncompatibleResumeError || err instanceof StoreLockedError || err instanceof OriginalSourceError || isStoreVersionError(err)) { io.err(`leap: ${err.message}\n`); return 1; }
+    if (err instanceof IncompatibleResumeError || err instanceof StoreLockedError || err instanceof OriginalSourceError || err instanceof ScopeIntegrityError || isStoreVersionError(err)) { io.err(`leap: ${err.message}\n`); return 1; }
+    if (err instanceof ScopeRefusedError) { for (const p of err.problems) io.err(`leap: ${p}\n`); io.err("leap: the generation scope is refused; nothing was written\n"); return 1; }
 
     throw err;
   }

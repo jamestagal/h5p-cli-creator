@@ -574,3 +574,28 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
 - **Redundant entries.** An include whose sentences are all selected by the other includes is reported as redundant in the preview and on stdout, and is still allowed.
 - **Partial structures.** A unit (row, item, note line) counts as held when any of its sentences is selected. The paragraph rule covers every stored line with two or more sentences that is not a list-item line, since list items report their own sentences. Findings are listed in structure order, then by paragraph.
 - **What is not built yet.** `leap generate --scope`, persistence, the run fingerprint and the evidence guard are Step 3.
+
+**Step 3** (authoritative validation in `runImport`, `generate --scope`, persistence, scoped fingerprints, resume integrity, evidence guard):
+- **Order of checks:**
+  1. **Before the lock (no write or model call), via `authoritativeScope`:**
+     - the scope's extension must match the source's kind;
+     - for DOCX and ODT, the scope's bytes must hash to the same value as `original`;
+     - the bytes are re-read with the caller's own `sourceId` and `fileName` (`ingestAs`);
+     - the caller's document must agree with the re-read one in every field, and a refusal names the first differing path;
+     - the scope is resolved against the re-read document;
+     - an explicit `RunImportDeps.chunkTokens` must equal `previewConfig.chunkTokens`.
+
+     Lock acquisition can run recovery writes (the committed-batch replay), so every check that needs no stored state happens before it. A refusal there leaves every record, and the lock, untouched.
+  2. **Under the lock, before any write:**
+     - the existing store-version, layout and fingerprint checks;
+     - for a scoped resume, `assertScopeIntegrity`: the stored `source` must deep-equal the re-read document, and the stored `generationScope` record must deep-equal the recomputed one. That covers the payload, `previewConfig`, counts, partial findings and redundant entries, not just the declared hash. A mismatch raises `ScopeIntegrityError`. Entries are history and are not compared.
+- **Authoritative document.** After validation, the run's source is the re-read document: the stored source, chunks, evidence and size checks all come from it.
+- **Stored before the first model call:** `generationScope`, written with `source`; then `generationScopeEntries`, where a new spelling is appended with `firstUsedAt` and an already-recorded spelling is not repeated.
+- **Fingerprint.** For a scoped run the fingerprint material gains `generationScope: { scopeHash, chunkTokens, scopedLayoutVersion }`, and the material's `chunkTokens` is `previewConfig.chunkTokens`. Unscoped fingerprints are pinned at `4aca7d0`, for S1 and for a custom chunk size (`packages/generator/test/fingerprint-pin.test.ts`). `IncompatibleResumeError` now names the generation scope among the inputs to keep.
+- **Extraction and the evidence guard.** Extraction uses `chunkScope(scope)` through `extractConceptMap`'s new `chunks` option. The guard (`assertEvidenceInScope`) runs on a freshly extracted map before it is stored, and on a map loaded from the store. Its test edits a stored chunk so that it cites an excluded sentence.
+- **`leap generate --scope`:**
+  - it resolves the scope after loading the source and before anything is written, so a refusal leaves no directory;
+  - it prints the scope hash, counts and partial structures;
+  - it passes the file and bytes to `runImport`, which validates them again itself;
+  - it reports `ScopeRefusedError` and `ScopeIntegrityError` with exit 1.
+- **Not built yet.** Reports (cost report, `report.md`, the gate report) are Step 4.

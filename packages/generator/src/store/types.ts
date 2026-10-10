@@ -111,7 +111,7 @@ export interface RegenerationRequest {
 export class SheetIntegrityError extends Error {
   constructor(sheetId: string) { super(`review sheet ${sheetId} already exists with different entries; a sheet manifest is never changed`); this.name = "SheetIntegrityError"; }
 }
-export type ArtifactName = "source" | "unit" | "conceptMap" | "plan" | "settings" | `chunk-${number}`;
+export type ArtifactName = "source" | "unit" | "conceptMap" | "plan" | "settings" | "generationScope" | "generationScopeEntries" | `chunk-${number}`;
 
 /**
  * The store version of an import record as parsed from disk, where the TypeScript type is not enforced. An absent

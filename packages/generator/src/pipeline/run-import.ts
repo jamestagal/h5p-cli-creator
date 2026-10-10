@@ -16,6 +16,9 @@ import { sha256Hex } from "../store/builds.js";
 import { assertSameOriginal } from "../store/originals.js";
 import { assertCurrentLayout } from "../store/layout.js";
 import { DEFAULT_CHUNK_TOKENS, IncompatibleResumeError, runFingerprint } from "./fingerprint.js";
+import { assertEvidenceInScope, authoritativeScope, firstDifference, scopeRecord, ScopeIntegrityError, type GenerationScopeEntries, type ScopeInput } from "../scope/authoritative.js";
+import { chunkScope } from "../scope/render.js";
+import type { ResolvedScope } from "../scope/resolve.js";
 import { buildRevision } from "./build.js";
 import { attemptsByKey, budgetFromLedger, reconcile, reconcileElapsed, runLanes, runOperation, type OperationContext } from "./operations.js";
 
@@ -24,6 +27,11 @@ export interface RunImportInput {
   budget: { usdMicro: number } & Partial<BudgetLimits>; promptConfig: PromptConfig; language: string; customisation: string | null; orgId?: string;
   /** A DOCX or ODT source's original bytes: required for those kinds, stored once and verified before any dispatch (design §4.2). */
   original?: { ext: OriginalSourceExt; bytes: Buffer };
+  /**
+   * A generation scope (scope design §2.9): the author's scope file and the source's bytes. Everything is recomputed from
+   * them; the document re-read from the bytes becomes the run's source. Absent: the whole document, exactly as before.
+   */
+  scope?: ScopeInput;
 }
 export type ProgressEvent = { kind: "status"; status: ImportStatus } | { kind: "activity"; activityId: string; status: ActivityRecord["status"]; error?: string } | { kind: "attempt"; purpose: string; status: string; costUsdMicro: number | null };
 export interface RunImportDeps {
@@ -68,19 +76,27 @@ export function canonicalTypes(types: readonly PlannedType[]): PlannedType[] {
 }
 
 export async function runImport(rawInput: RunImportInput, deps: RunImportDeps): Promise<ImportRecord> {
-  const input: RunImportInput = { ...rawInput, selectedTypes: canonicalTypes(rawInput.selectedTypes) };
-  const chunkTokens = deps.chunkTokens ?? DEFAULT_CHUNK_TOKENS;
+  let input: RunImportInput = { ...rawInput, selectedTypes: canonicalTypes(rawInput.selectedTypes) };
+  // A scope is validated before the lock, so a refusal makes no write at all (not even lock recovery) and no model call.
+  let scope: ResolvedScope | null = null;
+  if (input.scope) {
+    const authoritative = await authoritativeScope(input.source, input.original, input.scope, deps.chunkTokens);
+    input = { ...input, source: authoritative.document };
+    scope = authoritative.scope;
+  }
+  const chunkTokens = scope ? scope.previewConfig.chunkTokens : deps.chunkTokens ?? DEFAULT_CHUNK_TOKENS;
   const rules = deps.rules ?? DEFAULT_PLAN_RULES;
-  const fingerprint = runFingerprint({ sourceTextHash: input.source.textHash, extractionVersion: input.source.metadata.extractionVersion, unitText: input.unitText, selectedTypes: input.selectedTypes, language: input.language, promptConfig: input.promptConfig, customisation: input.customisation, chunkTokens, rules });
+  const fingerprint = runFingerprint({ sourceTextHash: input.source.textHash, extractionVersion: input.source.metadata.extractionVersion, unitText: input.unitText, selectedTypes: input.selectedTypes, language: input.language, promptConfig: input.promptConfig, customisation: input.customisation, chunkTokens, rules, ...(scope ? { generationScope: { scopeHash: scope.scopeHash, chunkTokens: scope.previewConfig.chunkTokens, scopedLayoutVersion: scope.previewConfig.scopedLayoutVersion } } : {}) });
   const lock = await deps.store.lock(input.importId);
   try {
     const existing = await deps.store.getImport(input.importId); // read under the lock: a pre-lock read could be stale
     if (existing) assertWritableStoreVersion(existing, `import ${input.importId}`); // before any write, and before the fingerprint: a phase-2 import is refused as such
     if (existing) await assertCurrentLayout(deps.store, input.importId, `import ${input.importId}`); // a version-2 import from before build records is refused too, before any write
     if (existing && existing.fingerprint !== fingerprint) throw new IncompatibleResumeError(input.importId, existing.fingerprint, fingerprint);
+    if (existing && scope) await assertScopeIntegrity(deps.store, input.importId, input.source, scope); // stored records are recomputed and compared, before any write
     await secureOriginal(deps.store, input); // before the import record and any dispatch; a conflicting original is refused with no write
 
-    return await runLocked(input, deps, existing, fingerprint, chunkTokens, rules);
+    return await runLocked(input, deps, existing, fingerprint, chunkTokens, rules, scope);
   } finally {
     await lock.release();
   }
@@ -108,7 +124,29 @@ async function secureOriginal(store: ImportStore, input: RunImportInput): Promis
   if (!readBack || sha256Hex(readBack.bytes) !== supplied) throw new OriginalSourceError(`import ${input.importId}'s original did not read back with sha256 ${supplied}`);
 }
 
-async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: ImportRecord | null, fingerprint: string, chunkTokens: number, rules: PlanRules): Promise<ImportRecord> {
+/**
+ * A scoped resume trusts no stored scope record: the stored source must equal the source re-read from the bytes, and the
+ * stored generationScope record must equal the one recomputed now, in its payload, configuration and every derived field
+ * (its declared hash alone would miss an edit that leaves the hash unchanged). Entries are history and are not compared.
+ */
+async function assertScopeIntegrity(store: ImportStore, importId: string, source: SourceDocument, scope: ResolvedScope): Promise<void> {
+  const storedSource = await store.getArtifact<SourceDocument>(importId, "source");
+  const sourceDifference = storedSource === null ? null : firstDifference(storedSource, JSON.parse(JSON.stringify(source)));
+  if (sourceDifference) throw new ScopeIntegrityError(`import ${importId}'s stored source differs from the source re-read from its bytes at ${sourceDifference}; the stored source has been altered. Use a new output directory`);
+  const storedScope = await store.getArtifact<unknown>(importId, "generationScope");
+  const scopeDifference = storedScope === null ? null : firstDifference(storedScope, JSON.parse(JSON.stringify(scopeRecord(scope))));
+  if (scopeDifference) throw new ScopeIntegrityError(`import ${importId}'s stored generation scope differs from the one recomputed from the scope file and the source at ${scopeDifference}; the stored record has been altered. Use a new output directory`);
+}
+
+/** Appends this run's spelling of the scope to the entries history unless the same spelling is already there. */
+async function recordScopeEntries(store: ImportStore, importId: string, entries: ResolvedScope["entries"], at: string): Promise<void> {
+  const prior = await store.getArtifact<GenerationScopeEntries>(importId, "generationScopeEntries");
+  const spelt = JSON.parse(JSON.stringify({ include: entries.include, exclude: entries.exclude })) as { include: unknown[]; exclude: unknown[] };
+  if (prior?.history.some((h) => firstDifference({ include: h.include, exclude: h.exclude }, spelt) === null)) return;
+  await store.putArtifact(importId, "generationScopeEntries", { history: [...(prior?.history ?? []), { ...spelt, firstUsedAt: at }] } satisfies GenerationScopeEntries);
+}
+
+async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: ImportRecord | null, fingerprint: string, chunkTokens: number, rules: PlanRules, scope: ResolvedScope | null): Promise<ImportRecord> {
   const clock = deps.clock ?? (() => new Date());
   const store = deps.store;
   const now = () => clock().toISOString();
@@ -154,8 +192,14 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
   try {
     await setStatus("ingesting");
     // Both size checks run before any dispatch, so an oversize table row or request fails the import with no model call.
-    assertExtractionRequestsFit(chunkSentences(input.source.sentences, chunkTokens), { promptConfig: input.promptConfig });
+    const chunks = scope ? chunkScope(scope) : chunkSentences(input.source.sentences, chunkTokens);
+    assertExtractionRequestsFit(chunks, { promptConfig: input.promptConfig });
     if (!(await store.getArtifact(input.importId, "source"))) await store.putArtifact(input.importId, "source", input.source);
+    if (scope) {
+      // the scope is stored with the source, before parseUnit, the first model call
+      if (!(await store.getArtifact(input.importId, "generationScope"))) await store.putArtifact(input.importId, "generationScope", scopeRecord(scope));
+      await recordScopeEntries(store, input.importId, scope.entries, now());
+    }
 
     let unit: UnitOfCompetency | null = null;
     if (input.unitText !== null) {
@@ -175,10 +219,15 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
     const concepts = await runOperation<ConceptMap>(ctx, {
       purpose: "extract", activityId: null, origin: "shared", requestId: null, key: `${input.importId}:concepts`,
       load: () => store.getArtifact<ConceptMap>(input.importId, "conceptMap"),
-      work: (runner) => extractConceptMap(input.source, unit, runner, { chunkTokens, promptConfig: input.promptConfig, chunkCache }),
+      work: async (runner) => {
+        const m = await extractConceptMap(input.source, unit, runner, { chunkTokens, promptConfig: input.promptConfig, chunkCache, ...(scope ? { chunks } : {}) });
+        if (scope) assertEvidenceInScope(m.concepts, scope); // before the map is persisted
+        return m;
+      },
       persist: (m) => store.putArtifact(input.importId, "conceptMap", m)
     });
     const map = concepts.result;
+    if (scope) assertEvidenceInScope(map.concepts, scope); // a stored map is checked too
 
     await setStatus("planning");
     const planned = await runOperation<ActivityPlan[]>(ctx, {

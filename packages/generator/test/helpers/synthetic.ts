@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { SourceDocument } from "../../src/ingest/index.js";
 import { ingestMarkdown } from "../../src/ingest/index.js";
-import { chunkSentences } from "../../src/concepts/chunk.js";
+import { chunkSentences, type Chunk } from "../../src/concepts/chunk.js";
 import { fakeResponse } from "../../src/llm/fake-provider.js";
 import type { AttemptEvent, AttemptOutcome, AttemptRecorder, AttemptStart, ModelResponse } from "../../src/llm/types.js";
 
@@ -105,8 +105,8 @@ type FakeConcept = { name: string; summary: string; kind: "content" | "rto-instr
  * passage becomes an `rto-instruction` concept, merged last, never aligned or planned; the alignment covers every
  * performance criterion and every Knowledge Evidence node, with KE2.2 unsupported.
  */
-export function conceptResponses(doc: SourceDocument, evidence: FixtureEvidence = markdownEvidence(doc), chunkTokens = SYNTHETIC_CHUNK_TOKENS): { perChunk: FakeConcept[][]; mergeOut: { concepts: Array<{ name: string; summary: string; memberIds: string[] }> }; alignOut: { criteria: Array<{ criterionId: string; conceptIds: string[] }> }; script: ReturnType<typeof fakeResponse>[] } {
-  const chunks = chunkSentences(doc.sentences, chunkTokens);
+export function conceptResponses(doc: SourceDocument, evidence: FixtureEvidence = markdownEvidence(doc), chunkTokens = SYNTHETIC_CHUNK_TOKENS, scopedChunks?: Chunk[]): { perChunk: FakeConcept[][]; mergeOut: { concepts: Array<{ name: string; summary: string; memberIds: string[] }> }; alignOut: { criteria: Array<{ criterionId: string; conceptIds: string[] }> }; script: ReturnType<typeof fakeResponse>[] } {
+  const chunks = scopedChunks ?? chunkSentences(doc.sentences, chunkTokens); // a scoped run's chunks (chunkScope), when given
   const { lotoEarly, lotoTag, lotoRemove, lotoLate, tfdA, tfdB, hazards, rto } = evidence;
   const inChunk = (i: number, ids: string[]) => ids.filter((id) => chunks[i]!.sentences.some((s) => s.sentenceId === id));
   const perChunk = chunks.map((_, i) => {

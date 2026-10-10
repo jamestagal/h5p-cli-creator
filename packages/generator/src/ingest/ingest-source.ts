@@ -4,7 +4,7 @@ import { sourceAnalysis, type SourceAnalysis } from "./analysis.js";
 import { ingestDocx, type IngestWarnings } from "./docx.js";
 import { ingestOdt } from "./odt.js";
 import { ingestPdf } from "./pdf.js";
-import type { SourceDocument } from "./source-document.js";
+import type { IngestOptions, SourceDocument } from "./source-document.js";
 import type { TableSummary } from "./structure/linearize.js";
 import { ingestMarkdown, ingestText } from "./text.js";
 
@@ -44,7 +44,16 @@ export async function ingestSource(bytes: Buffer, fileName: string, opts: { sour
   const ext = extname(fileName).toLowerCase() as SourceExtension;
   if (!(SOURCE_EXTENSIONS as readonly string[]).includes(ext)) throw new UnsupportedSourceError(fileName);
   const name = basename(fileName);
-  const ingestOpts = { sourceId: opts.sourceId ?? `src-${name}`, fileName: name };
+  return ingestAs(bytes, ext, { sourceId: opts.sourceId ?? `src-${name}`, fileName: name });
+}
+
+/**
+ * Ingests bytes with the adapter for `ext`, with exactly the given IngestOptions (a fileName may be absent). runImport
+ * re-reads a scoped run's bytes with this, using the caller's own sourceId and fileName, so the document it builds is
+ * comparable field for field with the one it was given.
+ */
+export async function ingestAs(bytes: Buffer, ext: SourceExtension, ingestOpts: IngestOptions): Promise<IngestedSource> {
+  if (!(SOURCE_EXTENSIONS as readonly string[]).includes(ext)) throw new UnsupportedSourceError(`source${ext}`);
   const originalSha256 = createHash("sha256").update(bytes).digest("hex");
   if (ext === ".docx" || ext === ".odt") {
     const r = ext === ".docx" ? await ingestDocx(bytes, ingestOpts) : await ingestOdt(bytes, ingestOpts);
