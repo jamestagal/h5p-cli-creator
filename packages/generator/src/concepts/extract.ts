@@ -6,7 +6,7 @@ import type { ModelRequest } from "../llm/types.js";
 import type { StageRunner } from "../llm/runner.js";
 import { buildSystemPrompt, DEFAULT_PROMPT_CONFIG, type PromptConfig } from "../prompts/system.js";
 import { ConceptsOut, ConceptsOutSchema } from "../schemas/model-output.js";
-import type { Chunk } from "./chunk.js";
+import { gapMarker, type Chunk } from "./chunk.js";
 import { evidenceForSentence, EvidenceMismatchError, verifyEvidence } from "./verify.js";
 
 export interface ChunkConcept { tempId: string; name: string; summary: string; kind: ConceptKind; evidence: Evidence[]; }
@@ -20,7 +20,7 @@ const TASK = (max: number) => `Read the numbered EVIDENCE sentences. Identify th
  * documents stored before the field existed have none at all), so their lines are unchanged from phase 2.
  */
 export function numberedSentences(chunk: Chunk): string {
-  return chunk.sentences.map((s) => `[${s.sentenceId}] ${typeof s.listDepth === "number" ? `(list level ${s.listDepth + 1}) ` : ""}${s.text}`).join("\n");
+  return chunk.sentences.map((s) => `${chunk.gapsBefore?.[s.sentenceId] ? `${gapMarker(chunk.gapsBefore[s.sentenceId]!)}\n` : ""}[${s.sentenceId}] ${typeof s.listDepth === "number" ? `(list level ${s.listDepth + 1}) ` : ""}${s.text}`).join("\n");
 }
 
 const EXTRACT_MAX_OUTPUT_TOKENS = 3000;
@@ -34,16 +34,32 @@ function headingContext(chunk: Chunk): string {
   const runs: Array<{ path: string; ids: string[] }> = [];
   for (const s of chunk.sentences) {
     const path = (s.headingPath ?? []).join(" › ");
-    if (runs.at(-1)?.path === path) runs.at(-1)!.ids.push(s.sentenceId); else runs.push({ path, ids: [s.sentenceId] });
+    // in a scoped chunk a run also ends at a gap, so a range never spans omitted sentences
+    if (runs.at(-1)?.path === path && !chunk.gapsBefore?.[s.sentenceId]) runs.at(-1)!.ids.push(s.sentenceId); else runs.push({ path, ids: [s.sentenceId] });
   }
   if (runs.every((r) => r.path === "")) return "";
-  return `\n\nHEADING CONTEXT (the section each sentence is in):\n${runs.map((r) => `- ${r.path === "" ? "(no heading)" : r.path}: ${r.ids.length === 1 ? r.ids[0] : `${r.ids[0]} to ${r.ids.at(-1)}`}`).join("\n")}`;
+  const header = chunk.gapsBefore ? "HEADING CONTEXT (the section each sentence is in; context only, not evidence):" : "HEADING CONTEXT (the section each sentence is in):";
+  return `${header}\n${runs.map((r) => `- ${r.path === "" ? "(no heading)" : r.path}: ${r.ids.length === 1 ? r.ids[0] : `${r.ids[0]} to ${r.ids.at(-1)}`}`).join("\n")}`;
+}
+
+/** The two lines a scoped request carries (design §2.6); part of the scoped layout, versioned by SCOPED_LAYOUT_VERSION. */
+export const SCOPE_LINES = "GENERATION SCOPE:\n- Passages are separate parts of the document; do not treat text across a gap as continuous.\n- Headings in HEADING CONTEXT are context only and cannot be cited.";
+
+/**
+ * Everything an extraction request carries about the chunk's text: for a scoped chunk the scope lines, then the heading
+ * context, then the numbered EVIDENCE (with a gap marker before each sentence that follows an omission). The preview
+ * (`leap scope`) shows exactly this, so what an author reviews is what is sent. A whole-document chunk renders as it
+ * always has.
+ */
+export function renderEvidence(chunk: Chunk): string {
+  const context = headingContext(chunk);
+  return [...(chunk.gapsBefore ? [SCOPE_LINES] : []), ...(context ? [context] : []), `EVIDENCE:\n${numberedSentences(chunk)}`].join("\n\n");
 }
 
 /** The complete extraction request for a chunk, exactly as dispatched: shared by the call and by the size check. */
 export function extractionRequest(chunk: Chunk, options: ExtractOptions): ModelRequest {
   const max = options.maxConceptsPerChunk ?? 8;
-  return { purpose: "extract", model: modelForRole("extract"), system: buildSystemPrompt(options.promptConfig ?? DEFAULT_PROMPT_CONFIG), user: `${TASK(max)}${headingContext(chunk)}\n\nEVIDENCE:\n${numberedSentences(chunk)}`, maxOutputTokens: EXTRACT_MAX_OUTPUT_TOKENS, outputSchema: ConceptsOutSchema };
+  return { purpose: "extract", model: modelForRole("extract"), system: buildSystemPrompt(options.promptConfig ?? DEFAULT_PROMPT_CONFIG), user: `${TASK(max)}\n\n${renderEvidence(chunk)}`, maxOutputTokens: EXTRACT_MAX_OUTPUT_TOKENS, outputSchema: ConceptsOutSchema };
 }
 
 /** An extraction request (estimated as the budget reservation estimates it, plus its output allowance) larger than the model's input limit. */

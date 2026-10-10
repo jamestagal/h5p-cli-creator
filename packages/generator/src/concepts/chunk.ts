@@ -1,7 +1,12 @@
 import type { Sentence } from "../ingest/source-document.js";
 import { estimateInputTokens } from "../llm/cost.js";
 
-export interface Chunk { chunkIndex: number; sentences: Sentence[]; estimatedTokens: number; }
+/**
+ * `gapsBefore` is present only on a scoped chunk (generation scope design §2.6): for each sentence in it that follows an
+ * omission, the omitted range, which its extraction request marks. A chunk without it is a whole-document chunk, whose
+ * request is unchanged.
+ */
+export interface Chunk { chunkIndex: number; sentences: Sentence[]; estimatedTokens: number; gapsBefore?: Record<string, { from: string; to: string }> }
 
 /** An atomic sentence (a table row) larger than the chunk budget: it cannot be split, so the run is refused before any model call (R4). */
 export class OversizeAtomicSegmentError extends Error {
@@ -19,13 +24,14 @@ export interface OversizeAtomicSegment { sentenceId: string; label: string; head
 
 const sentenceTokens = (s: Sentence): number => estimateInputTokens(s.text) + 4;
 
-function pack(sentences: Sentence[], budgetTokens: number, onOversizeAtomic: (s: Sentence, tokens: number) => void): Chunk[] {
+function pack(sentences: Sentence[], budgetTokens: number, onOversizeAtomic: (s: Sentence, tokens: number) => void, extraTokens: (s: Sentence) => number = () => 0): Chunk[] {
   const chunks: Chunk[] = [];
   let current: Sentence[] = []; let tokens = 0;
   const flush = (): void => { if (current.length) { chunks.push({ chunkIndex: chunks.length, sentences: current, estimatedTokens: tokens }); current = []; tokens = 0; } };
   for (const s of sentences) {
-    const t = sentenceTokens(s);
-    if (s.atomic && t > budgetTokens) onOversizeAtomic(s, t);
+    const own = sentenceTokens(s);
+    const t = own + extraTokens(s);
+    if (s.atomic && own > budgetTokens) onOversizeAtomic(s, own);
     if (current.length > 0 && tokens + t > budgetTokens) flush();
     current.push(s); tokens += t;
   }
@@ -46,4 +52,20 @@ export function inspectChunks(sentences: Sentence[], budgetTokens: number): { ch
   const oversizeAtomicSegments: OversizeAtomicSegment[] = [];
   const chunks = pack(sentences, budgetTokens, (s, t) => oversizeAtomicSegments.push({ sentenceId: s.sentenceId, label: new OversizeAtomicSegmentError(s.sentenceId, s.headingPath, s.text, t, budgetTokens).label, headingPath: [...s.headingPath], estimatedTokens: t, budgetTokens }));
   return { chunks, oversizeAtomicSegments };
+}
+
+/** The line marking an omission before a scoped sentence (design §2.6): no [sN] id, so it can never be cited. */
+export function gapMarker(gap: { from: string; to: string }): string {
+  return gap.from === gap.to ? `[gap: sentence ${gap.from} is not in the generation scope]` : `[gap: sentences ${gap.from}–${gap.to} are not in the generation scope]`;
+}
+
+/**
+ * Packs a scope's sentences (in document order) exactly as chunkSentences packs a document's, charging each gap
+ * marker's tokens to the sentence it precedes; every chunk carries the gaps before its sentences. An oversize atomic
+ * sentence is refused as in chunkSentences.
+ */
+export function chunkScopedSentences(sentences: Sentence[], gapsBefore: Record<string, { from: string; to: string }>, budgetTokens: number): Chunk[] {
+  const markerTokens = (s: Sentence): number => { const gap = gapsBefore[s.sentenceId]; return gap ? estimateInputTokens(gapMarker(gap)) + 1 : 0; };
+  return pack(sentences, budgetTokens, (s, t) => { throw new OversizeAtomicSegmentError(s.sentenceId, s.headingPath, s.text, t, budgetTokens); }, markerTokens)
+    .map((c) => ({ ...c, gapsBefore: Object.fromEntries(c.sentences.flatMap((s) => (gapsBefore[s.sentenceId] ? [[s.sentenceId, gapsBefore[s.sentenceId]!]] : []))) }));
 }

@@ -544,3 +544,33 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
 - **Unchanged output.** Extracted text, sentences, offsets and metadata are byte-identical: every fixture's document hash is pinned at `e6a0ead` (`packages/generator/test/ingest-stability.test.ts`). `leap extract`'s outputs are unchanged.
 - **Shared output safety.** `leap outline` uses `leap extract`'s output safety through shared `assertNamesFree` and `publishFiles`. `extract` keeps its own messages and staging prefix.
 
+
+**Step 2** (scope schema, binding, resolution, minimum, partial structures, canonical hash, scoped rendering, preview, `leap scope`):
+- **Modules.** The scope core is `packages/generator/src/scope/`:
+  - `schema.ts`: strict Zod, every schema problem listed;
+  - `resolve.ts`;
+  - `partial.ts`;
+  - `hash.ts`;
+  - `render.ts`;
+  - `preview.ts`.
+
+  Scoped chunks are ordinary `Chunk`s that carry `gapsBefore`. A chunk without it renders exactly as before.
+- **One rendering function.** `renderEvidence(chunk)` is the single rendering of a chunk's evidence, and `extractionRequest` is the task text, a blank line, then `renderEvidence(chunk)`. The preview prints the same function's output, so preview and request cannot differ. Whole-document requests are pinned by requestKey at `481c2d7` for the DOCX, ODT, Markdown and PDF fixtures, at both chunk sizes (`packages/generator/test/unscoped-requests.test.ts`), alongside the existing S1 request snapshots.
+- **Scoped layout, version 1:**
+  - a `GENERATION SCOPE:` block with the two fixed lines;
+  - the heading context headed "(the section each sentence is in; context only, not evidence)", with runs that also break at gaps;
+  - a gap marker line before each sentence that follows an omission: `[gap: sentences sA–sB are not in the generation scope]`, or `[gap: sentence sA is not in the generation scope]` for one sentence.
+
+  A marker's tokens are charged to the sentence after it when packing.
+- **Refusal order:**
+  1. schema;
+  2. versions;
+  3. binding (when it fails, nothing else is checked);
+  4. every entry problem together, including an exclude that removes nothing from the valid includes;
+  5. an empty result;
+  6. the minimum.
+
+  Each refusal lists all of its problems.
+- **Redundant entries.** An include whose sentences are all selected by the other includes is reported as redundant in the preview and on stdout, and is still allowed.
+- **Partial structures.** A unit (row, item, note line) counts as held when any of its sentences is selected. The paragraph rule covers every stored line with two or more sentences that is not a list-item line, since list items report their own sentences. Findings are listed in structure order, then by paragraph.
+- **What is not built yet.** `leap generate --scope`, persistence, the run fingerprint and the evidence guard are Step 3.

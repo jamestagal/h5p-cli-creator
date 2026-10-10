@@ -8,6 +8,7 @@ import { csvToFlashcardsSpec } from "./csv-to-flashcards.js";
 import { DEFAULT_CHUNK_TOKENS, extract } from "./extract.js";
 import { generate } from "./generate.js";
 import { outline } from "./outline.js";
+import { scope } from "./scope.js";
 import { localImageResolver, networkImageResolver } from "./image-resolver.js";
 import { review } from "./review.js";
 import { reviewSheet } from "./review-sheet.js";
@@ -80,6 +81,13 @@ try {
       .option("out", { type: "string", demandOption: true, describe: "output directory: outside the repository, or under docs/uoc/ (real material stays out of git)" }),
       async (argv) => {
         process.exitCode = await outline({ source: argv.source, out: argv.out }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
+      })
+    .command("scope", "Check a generation-scope.json against its source and write scope-preview.md: the scope hash, counts, partial structures and each chunk's exact evidence text; no model call, API key or ledger", (y) => y
+      .option("source", { type: "string", demandOption: true, describe: "the source the scope was made for (.txt, .md, .pdf, .docx or .odt)" })
+      .option("scope", { type: "string", demandOption: true, describe: "the generation-scope.json to check (leap outline writes a template)" })
+      .option("out", { type: "string", demandOption: true, describe: "output directory: outside the repository, or under docs/uoc/ (real material stays out of git)" }),
+      async (argv) => {
+        process.exitCode = await scope({ source: argv.source, scope: argv.scope, out: argv.out }, { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) });
       })
     .command("review", "Record an alignment decision against a promoted activity and refresh mapping.csv and cost.json (acceptance comes from leap review-sheet and leap review-import)", (y) => y
       .option("out", { type: "string", demandOption: true, describe: "the import directory" })

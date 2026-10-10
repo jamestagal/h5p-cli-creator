@@ -163,6 +163,7 @@ export interface UnitOccurrence { charStart: number; charEnd: number; unit: stri
  */
 export function selectionSourceCounter(text: string, generated: Span[], occurrences: UnitOccurrence[]): (ranges: Array<[number, number]>) => number {
   const mask = maskOf(text.length, [...generated, ...occurrences.map((o): Span => [o.charStart, o.charEnd])]);
+  const sorted = [...occurrences].sort((a, b) => a.charStart - b.charStart);
   return (ranges) => {
     let n = 0;
     const units = new Map<string, number>();
@@ -172,7 +173,10 @@ export function selectionSourceCounter(text: string, generated: Span[], occurren
         if (mask[i] !== 1) n++;
         i += cp > 0xffff ? 2 : 1;
       }
-      for (const o of occurrences) if (o.charStart < end && o.charEnd > start) units.set(o.unit, o.sourceCodePoints);
+      // occurrences are sorted and non-overlapping: find the first that ends after `start`, then walk while they begin before `end`
+      let lo = 0; let hi = sorted.length;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (sorted[mid]!.charEnd <= start) lo = mid + 1; else hi = mid; }
+      for (let k = lo; k < sorted.length && sorted[k]!.charStart < end; k++) units.set(sorted[k]!.unit, sorted[k]!.sourceCodePoints);
     }
     for (const w of units.values()) n += w;
     return n;
