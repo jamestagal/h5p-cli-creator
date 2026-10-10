@@ -22,6 +22,11 @@ export interface ImportRecord {
   /** Anchor of a run in progress, persisted before the first dispatch and cleared at the end of the run; a resume that finds it charges the interrupted run's time (reconcileElapsed). */
   currentRun: { startedAt: string; elapsedBeforeMs: number } | null;
   error: string | null; idempotencyKey: string; createdAt: string; updatedAt: string;
+  /**
+   * A scoped import's identity (generation scope design §2.9): the scope's hash, written with the import record before
+   * the stored scope records, so removing those can never make the import read as unscoped. Absent on an unscoped import.
+   */
+  generationScope?: { scopeHash: string };
 }
 export interface ActivityRecord {
   activityId: string; importId: string; type: PlannedType; order: number; status: ActivityStatus;

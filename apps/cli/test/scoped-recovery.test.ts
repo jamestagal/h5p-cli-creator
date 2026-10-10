@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createRegistry, engineIdentity, type EngineIdentity, type LibraryRegistry } from "@leaplearn/engine";
 import { FakeProvider, fakeResponse } from "../../../packages/generator/src/llm/fake-provider.js";
-import { buildOutline, chunkScope, DEFAULT_PROMPT_CONFIG, IncompatibleResumeError, ingestSource, resolveScope, runImport, scopeTemplate, ScopeIntegrityError, type IngestedSource, type OutlineSection, type RunImportInput } from "@leaplearn/generator";
+import { buildOutline, chunkScope, DEFAULT_PROMPT_CONFIG, IncompatibleResumeError, ingestSource, OriginalSourceError, regenerateActivity, RegenerateRefused, resolveScope, runImport, scopeTemplate, ScopeIntegrityError, type IngestedSource, type OutlineSection, type RunImportInput } from "@leaplearn/generator";
 import { FileStore, REPORTS_PENDING } from "../src/file-store.js";
 import { generate } from "../src/generate.js";
 import { reviewImport } from "../src/review-import.js";
@@ -92,6 +92,59 @@ describe("refused scoped resumes leave the directory as it was, recovery include
     const altered = await files(dir);
     await expect(runImport(input(scopeFile(["6.", "7."])), deps(dir, provider))).rejects.toBeInstanceOf(ScopeIntegrityError);
     expect(await files(dir)).toEqual(altered);
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  /**
+   * `leap generate` without --scope on the pending directory, with the replay provider and no recordings: anything
+   * reaching a model stops there. (The CLI cannot give the API run's plan rules, so its resume differs in those too.)
+   */
+  async function generateUnscoped(dir: string): Promise<{ code: number; err: string }> {
+    const source = join(dir, "..", "electrical.docx");
+    await writeFile(source, bytes);
+    await mkdir(join(dir, "..", "fixtures"), { recursive: true });
+    const run = io();
+    const code = await generate({ source, out: dir, types: "multiChoice,blanks,flashcards", maxRequests: 50, maxTokens: 500_000, maxSeconds: 600, language: "en", readingLevel: DEFAULT_PROMPT_CONFIG.readingLevel, tone: DEFAULT_PROMPT_CONFIG.tone, libraries, provider: "replay", fixtures: join(dir, "..", "fixtures"), concurrency: 1 }, run.io);
+    return { code, err: run.err.join("") };
+  }
+  const withoutScope = (run: RunImportInput): RunImportInput => { const copy = { ...run }; delete copy.scope; return copy; };
+
+  it("omitting the scope when resuming a scoped import (direct API and leap generate) is refused without lock recovery writing anything", async () => {
+    const dir = await pendingRecovery();
+    const before = await files(dir);
+    expect(Object.keys(before)).toContain(join(dir, REPORTS_PENDING));
+    const provider = new FakeProvider([]);
+    await expect(runImport(withoutScope(input(scopeFile(["6.", "7."]))), { ...deps(dir, provider), chunkTokens: SYNTHETIC_CHUNK_TOKENS })).rejects.toBeInstanceOf(IncompatibleResumeError);
+    expect(await files(dir)).toEqual(before);
+    const cli = await generateUnscoped(dir);
+    expect(cli.code).toBe(1);
+    expect(cli.err).toContain("generation scope");
+    expect(await files(dir)).toEqual(before);
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  it("the correct scope with the stored original altered on disk is refused without lock recovery writing anything", async () => {
+    const dir = await pendingRecovery();
+    const original = join(dir, "source", "original.docx");
+    await writeFile(original, Buffer.concat([await readFile(original), Buffer.from("altered")]));
+    const before = await files(dir);
+    expect(Object.keys(before)).toContain(join(dir, REPORTS_PENDING));
+    const provider = new FakeProvider([]);
+    await expect(runImport(input(scopeFile(["6.", "7."])), deps(dir, provider))).rejects.toThrow(OriginalSourceError);
+    await expect(runImport(input(scopeFile(["6.", "7."])), deps(dir, provider))).rejects.toThrow(/stored original .* has been altered/);
+    expect(await files(dir)).toEqual(before);
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  it("a regeneration of a scoped import whose stored scope was removed is refused without lock recovery writing anything", async () => {
+    const dir = await pendingRecovery();
+    await rm(join(dir, "artifacts", "generationScope.json"));
+    const before = await files(dir);
+    const store = new FileStore(dir);
+    const activityId = (await store.listActivities("imp")).find((a) => a.type === "multiChoice")!.activityId;
+    const provider = new FakeProvider([]);
+    await expect(regenerateActivity({ importId: "imp", activityId, note: "Again." }, { store, provider, registry, engineIdentity: identity, sleep: async () => undefined })).rejects.toBeInstanceOf(RegenerateRefused);
+    expect(await files(dir)).toEqual(before);
     expect(provider.requests).toHaveLength(0);
   });
 

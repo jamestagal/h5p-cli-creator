@@ -617,3 +617,24 @@ Both commands reuse `leap extract`'s rules and code (`outDirRefusal`, `assertRep
    - On disk, with a committed unapplied batch and the pending marker, an incompatible scope (through the API and through `leap generate`) and an altered stored scope leave every file unchanged. A valid resume still applies the batch, rewrites the reports and removes the marker.
    - Unscoped runs keep their existing order: lock first, then the checks.
 
+
+**Step 3 second review fixes** (review of `cc7c52f`):
+1. **A scoped import keeps an identity independent of its scope record.**
+   - A scoped run writes `generationScope: { scopeHash }` on the import record. It goes with the record's first write, before the stored scope records. An unscoped import record has no such field, and an unscoped fingerprint is unchanged.
+   - `scopedImport` reads three independent marks: that field, the stored `generationScope` record and the `generationScopeEntries` history. Any one of them makes the import scoped, so removing the others never makes it read as unscoped.
+   - **Regeneration** (`assertStoredScope`) refuses a scoped import whose stored scope record is missing, or whose record's hash is not the one the import record names. The refusal makes no call and consumes no request.
+     - It runs before the lock, from a read, so it makes no recovery write.
+     - It runs again under the lock for a new request and a resumed one alike, before any write or dispatch. Production checks it again.
+   - **A resume** refuses an import record whose scope hash is not this scope's.
+2. **Every scoped refusal precedes lock recovery.**
+   - Before the lock, `runImport` reads whether the import is scoped. A scoped run, or any run of a scoped import, makes all its resumability checks from that read.
+   - A run without a scope on a scoped import is refused. It gets `IncompatibleResumeError` from the fingerprint, or `ScopeIntegrityError` if the fingerprint was rewritten to a whole-document run's. Scope records with no import record are refused too.
+   - A scoped run also makes `secureOriginal`'s read-only checks before the lock: the supplied original against the recorded hash, and the stored original against both.
+   - The integrity check now covers stored extraction results as well. Cached scoped chunks and the stored concept map must cite only the scope, so a tampered one is refused before any write. The guard where they are used stays.
+   - On disk, with the pending marker and a committed unapplied batch, these leave every file unchanged:
+     - omitting `--scope` (through the API and through `leap generate`);
+     - the correct scope with an altered stored original DOCX;
+     - a regeneration whose stored scope was removed.
+
+     The valid resume still recovers.
+   - For a whole-document run of an unscoped import, the only new step is the read-only check before the lock. Its checks still run under the lock, in their existing order.

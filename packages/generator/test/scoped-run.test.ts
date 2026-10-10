@@ -123,6 +123,7 @@ describe("a scoped run: only the selection reaches any model, the full source is
     expect((await runImport(unscoped, deps(store, new FakeProvider(script), { chunkTokens: SYNTHETIC_CHUNK_TOKENS }))).status).toBe("ready");
     expect(await store.getArtifact("whole", "generationScope")).toBeNull();
     expect(await store.getArtifact("whole", "generationScopeEntries")).toBeNull();
+    expect(await store.getImport("whole")).not.toHaveProperty("generationScope");
   });
 });
 
@@ -346,5 +347,95 @@ describe("review of 686e41a: spelling, missing records, the evidence guard, rege
     await expect(regenerateActivity({ importId: "regen", activityId: target.activityId, note: "Again." }, { store, provider, registry, engineIdentity: IDENTITY_A, sleep: async () => undefined })).rejects.toThrow(/outside the generation scope/);
     expect(provider.requests).toHaveLength(0);
     expect(await store.listRegenerations("regen")).toEqual([]);
+  });
+});
+
+describe("review of cc7c52f: a scoped import keeps its identity when its scope record is removed", { timeout: 30_000 }, () => {
+  const drop = (store: MemoryStore, importId: string, name: string) => (store as unknown as { artifacts: Map<string, unknown> }).artifacts.delete(`${importId}/${name}`);
+  /** A completed scoped import, one activity scored needs-revision, its stored concept map citing an excluded sentence. */
+  async function tamperedForRegeneration(importId: string): Promise<{ store: MemoryStore; activityId: string; revision: number; outside: SourceDocument["sentences"][number] }> {
+    const store = new MemoryStore();
+    expect((await runImport(input(importId), deps(store, new FakeProvider(scopedScript())))).status).toBe("ready");
+    const target = (await store.listActivities(importId)).find((a) => a.type === "multiChoice")!;
+    const rev = (await store.getRevision(target.activityId, target.currentRevision!))!;
+    await store.putScore({ rowKey: "k1", batchId: "b1", sequence: 1, rowIndex: 0, sheetId: "s", importId, activityId: target.activityId, revision: rev.revision, buildId: rev.currentBuildId!, unitTextHash: null, rubricVersion: RUBRIC_VERSION, reviewer: "B", scores: { correctness: 1, support: 2, distractors: 2, mapping: 2, usefulness: 2 }, findings: [], minutes: 3, decision: "needs-revision", decidedAt: "t" });
+    const outside = ingested.document.sentences.find((s) => !selectedIds().has(s.sentenceId) && s.text.length > 40)!;
+    const map = (await store.getArtifact<ConceptMap>(importId, "conceptMap"))!;
+    map.concepts[0]!.evidence.push({ evidenceId: `ev-${outside.sentenceId}`, sentenceId: outside.sentenceId, charStart: outside.charStart, charEnd: outside.charEnd, quote: outside.text });
+    await store.putArtifact(importId, "conceptMap", map);
+    return { store, activityId: target.activityId, revision: rev.revision, outside };
+  }
+  const regenDeps = (store: MemoryStore, provider: FakeProvider) => ({ store, provider, registry, engineIdentity: IDENTITY_A, sleep: async () => undefined });
+
+  it("the import record carries the scope's hash, independently of the stored scope record", async () => {
+    const store = new MemoryStore();
+    expect((await runImport(input("marked"), deps(store, new FakeProvider(scopedScript())))).status).toBe("ready");
+    expect((await store.getImport("marked"))!.generationScope).toEqual({ scopeHash: resolved().scopeHash });
+  });
+
+  it("a new regeneration request is refused when the stored scope (and its entries) are removed: no call, no request used, nothing changed", async () => {
+    for (const removed of [["generationScope"], ["generationScope", "generationScopeEntries"]]) {
+      const id = `regen-new-${removed.length}`;
+      const { store, activityId } = await tamperedForRegeneration(id);
+      for (const name of removed) drop(store, id, name);
+      const before = snapshot(store);
+      const provider = new FakeProvider([r(produceResponses(ingested.document, passageEvidence(ingested.document)).mc)]);
+      await expect(regenerateActivity({ importId: id, activityId, note: "Again." }, regenDeps(store, provider)), removed.join("+")).rejects.toThrow(/scoped import, but its stored generation scope is missing/);
+      expect(provider.requests).toHaveLength(0);
+      expect(await store.listRegenerations(id)).toEqual([]);
+      expect(snapshot(store)).toBe(before);
+    }
+  });
+
+  it("a resumed (running) regeneration request is refused the same way, before any write or call", async () => {
+    const id = "regen-resumed";
+    const { store, activityId, revision } = await tamperedForRegeneration(id);
+    const record = (await store.getImport(id))!;
+    await store.putRegeneration({ requestId: `${activityId}:regen:1`, importId: id, activityId, index: 1, baseRevision: revision, targetRevision: revision + 1, note: "Again.", budget: record.budget, status: "running", outcome: null, createdAt: "t", completedAt: null });
+    drop(store, id, "generationScope");
+    drop(store, id, "generationScopeEntries");
+    const before = snapshot(store);
+    const provider = new FakeProvider([r(produceResponses(ingested.document, passageEvidence(ingested.document)).mc)]);
+    await expect(regenerateActivity({ importId: id, activityId }, regenDeps(store, provider))).rejects.toThrow(/scoped import, but its stored generation scope is missing/);
+    expect(provider.requests).toHaveLength(0);
+    expect((await store.listRegenerations(id)).map((q) => q.status)).toEqual(["running"]);
+    expect(snapshot(store)).toBe(before);
+  });
+
+  it("a stored scope record whose hash is not the one the import record carries is refused, by regeneration and by a resume", async () => {
+    const { store, activityId } = await tamperedForRegeneration("regen-marker");
+    const record = (await store.getImport("regen-marker"))!;
+    await store.putImport({ ...record, generationScope: { scopeHash: "0".repeat(64) } });
+    const before = snapshot(store);
+    const provider = new FakeProvider([]);
+    await expect(regenerateActivity({ importId: "regen-marker", activityId, note: "Again." }, regenDeps(store, provider))).rejects.toThrow(/import record/);
+    await expect(runImport(input("regen-marker"), deps(store, provider))).rejects.toBeInstanceOf(ScopeIntegrityError);
+    expect(provider.requests).toHaveLength(0);
+    expect(snapshot(store)).toBe(before);
+  });
+
+  it("a resume of a scoped import whose stored concept map cites excluded text is refused before any write", async () => {
+    const { store } = await tamperedForRegeneration("resume-map");
+    const before = snapshot(store);
+    const provider = new FakeProvider([]);
+    await expect(runImport(input("resume-map"), deps(store, provider))).rejects.toThrow(/outside the generation scope/);
+    expect(provider.requests).toHaveLength(0);
+    expect(snapshot(store)).toBe(before);
+  });
+
+  it("an unscoped run of a scoped import is refused even when its scope record was removed and the fingerprint rewritten to the unscoped one", async () => {
+    const store = new MemoryStore();
+    expect((await runImport(input("unscoped-of-scoped"), deps(store, new FakeProvider(scopedScript())))).status).toBe("ready");
+    drop(store, "unscoped-of-scoped", "generationScope");
+    drop(store, "unscoped-of-scoped", "generationScopeEntries");
+    const unscoped = withoutScope(input("unscoped-of-scoped"));
+    const fresh = new MemoryStore();
+    await expect(runImport(unscoped, deps(fresh, new FakeProvider([new ProviderError("down", "permanent", 401)]), { chunkTokens: SYNTHETIC_CHUNK_TOKENS }))).rejects.toThrow();
+    await store.putImport({ ...(await store.getImport("unscoped-of-scoped"))!, fingerprint: (await fresh.getImport("unscoped-of-scoped"))!.fingerprint });
+    const before = snapshot(store);
+    const provider = new FakeProvider([]);
+    await expect(runImport(unscoped, deps(store, provider, { chunkTokens: SYNTHETIC_CHUNK_TOKENS }))).rejects.toBeInstanceOf(ScopeIntegrityError);
+    expect(provider.requests).toHaveLength(0);
+    expect(snapshot(store)).toBe(before);
   });
 });

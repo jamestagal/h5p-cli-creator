@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { ingestAs, type SourceExtension } from "../ingest/ingest-source.js";
 import type { SourceDocument, SourceKind } from "../ingest/source-document.js";
+import type { ImportRecord, ImportStore } from "../store/types.js";
 import { resolveScope, type ResolvedScope } from "./resolve.js";
 import { ScopeRefusedError } from "./schema.js";
 
@@ -91,4 +92,14 @@ export function assertEvidenceWithin(concepts: Cited, allowed: ReadonlySet<strin
 /** assertEvidenceWithin for a resolved scope. */
 export function assertEvidenceInScope(concepts: Cited, scope: Pick<ResolvedScope, "sentences">, document: Pick<SourceDocument, "sentences">): void {
   assertEvidenceWithin(concepts, new Set(scope.sentences.map((s) => s.sentenceId)), document);
+}
+
+/**
+ * Whether an import is scoped, from any of its independent marks: the scope hash on its import record, its stored
+ * generationScope record, or its entries history. Removing one (or two) of them leaves the import scoped, so a missing
+ * scope record is an altered import, never an unscoped one. An unscoped import has none of them.
+ */
+export async function scopedImport(store: ImportStore, importId: string, record: ImportRecord | null): Promise<boolean> {
+  if (record?.generationScope) return true;
+  return (await store.getArtifact(importId, "generationScope")) !== null || (await store.getArtifact(importId, "generationScopeEntries")) !== null;
 }

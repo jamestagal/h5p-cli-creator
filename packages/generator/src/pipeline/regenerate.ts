@@ -14,7 +14,7 @@ import { assertWritableStoreVersion, type ImportRecord, type ImportStore, type R
 import { buildRevision, verifyCurrentBuild } from "./build.js";
 import { attemptsByKey, budgetFromLedger, reconcile, reconcileElapsed, runOperation, type OperationContext } from "./operations.js";
 import { DEFAULT_MAX_ATTEMPT_MS, existingTexts, type ImportSettings } from "./run-import.js";
-import { assertEvidenceWithin, type GenerationScopeRecord } from "../scope/authoritative.js";
+import { assertEvidenceWithin, scopedImport, type GenerationScopeRecord } from "../scope/authoritative.js";
 import { scopeHashOf } from "../scope/hash.js";
 import type { SourceDocument } from "../ingest/source-document.js";
 
@@ -48,7 +48,7 @@ async function productionInputs(store: ImportStore, importId: string, activityId
   if (!plan) throw new RegenerateRefused(`import ${importId} has no stored plan entry for ${activityId}`);
   const map = await store.getArtifact<ConceptMap>(importId, "conceptMap");
   if (!map) throw new RegenerateRefused(`import ${importId} has no stored concept map`);
-  await assertMapInStoredScope(store, importId, map);
+  await assertStoredScope(store, importId, map);
   const producer = createProducers().get(plan.type);
   if (!producer) throw new RegenerateRefused(`no producer for ${plan.type}`);
   return { settings, plan, map, producer };
@@ -56,19 +56,26 @@ async function productionInputs(store: ImportStore, importId: string, activityId
 
 /**
  * A scoped import's concept map is checked against its stored scope before anything is produced from it: the stored
- * record must be self-consistent (its hash is its payload's, bound to the stored source's text) and every citation must
- * name a sentence in the scope with exactly that sentence's text (generation scope design §2.9). Regeneration has no
- * scope file or bytes to recompute from, so it checks the stored records against each other. An unscoped import is
- * unchanged.
+ * record must be present and be the one the import record names, be self-consistent (its hash is its payload's, bound
+ * to the stored source's text), and every citation must name a sentence in the scope with exactly that sentence's text
+ * (generation scope design §2.9). Whether the import is scoped is read from its independent marks (scopedImport), so a
+ * removed scope record refuses rather than lifting the restriction. Regeneration has no scope file or bytes to
+ * recompute from, so it checks the stored records against each other. `map` defaults to the stored concept map. An
+ * unscoped import is unchanged.
  */
-async function assertMapInStoredScope(store: ImportStore, importId: string, map: ConceptMap): Promise<void> {
+async function assertStoredScope(store: ImportStore, importId: string, map?: ConceptMap | null): Promise<void> {
+  const record = await store.getImport(importId);
+  if (!(await scopedImport(store, importId, record))) return;
   const scope = await store.getArtifact<GenerationScopeRecord>(importId, "generationScope");
-  if (!scope) return;
+  if (!scope) throw new RegenerateRefused(`import ${importId} is a scoped import, but its stored generation scope is missing; it has been removed, and nothing is regenerated without it. Use a new output directory`);
+  if (record?.generationScope && record.generationScope.scopeHash !== scope.scopeHash) throw new RegenerateRefused(`import ${importId}'s stored generation scope (${scope.scopeHash.slice(0, 12)}) is not the one its import record names (${record.generationScope.scopeHash.slice(0, 12)}); it has been altered`);
   const source = await store.getArtifact<SourceDocument>(importId, "source");
   if (!source) throw new RegenerateRefused(`import ${importId} is scoped but its stored source is missing; regenerating would not be checked against the scope`);
   if (scopeHashOf(scope.payload) !== scope.scopeHash || scope.payload.binding.textHash !== source.textHash) throw new RegenerateRefused(`import ${importId}'s stored generation scope is not consistent with itself and its stored source; it has been altered`);
+  const checked = map === undefined ? await store.getArtifact<ConceptMap>(importId, "conceptMap") : map;
+  if (!checked) return; // no map: productionInputs refuses
   try {
-    assertEvidenceWithin(map.concepts, new Set(scope.payload.passages.flatMap((p) => p.sentenceIds)), source);
+    assertEvidenceWithin(checked.concepts, new Set(scope.payload.passages.flatMap((p) => p.sentenceIds)), source);
   } catch (err) {
     throw new RegenerateRefused(`import ${importId}'s concept map: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -85,12 +92,16 @@ async function assertMapInStoredScope(store: ImportStore, importId: string, map:
 export async function regenerateActivity(input: RegenerateInput, deps: RegenerateDeps): Promise<RegenerateResult> {
   const { store } = deps;
   const clock = deps.clock ?? (() => new Date());
+  // Taking the lock may write (recovery). A scoped import whose stored scope would refuse this regeneration is refused
+  // from a read before the lock, so it leaves the directory exactly as it was; the check runs again under the lock.
+  await assertStoredScope(store, input.importId);
   const lock = await store.lock(input.importId);
   try {
     const record = await store.getImport(input.importId);
     if (!record) throw new RegenerateRefused(`import ${input.importId} is not in this directory`);
     assertWritableStoreVersion(record, `import ${input.importId}`);
     await assertCurrentLayout(store, input.importId, `import ${input.importId}`);
+    await assertStoredScope(store, input.importId); // a new request and a resumed one alike, before any write or dispatch
 
     const requests = (await store.listRegenerations(input.importId)).filter((r) => r.activityId === input.activityId);
     const latest = requests.at(-1);

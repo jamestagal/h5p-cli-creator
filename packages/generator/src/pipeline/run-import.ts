@@ -16,7 +16,7 @@ import { sha256Hex } from "../store/builds.js";
 import { assertSameOriginal } from "../store/originals.js";
 import { assertCurrentLayout } from "../store/layout.js";
 import { DEFAULT_CHUNK_TOKENS, IncompatibleResumeError, runFingerprint } from "./fingerprint.js";
-import { assertEvidenceInScope, authoritativeScope, firstDifference, scopeRecord, ScopeIntegrityError, type GenerationScopeEntries, type ScopeInput } from "../scope/authoritative.js";
+import { assertEvidenceInScope, authoritativeScope, firstDifference, scopedImport, scopeRecord, ScopeIntegrityError, type GenerationScopeEntries, type ScopeInput } from "../scope/authoritative.js";
 import { chunkScope } from "../scope/render.js";
 import type { ResolvedScope } from "../scope/resolve.js";
 import { buildRevision } from "./build.js";
@@ -87,21 +87,32 @@ export async function runImport(rawInput: RunImportInput, deps: RunImportDeps): 
   const chunkTokens = scope ? scope.previewConfig.chunkTokens : deps.chunkTokens ?? DEFAULT_CHUNK_TOKENS;
   const rules = deps.rules ?? DEFAULT_PLAN_RULES;
   const fingerprint = runFingerprint({ sourceTextHash: input.source.textHash, extractionVersion: input.source.metadata.extractionVersion, unitText: input.unitText, selectedTypes: input.selectedTypes, language: input.language, promptConfig: input.promptConfig, customisation: input.customisation, chunkTokens, rules, ...(scope ? { generationScope: { scopeHash: scope.scopeHash, chunkTokens: scope.previewConfig.chunkTokens, scopedLayoutVersion: scope.previewConfig.scopedLayoutVersion } } : {}) });
-  /** Every check a resume must pass before anything is written: store version, layout, fingerprint, and a scoped import's stored records. */
-  const assertResumable = async (existing: ImportRecord | null): Promise<void> => {
+  /**
+   * Every check a resume must pass before anything is written: store version, layout, fingerprint, the scope's presence
+   * or absence, and a scoped import's stored records. `scoped` is whether the import is scoped (scopedImport).
+   */
+  const assertResumable = async (existing: ImportRecord | null, scoped: boolean): Promise<void> => {
     if (existing) assertWritableStoreVersion(existing, `import ${input.importId}`); // before any write, and before the fingerprint: a phase-2 import is refused as such
     if (existing) await assertCurrentLayout(deps.store, input.importId, `import ${input.importId}`); // a version-2 import from before build records is refused too, before any write
     if (existing && existing.fingerprint !== fingerprint) throw new IncompatibleResumeError(input.importId, existing.fingerprint, fingerprint);
+    // Scope records are written only after the import record, and a scoped import is never resumed without its scope, whatever its fingerprint says.
+    if (scoped && !existing) throw new ScopeIntegrityError(`import ${input.importId} has generation scope records but no import record; they do not belong to it. Use a new output directory`);
+    if (scoped && !scope) throw new ScopeIntegrityError(`import ${input.importId} is a scoped import, but its fingerprint is a whole-document run's; its records have been altered. Use a new output directory`);
     if (existing && scope) await assertScopeIntegrity(deps.store, existing, input.source, scope); // stored records are recomputed and compared, before any write
   };
-  // Taking the lock may write (recovery completes a committed review batch and rewrites the reports). A scoped resume that
-  // would be refused is therefore refused from a read before the lock, so it leaves the directory exactly as it was;
-  // the same checks run again under the lock, where the read cannot be stale.
-  if (scope) await assertResumable(await deps.store.getImport(input.importId));
+  // Taking the lock may write (recovery completes a committed review batch and rewrites the reports). A resume of a
+  // scoped import, or a scoped run, that would be refused is therefore refused from a read before the lock, so it leaves
+  // the directory exactly as it was; the same checks run again under the lock, where the read cannot be stale. For a
+  // whole-document run of an unscoped import, this only reads whether the import is scoped; its checks run under the
+  // lock, as before.
+  const preLock = await deps.store.getImport(input.importId);
+  const scopedBefore = await scopedImport(deps.store, input.importId, preLock);
+  if (scope || scopedBefore) await assertResumable(preLock, scopedBefore);
+  if (scope) await checkOriginal(deps.store, input); // secureOriginal's checks, which only read; it repeats them under the lock
   const lock = await deps.store.lock(input.importId);
   try {
     const existing = await deps.store.getImport(input.importId); // read under the lock: a pre-lock read could be stale
-    await assertResumable(existing);
+    await assertResumable(existing, await scopedImport(deps.store, input.importId, existing));
     await secureOriginal(deps.store, input); // before the import record and any dispatch; a conflicting original is refused with no write
 
     return await runLocked(input, deps, existing, fingerprint, chunkTokens, rules, scope);
@@ -116,8 +127,21 @@ export async function runImport(rawInput: RunImportInput, deps: RunImportDeps): 
  * them (immutably) and reads them back to verify. Anything else throws OriginalSourceError before any write.
  */
 async function secureOriginal(store: ImportStore, input: RunImportInput): Promise<void> {
+  const checked = await checkOriginal(store, input);
+  if (!checked || checked.stored) return;
+  await store.putOriginalSource(input.importId, checked.ext, checked.bytes);
+  const readBack = await store.getOriginalSource(input.importId);
+  if (!readBack || sha256Hex(readBack.bytes) !== checked.supplied) throw new OriginalSourceError(`import ${input.importId}'s original did not read back with sha256 ${checked.supplied}`);
+}
+
+/**
+ * secureOriginal's checks, which only read: the supplied original against the document, the recorded hash and the
+ * stored original. A scoped run makes them before the lock too. Returns what secureOriginal stores, or null for a
+ * source kind that keeps no original.
+ */
+async function checkOriginal(store: ImportStore, input: RunImportInput): Promise<{ ext: OriginalSourceExt; bytes: Buffer; supplied: string; stored: boolean } | null> {
   const kind = input.source.kind;
-  if (kind !== "docx" && kind !== "odt") return;
+  if (kind !== "docx" && kind !== "odt") return null;
   const expected = input.source.metadata.originalSha256;
   if (!input.original || expected === undefined) throw new OriginalSourceError(`a ${kind} source is run with its original bytes and their hash; import ${input.importId} was given ${input.original ? "no originalSha256" : "no original bytes"}`);
   const supplied = sha256Hex(input.original.bytes);
@@ -126,19 +150,20 @@ async function secureOriginal(store: ImportStore, input: RunImportInput): Promis
   const stored = await store.getOriginalSource(input.importId);
   if (stored && recorded !== undefined && sha256Hex(stored.bytes) !== recorded) throw new OriginalSourceError(`import ${input.importId}'s stored original (sha256 ${sha256Hex(stored.bytes)}) no longer matches the hash recorded with its source (${recorded}); the stored original has been altered`);
   if (recorded !== undefined && supplied !== recorded) throw new OriginalSourceError(`import ${input.importId} was created from an original with sha256 ${recorded}; the supplied file has sha256 ${supplied}. The original is stored once and never replaced; use a new output directory for a changed source`);
-  if (stored) { assertSameOriginal(input.importId, stored, input.original.ext, input.original.bytes); return; }
-  await store.putOriginalSource(input.importId, input.original.ext, input.original.bytes);
-  const readBack = await store.getOriginalSource(input.importId);
-  if (!readBack || sha256Hex(readBack.bytes) !== supplied) throw new OriginalSourceError(`import ${input.importId}'s original did not read back with sha256 ${supplied}`);
+  if (stored) assertSameOriginal(input.importId, stored, input.original.ext, input.original.bytes);
+  return { ext: input.original.ext, bytes: input.original.bytes, supplied, stored: stored !== null };
 }
 
 /**
- * A scoped resume trusts no stored scope record: the stored source must equal the source re-read from the bytes, and the
- * stored generationScope record must equal the one recomputed now, in its payload, configuration and every derived field
- * (its declared hash alone would miss an edit that leaves the hash unchanged). Entries are history and are not compared.
+ * A scoped resume trusts no stored scope record: the import record's scope hash must be this scope's, the stored source
+ * must equal the source re-read from the bytes, and the stored generationScope record must equal the one recomputed now,
+ * in its payload, configuration and every derived field (its declared hash alone would miss an edit that leaves the hash
+ * unchanged). Entries are history and are not compared. Stored extraction results (cached chunks and the concept map)
+ * must cite only the scope, so the evidence guard refuses them here, before any write, as well as where they are used.
  */
 async function assertScopeIntegrity(store: ImportStore, existing: ImportRecord, source: SourceDocument, scope: ResolvedScope): Promise<void> {
   const importId = existing.importId;
+  if (existing.generationScope && existing.generationScope.scopeHash !== scope.scopeHash) throw new ScopeIntegrityError(`import ${importId}'s import record names scope ${existing.generationScope.scopeHash.slice(0, 12)}, not this scope (${scope.scopeHash.slice(0, 12)}); the import record has been altered. Use a new output directory`);
   const storedSource = await store.getArtifact<SourceDocument>(importId, "source");
   const storedScope = await store.getArtifact<unknown>(importId, "generationScope");
   // Both are written before the first model call. They may be missing only when a run was interrupted before writing
@@ -152,6 +177,13 @@ async function assertScopeIntegrity(store: ImportStore, existing: ImportRecord, 
   if (sourceDifference) throw new ScopeIntegrityError(`import ${importId}'s stored source differs from the source re-read from its bytes at ${sourceDifference}; the stored source has been altered. Use a new output directory`);
   const scopeDifference = storedScope === null ? null : firstDifference(storedScope, JSON.parse(JSON.stringify(scopeRecord(scope))));
   if (scopeDifference) throw new ScopeIntegrityError(`import ${importId}'s stored generation scope differs from the one recomputed from the scope file and the source at ${scopeDifference}; the stored record has been altered. Use a new output directory`);
+  const stored: Array<[string, Parameters<typeof assertEvidenceInScope>[0] | null]> = [];
+  for (let i = 0; i < chunkScope(scope).length; i++) stored.push([`chunk-${i}`, await store.getArtifact<ChunkConcept[]>(importId, `chunk-${i}`)]);
+  stored.push(["conceptMap", (await store.getArtifact<ConceptMap>(importId, "conceptMap"))?.concepts ?? null]);
+  for (const [name, concepts] of stored) {
+    if (!concepts) continue;
+    try { assertEvidenceInScope(concepts, scope, source); } catch (err) { throw new ScopeIntegrityError(`import ${importId}'s stored ${name}: ${err instanceof Error ? err.message : String(err)}`); }
+  }
 }
 
 /** Appends this run's spelling of the scope, with its redundant-entry notes, to the entries history unless the same spelling is already there. */
@@ -181,9 +213,10 @@ async function runLocked(input: RunImportInput, deps: RunImportDeps, existing: I
     ? reconcileElapsed({ run: existing.currentRun, savedElapsedMs: existing.budgetUsed.elapsedMs, events, operations: operationsLeftBehind, updatedAt: existing.updatedAt, nowMs: runStartedMs, maxAttemptMs, limitMs: limits.elapsedMs })
     : existing?.budgetUsed.elapsedMs ?? 0;
 
+  const marker = scope ? { generationScope: { scopeHash: scope.scopeHash } } : {}; // before the stored scope records, so removing them leaves the import scoped
   let record: ImportRecord = existing
-    ? { ...existing, budget: limits, budgetUsed: { ...existing.budgetUsed, elapsedMs: elapsedBeforeMs }, currentRun: null, updatedAt: now() }
-    : { storeVersion: STORE_VERSION, importId: input.importId, orgId: input.orgId ?? "local", name: input.name, sourceType: input.source.kind, status: "queued", customisation: input.customisation, language: input.language, unitTextHash: null, selectedTypes: [...input.selectedTypes], fingerprint, budget: limits, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: input.importId, createdAt: now(), updatedAt: now() };
+    ? { ...existing, ...marker, budget: limits, budgetUsed: { ...existing.budgetUsed, elapsedMs: elapsedBeforeMs }, currentRun: null, updatedAt: now() }
+    : { storeVersion: STORE_VERSION, importId: input.importId, orgId: input.orgId ?? "local", name: input.name, sourceType: input.source.kind, status: "queued", customisation: input.customisation, language: input.language, unitTextHash: null, selectedTypes: [...input.selectedTypes], fingerprint, budget: limits, budgetUsed: { spentUsdMicro: 0, reservedUsdMicro: 0, spentTokens: 0, requests: 0, elapsedMs: 0 }, currentRun: null, error: null, idempotencyKey: input.importId, createdAt: now(), updatedAt: now(), ...marker };
   await store.putImport(record);
   // What production needs besides the source and plan, so `leap regenerate` produces exactly as this run did. The
   // fingerprint pins these values, so writing them on any run of the import, including one that finished earlier, is safe.
